@@ -1,0 +1,91 @@
+/* «Звёздный зал» — фон дашборда и попапа: мерцающие звёзды и дуги рядов кресел внизу.
+   Два слоя звёзд мерцают не в такт; всё лежит под содержимым (z-index: -1) и не ловит клики. */
+html::before,
+html::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: -1;
+  border-radius: 50%;
+  pointer-events: none;
+}
+html::before {
+  width: 1.6px;
+  height: 1.6px;
+  box-shadow:
+    65vw 70.5vh 0 0 rgba(255, 255, 255, 0.6),
+    22.8vw 59.2vh 0 0.6px rgba(255, 255, 255, 0.7),
+    80.2vw 26.4vh 0 0 rgba(255, 255, 255, 0.93),
+    95.3vw 40.5vh 0 0 rgba(255, 255, 255, 0.75),
+    44.5vw 45.5vh 0 0 rgba(255, 255, 255, 0.92),
+    11.8vw 60.9vh 0 0.6px rgba(255, 255, 255, 0.69),
+    44.1vw 42.2vh 0 0 rgba(255, 255, 255, 0.84),
+    73.5vw 29vh 0 0 rgba(255, 255, 255, 0.57),
+    6.2vw 31.8vh 0 0 rgba(255, 255, 255, 0.59),
+    78.1vw 49.7vh 0 0 rgba(255, 255, 255, 0.72),
+    76.6vw 61.5vh 0 0 rgba(255, 255, 255, 0.85),
+    30.3vw 69.1vh 0 0 rgba(255, 255, 255, 0.92),
+    63.9vw 37vh 0 0 rgba(255, 255, 255, 0.68),
+    20.5vw 39.1vh 0 0.6px rgba(255, 255, 255, 0.72),
+    50.8vw 68.9vh 0 0 rgba(255, 255, 255, 0.63),
+    68.3vw 56vh 0 0 rgba(255, 255, 255, 0.57),
+    1.2vw 29.9vh 0 0 rgba(255, 255, 255, 0.97),
+    72.6vw 26.3vh 0 0.6px rgba(255, 255, 255, 0.78),
+    28.7vw 7vh 0 0.6px rgba(255, 255, 255, 0.96),
+    16.6vw 5.6vh 0 0 rgba(255, 255, 255, 0.91),
+    89.9vw 29.9vh 0 0 rgba(255, 255, 255, 0.7),
+    17.3vw 65.1vh 0 0 rgba(255, 255, 255, 0.63),
+    38.1vw 68.2vh 0 0 rgba(255, 255, 255, 0.87),
+    80.7vw 41.2vh 0 0.6px rgba(255, 255, 255, 0.88);
+  animation: hall-twinkle 4.6s ease-in-out infinite;
+}
+html::after {
+  width: 1.2px;
+  height: 1.2px;
+  box-shadow:
+    71.8vw 13.9vh 0 0 rgba(255, 255, 255, 0.92),
+    34.1vw 5.1vh 0 0 rgba(255, 255, 255, 0.93),
+    57.8vw 2.8vh 0 0.6px rgba(255, 255, 255, 0.69),
+    97.1vw 37.7vh 0 0 rgba(255, 255, 255, 0.86),
+    47.1vw 7.8vh 0 0 rgba(255, 255, 255, 0.76),
+    99.2vw 7.4vh 0 0 rgba(255, 255, 255, 0.9),
+    63.2vw 6.7vh 0 0 rgba(255, 255, 255, 0.82),
+    56.4vw 50.9vh 0 0 rgba(255, 255, 255, 0.87),
+    59.1vw 43.8vh 0 0 rgba(255, 255, 255, 0.59),
+    36.7vw 50.8vh 0 0 rgba(255, 255, 255, 0.68),
+    28.7vw 30.5vh 0 0 rgba(255, 255, 255, 0.66),
+    4.2vw 8vh 0 0 rgba(255, 255, 255, 0.96),
+    84.3vw 66vh 0 0 rgba(255, 255, 255, 0.71),
+    30.6vw 76.5vh 0 0.6px rgba(255, 255, 255, 0.89);
+  animation: hall-twinkle 6.2s ease-in-out -2.4s infinite;
+}
+@keyframes hall-twinkle {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+/* Ряды кресел — три светлые дуги у нижнего края */
+body::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 150px;
+  z-index: -1;
+  pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 150' preserveAspectRatio='none'%3E%3Cg fill='none' stroke-width='2' vector-effect='non-scaling-stroke'%3E%3Cpath d='M-40 96 Q300 30 640 96' stroke='rgba(167,139,250,0.16)' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M-40 120 Q300 54 640 120' stroke='rgba(167,139,250,0.11)' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M-40 144 Q300 78 640 144' stroke='rgba(167,139,250,0.07)' vector-effect='non-scaling-stroke'/%3E%3C/g%3E%3C/svg%3E")
+    center bottom / 100% 100% no-repeat;
+}
+@media (prefers-reduced-motion: reduce) {
+  html::before,
+  html::after {
+    animation: none;
+    opacity: 0.8;
+  }
+}
