@@ -6,7 +6,9 @@
     <meta name="theme-color" content="#110f16" />
     <meta name="color-scheme" content="dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- black, а не black-translucent: страница начинается под строкой состояния и не зависит от отступа safe-area,
+         который iOS на миг сбрасывает при возвращении приложения из фона -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Смотрибельно" />
     <title>Смотрибельно</title>
     <link rel="manifest" href="manifest.webmanifest" />

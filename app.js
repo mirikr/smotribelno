@@ -697,7 +697,7 @@
     if (!b) return;
     view = b.dataset.view;
     render();
-    scrollTo(0, 0);
+    $('main').scrollTop = 0; // прокручивается только список, не страница
   });
   document.addEventListener('click', (e) => {
     const c = e.target.closest('[data-open]');

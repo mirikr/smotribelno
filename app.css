@@ -25,10 +25,21 @@
 html {
   -webkit-text-size-adjust: 100%;
 }
+/* Оболочка неподвижна: страница сама не прокручивается, прокручивается только список (main).
+   Иначе на iPhone при возвращении в приложение iOS на миг меняет высоту окна — и вся страница
+   вместе с нижней панелью дёргается вверх. */
+html,
 body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+body {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
   margin: 0;
-  min-height: 100dvh;
-  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.45 var(--font);
@@ -64,14 +75,15 @@ a {
 
 /* ---- Шапка ---- */
 .top {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 5;
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 10px;
-  background: linear-gradient(180deg, var(--bg) 75%, rgba(17, 15, 22, 0));
+  padding: 12px 16px 10px;
+  background: var(--bg);
+  box-shadow: 0 10px 14px -6px var(--bg);
 }
 .brand {
   font: 700 18px var(--font-display);
@@ -115,6 +127,12 @@ a {
   box-shadow: 0 0 14px rgba(139, 92, 246, 0.45);
 }
 main {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 4px 16px calc(96px + var(--safe-b));
 }
 .search {
