@@ -183,6 +183,10 @@ const TR = (() => {
   // и имя ('n:имя'): у одного канала встречаются обе ссылки, а у старой истории бывает только имя.
   const ICONS_KEY = 'c:icons';
   const ICON_RETRY_MS = 7 * 86400000;
+  // Неудачи до 18.10.2026 — это окно согласия на cookie вместо страницы канала, а не отсутствие иконки:
+  // их не учитываем, чтобы все такие каналы перепроверились
+  const ICON_FAIL_SINCE = Date.UTC(2026, 9, 18, 12);
+  const iconFailed = (e) => !!(e?.failAt && e.failAt > ICON_FAIL_SINCE && Date.now() - e.failAt < ICON_RETRY_MS);
 
   function channelKey(url) {
     if (!url) return '';
@@ -555,6 +559,7 @@ const TR = (() => {
     typeSource,
     ICONS_KEY,
     ICON_RETRY_MS,
+    iconFailed,
     channelKey,
     nameKey,
     channelIcon,

@@ -6,6 +6,32 @@
   const KEY = 'smotribelno:v1';
   const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const STANDALONE = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+  // iPhone, приложение с главного экрана, строка состояния поверх страницы: окно растянуто на весь экран,
+  // а iOS сообщает высоту без строки состояния — всё, что прижато к низу, висит выше, под ним чёрная полоса.
+  // Высота = окно + отступ сверху, но не больше экрана; где iOS не ошибается, ничего не меняется.
+  function fitAppHeight() {
+    const root = document.documentElement;
+    if (!IOS || !STANDALONE) return;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;top:0;left:0;height:0;padding-top:env(safe-area-inset-top);visibility:hidden';
+    document.body.appendChild(probe);
+    const safeTop = probe.getBoundingClientRect().height;
+    probe.remove();
+    const h = Math.round(Math.min(screen.height, innerHeight + safeTop));
+    const gap = h - innerHeight;
+    if (gap > 1) {
+      root.style.setProperty('--app-h', h + 'px');
+      root.style.setProperty('--app-gap', gap + 'px');
+    } else {
+      root.style.removeProperty('--app-h');
+      root.style.removeProperty('--app-gap');
+    }
+  }
+  fitAppHeight();
+  addEventListener('resize', fitAppHeight);
+  addEventListener('orientationchange', () => setTimeout(fitAppHeight, 300));
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && setTimeout(fitAppHeight, 50));
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
