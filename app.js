@@ -4,6 +4,8 @@
 // При слиянии побеждает более поздняя правка (TR.mergeNewer) — тот же порядок, что будет у синхронизации через Google Drive.
 (() => {
   const KEY = 'smotribelno:v1';
+  const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const STANDALONE = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -182,7 +184,9 @@
     }
     $('#later-list').innerHTML =
       html ||
-      `<div class="empty">Список пуст.<br>В приложении YouTube нажмите «Поделиться» → «Смотрибельно» или вставьте ссылку сверху.${
+      `<div class="empty">Список пуст.<br>${
+        IOS ? 'В приложении YouTube: «Поделиться» → «Копировать ссылку», здесь — «Вставить» сверху.' : 'В приложении YouTube нажмите «Поделиться» → «Смотрибельно» или вставьте ссылку сверху.'
+      }${
         Object.keys(db.videos).length ? '' : '<br><br>Оценки и список с компьютера — во вкладке «Данные».'
       }</div>`;
     $('#n-later').textContent = queue.length + started.length || '';
@@ -228,11 +232,19 @@
       </div>
       <div class="card">
         <h2>Как пользоваться</h2>
-        <ol class="steps">
+        ${
+          IOS
+            ? `<ol class="steps">
+          <li>${STANDALONE ? 'Приложение уже на главном экране — данные хранятся в нём.' : 'Откройте эту страницу в Safari → кнопка «Поделиться» → «На экран „Домой“». Пользуйтесь значком на главном экране: у него своё хранилище, Safari его не чистит.'}</li>
+          <li>В приложении YouTube: «Поделиться» → «Копировать ссылку». Здесь нажмите «Вставить» сверху — откроется видео. Ссылка «с этого момента» станет моментом.</li>
+          <li>Раз в несколько дней обменивайтесь файлами с компьютером — через «Отправить файл» → AirDrop, Telegram или «Файлы». Скоро это заменит синхронизация через Google Drive.</li>
+        </ol>`
+            : `<ol class="steps">
           <li>Откройте эту страницу в Chrome на телефоне и выберите «Добавить на главный экран» — появится приложение «Смотрибельно».</li>
-          <li>В приложении YouTube: «Поделиться» → «Смотрибельно» (на Android). Откроется видео: отложите его, оцените или отметьте момент — если ссылка с таймкодом, он подставится сам.</li>
+          <li>В приложении YouTube: «Поделиться» → «Смотрибельно». Откроется видео: отложите его, оцените или отметьте момент — если ссылка с таймкодом, он подставится сам.</li>
           <li>Раз в несколько дней обменивайтесь файлами с компьютером. Скоро это заменит синхронизация через Google Drive.</li>
-        </ol>
+        </ol>`
+        }
       </div>`;
   }
 
@@ -566,6 +578,28 @@
     if (c) openSheet(c.dataset.open);
   });
   $('#ratings-search').addEventListener('input', renderRatings);
+
+  // iPhone: «Поделиться» для веб-приложений там нет — в YouTube «Копировать ссылку», здесь «Вставить».
+  // Safari спросит разрешение вставить — это одно касание.
+  $('#paste-btn').addEventListener('click', async () => {
+    let text = '';
+    try {
+      text = (await navigator.clipboard?.readText?.()) || '';
+    } catch {
+      text = '';
+    }
+    const s = parseShared(text) || (/^[\w-]{11}$/.test(text.trim()) ? { id: text.trim(), t: 0 } : null);
+    if (!s) {
+      $('#link-input').focus();
+      return toast(text ? 'В буфере нет ссылки на видео YouTube' : 'Вставьте ссылку в поле — долгое нажатие → «Вставить»');
+    }
+    const v = video(s.id);
+    const fresh = !v.later && !v.rating && !v.watchedAt;
+    if (fresh) setLater(s.id, settings().wlPriority || 2);
+    openSheet(s.id, s.t);
+    sheet.autoAdded = fresh;
+    if (fresh) toast('Добавлено в «Смотреть позже+» — важность можно поменять');
+  });
   $('#link-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const raw = $('#link-input').value.trim();
@@ -591,6 +625,9 @@
     sheet.autoAdded = fresh;
     if (fresh) toast('Добавлено в «Смотреть позже+» — важность можно поменять');
   }
+
+  // Попросить браузер не удалять данные при нехватке места (Safari иначе может очистить сайт)
+  navigator.storage?.persist?.().catch(() => {});
 
   render();
   handleShare();

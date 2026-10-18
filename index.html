@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#110f16" />
     <meta name="color-scheme" content="dark" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Смотрибельно" />
     <title>Смотрибельно</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/192.png" />
@@ -20,6 +23,7 @@
       <div class="brand"><span class="star">★</span> Смотрибельно</div>
       <form class="link-form" id="link-form" autocomplete="off">
         <input id="link-input" type="url" inputmode="url" placeholder="Ссылка на видео YouTube" aria-label="Ссылка на видео YouTube" />
+        <button type="button" class="paste-btn" id="paste-btn">Вставить</button>
         <button type="submit" aria-label="Открыть видео по ссылке">→</button>
       </form>
     </header>
