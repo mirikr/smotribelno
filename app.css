@@ -420,6 +420,15 @@ main {
   opacity: 1;
   text-shadow: 0 0 12px rgba(167, 139, 250, 0.8);
 }
+/* Значок-рисунок (статистика — график из кривых) того же размера, что значки-символы */
+.tab-ico {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+.tabbar button.on .tab-ico {
+  filter: drop-shadow(0 0 5px rgba(167, 139, 250, 0.8));
+}
 .tabbar button b {
   position: absolute;
   top: 4px;
