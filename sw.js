@@ -1,10 +1,18 @@
-// Работа без сети: оболочка приложения в кэше, обновляется в фоне при каждом открытии.
-// Превью видео (i.ytimg.com) и запросы к YouTube не кэшируются.
-const CACHE = 'smotribelno-v8';
+// Работа без сети и обновления. Оболочка приложения лежит в кэше своей версии.
+// Новая версия на сайте → новый sw.js → скачивает свежие файлы и ждёт: приложение показывает
+// «Доступна новая версия», по кнопке присылает «skip» — тогда новая версия включается, страница перезагружается.
+// Имя кэша при сборке заменяется отпечатком файлов (mobile/build.js), поэтому любая правка = новая версия.
+// Превью видео (i.ytimg.com) и запросы к YouTube и Google не кэшируются.
+const CACHE = 'smotribelno-5b77cef030';
 const SHELL = ['./', './index.html', './app.css', './app.js', './manifest.webmanifest', './icons/192.png', './shared.js', './starhall.css'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' — мимо HTTP-кэша браузера, чтобы в новую версию не попали старые файлы
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))));
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data?.type === 'skip') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
@@ -19,18 +27,15 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  // Открытие из «Поделиться» приходит с ?url=… — отдаём ту же страницу из кэша
+  // Открытие из «Поделиться» и после входа в Google приходит с ?… и #… — отдаём ту же страницу
   const key = e.request.mode === 'navigate' ? './index.html' : e.request;
   e.respondWith(
     caches.open(CACHE).then(async (c) => {
       const hit = await c.match(key, { ignoreSearch: e.request.mode === 'navigate' });
-      const net = fetch(e.request)
-        .then((r) => {
-          if (r.ok) c.put(key, r.clone());
-          return r;
-        })
-        .catch(() => hit);
-      return hit || net;
+      if (hit) return hit;
+      const r = await fetch(e.request);
+      if (r.ok) c.put(key, r.clone());
+      return r;
     })
   );
 });

@@ -1046,6 +1046,55 @@
     if (document.visibilityState === 'visible' && drive.on && Date.now() - (drive.at || 0) > 60000) syncDrive();
   });
 
+  // ---------- Обновление приложения ----------
+  // Новая версия скачивается в фоне (sw.js) и ждёт; появляется плашка «Доступна новая версия».
+  // «Обновить» включает её и перезагружает страницу. Проверяем при открытии, при возвращении и раз в 30 минут.
+  let waitingWorker = null;
+  let reloading = false;
+
+  function showUpdate(worker) {
+    waitingWorker = worker;
+    $('#update-bar').hidden = false;
+  }
+  function applyUpdate() {
+    if (waitingWorker) {
+      reloading = true; // перезагрузка — по controllerchange, когда новая версия включится
+      waitingWorker.postMessage({ type: 'skip' });
+      setTimeout(() => location.reload(), 3000); // запасной путь, если событие не придёт
+    } else {
+      location.reload();
+    }
+  }
+  async function setupUpdates() {
+    if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+    let reg;
+    try {
+      reg = await navigator.serviceWorker.register('sw.js');
+    } catch {
+      return;
+    }
+    const check = () => {
+      if (reg.waiting && navigator.serviceWorker.controller) showUpdate(reg.waiting);
+    };
+    check();
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w?.addEventListener('statechange', () => w.state === 'installed' && check());
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!reloading) return; // первая установка тоже меняет controller — тогда не перезагружаем
+      location.reload();
+    });
+    const look = () => reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && look());
+    setInterval(look, 30 * 60 * 1000);
+  }
+  $('#update-btn').addEventListener('click', (e) => {
+    e.currentTarget.disabled = true;
+    e.currentTarget.textContent = 'Обновляю…';
+    applyUpdate();
+  });
+
   // ---------- Потянуть вниз — обновить ----------
   // На iPhone у приложения с главного экрана нет своего жеста обновления, поэтому свой:
   // тянем список вниз от самого верха, звезда проворачивается; после порога — перезагрузка
@@ -1108,7 +1157,7 @@
     ptrEl.classList.add('back', 'loading');
     mainEl.classList.add('back');
     ptrPaint(56);
-    setTimeout(() => location.reload(), 380);
+    setTimeout(applyUpdate, 380); // скачанная новая версия ставится этим же жестом
   });
   mainEl.addEventListener('touchcancel', () => {
     if (ptr.active) ptrReset();
@@ -1210,5 +1259,5 @@
   const silentBounce = !!sessionStorage.getItem('smotribelno:silent');
   if (drive.on) syncDrive({ allowRedirect: !shared && !backFromGoogle });
   if (backFromGoogle && !silentBounce) toast(drive.token ? 'Google Drive подключён — синхронизирую' : drive.error || 'Вход не завершён');
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  setupUpdates();
 })();

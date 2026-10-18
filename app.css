@@ -139,6 +139,51 @@ a {
   font-weight: 700;
   box-shadow: 0 0 14px rgba(139, 92, 246, 0.45);
 }
+/* ---- Плашка «Доступна новая версия» — над нижним меню ---- */
+.update-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(84px + var(--safe-b));
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 16px;
+  border: 1px solid var(--violet-line);
+  border-radius: 18px;
+  background: rgba(44, 36, 69, 0.96);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 22px rgba(139, 92, 246, 0.35);
+  animation: sheet-in 0.3s var(--ease);
+}
+.update-bar span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.update-bar b {
+  color: var(--violet-ink);
+  font-size: 14px;
+}
+.update-bar small {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.update-bar button {
+  flex: none;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--violet-strong);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.5);
+}
+
 /* ---- Переходы между разделами ---- */
 .view.enter-r {
   animation: view-in-r 0.26s var(--ease);
