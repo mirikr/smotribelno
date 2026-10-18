@@ -408,6 +408,8 @@ const TR = (() => {
       if (inc.moments?.length) v.moments = copy(inc.moments);
       else delete v.moments;
     }
+    // «Не оценивать» и «не предлагать продолжить» — без времени изменения: раз поставили, не снимаем
+    for (const f of ['noRate', 'resumeHidden']) if (inc[f] && !cur[f]) v[f] = inc[f];
     const wa = Math.max(cur.watchedAt || 0, cur.watchedUpd || 0);
     const wb = Math.max(inc.watchedAt || 0, inc.watchedUpd || 0);
     if (wb > wa) {
@@ -433,7 +435,7 @@ const TR = (() => {
   const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
   const DRIVE_FILE = 'smotribelno.json';
   const DRIVE_APP = 'Smotribelno-drive';
-  const SYNC_FIELDS = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel'];
+  const SYNC_FIELDS = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden'];
 
   // В файл на Диске — только то, что нужно другому устройству; статистика по дням остаётся на месте
   function slimVideo(v) {
@@ -446,7 +448,10 @@ const TR = (() => {
     }
     return o;
   }
-  const worthSyncing = (v) => !!(v && (v.rating || v.later || v.note || v.moments?.length || v.dropped || v.ratingDel || v.laterDel || v.droppedDel || isStarted(v)));
+  // Ещё — просмотренное за 60 дней без оценки («Ждут оценки») и брошенное без причины: их тоже разбирают с телефона
+  const recentlyWatched = (v) => Date.now() - Math.max(v.watchedAt || 0, v.watch?.lastAt || 0) < 60 * 86400000;
+  const worthSyncing = (v) =>
+    !!(v && (v.rating || v.later || v.note || v.moments?.length || v.dropped || v.ratingDel || v.laterDel || v.droppedDel || isStarted(v) || ((awaitingRating(v) || isDropCandidate(v)) && recentlyWatched(v))));
 
   // Сравнение без учёта порядка полей
   function stableJson(o) {

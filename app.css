@@ -42,6 +42,11 @@ textarea {
   font: inherit;
   color: inherit;
 }
+/* 16px и больше: иначе iPhone при открытии клавиатуры увеличивает страницу и она «съезжает» */
+input,
+textarea {
+  font-size: 16px;
+}
 button {
   cursor: pointer;
 }
@@ -76,7 +81,7 @@ a {
      поверх страницы, у нового — обычную (тогда отступ 0). */
   padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 10px;
   background: var(--bg);
-  box-shadow: 0 10px 14px -6px var(--bg);
+  border-bottom: 1px solid transparent;
 }
 .brand {
   align-self: flex-start;
@@ -89,7 +94,6 @@ a {
 }
 .star {
   color: var(--violet);
-  text-shadow: 0 0 12px rgba(167, 139, 250, 0.8);
 }
 .link-form {
   display: flex;
@@ -451,7 +455,27 @@ main {
   overscroll-behavior: contain;
 }
 .sheet[open] {
-  animation: sheet-in 0.26s var(--ease);
+  animation: sheet-in 0.3s var(--ease);
+}
+.sheet {
+  transition: transform 0.22s var(--ease), max-height 0.3s var(--ease), border-radius 0.3s;
+}
+/* Развёрнут на весь экран (потянули полоску вверх или нажали на неё) */
+.sheet.full {
+  max-height: 100dvh;
+  height: 100dvh;
+  border-radius: 0;
+  padding-top: calc(8px + env(safe-area-inset-top, 0px));
+}
+/* Закрытие — уезжает вниз и гаснет */
+.sheet.closing {
+  transform: translateY(105%) !important;
+  opacity: 0;
+  transition: transform 0.22s var(--ease), opacity 0.22s;
+}
+.sheet.closing::backdrop {
+  opacity: 0;
+  transition: opacity 0.22s;
 }
 @keyframes sheet-in {
   from {
@@ -464,10 +488,26 @@ main {
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }
+/* Полоска — ручка листа: прилипает сверху, область нажатия шире самой полоски */
 .sheet-grip {
+  position: sticky;
+  top: -8px;
+  z-index: 2;
+  width: 100%;
+  height: 26px;
+  margin: -8px 0 6px;
+  background: linear-gradient(var(--surface) 60%, rgba(26, 23, 34, 0));
+  cursor: grab;
+  touch-action: none;
+}
+.sheet-grip::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 10px;
   width: 44px;
   height: 5px;
-  margin: 2px auto 12px;
+  margin-left: -22px;
   border-radius: 3px;
   background: var(--track);
 }
@@ -789,6 +829,423 @@ textarea {
   animation: sheet-in 0.2s var(--ease);
 }
 
+/* ---- Короткие страницы: документ всегда чуть выше окна — иначе на iPhone (приложение с главного экрана)
+   у короткой страницы окно ведёт себя иначе и нижнее меню «прыгает» ---- */
+body {
+  min-height: calc(100vh + 1px);
+}
+.spacer {
+  flex: 1;
+}
+/* Клавиатура открыта: нижнее меню прячем, чтобы его не поднимало над клавиатурой */
+body.kb-open .tabbar,
+body.kb-open .update-bar {
+  display: none;
+}
+.seg-scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-bottom: 10px;
+}
+.seg-scroll::-webkit-scrollbar {
+  display: none;
+}
+.seg-scroll button {
+  flex: none;
+}
+
+/* ---- Значки нижнего меню — рисунки одного размера ---- */
+.tabbar button span {
+  display: inline-flex;
+  font-size: 0;
+}
+.tab-ico {
+  width: 26px;
+  height: 26px;
+}
+
+/* ---- Аватарка канала: буква в кружке, картинка поверх ---- */
+.ch-ava {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--violet-tint);
+  color: var(--violet-ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.ch-ava img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ch-strip {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+}
+.ch-strip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+
+/* ---- Полоски, столбики, факты ---- */
+.hbars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.hb-link {
+  cursor: pointer;
+}
+.hb-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.hb-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.hb-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hb-top b {
+  flex: none;
+  font: 600 12px var(--font-display);
+}
+.hb-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--track);
+}
+.hb-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--violet);
+  transform-origin: left;
+}
+.view.entering .hb-track span {
+  animation: grow-x 0.6s var(--ease) both;
+}
+.hb-sub {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.hb-thumb {
+  width: 64px;
+  aspect-ratio: 16 / 9;
+  flex: none;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--surface-3);
+}
+.link-btn.more {
+  display: block;
+  margin: 10px 0 0;
+}
+.vbars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 110px;
+  padding-bottom: 16px;
+}
+.vb {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  height: 100%;
+}
+.vb span,
+.fm-col span {
+  width: 100%;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--violet);
+  transform-origin: bottom;
+}
+.view.entering .vb span,
+.view.entering .fm-col span {
+  animation: grow-y 0.55s var(--ease) both;
+  animation-delay: calc(var(--d, 0) * 12ms);
+}
+.vb small {
+  position: absolute;
+  left: 50%;
+  bottom: -16px;
+  transform: translateX(-50%);
+  color: var(--text-2);
+  font-size: 10px;
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+.facts {
+  display: grid;
+  gap: 10px;
+}
+.fact {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.fact-ico {
+  font-size: 22px;
+  line-height: 1.2;
+}
+.fact > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fact-k {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.fact b {
+  font: 700 15px var(--font-display);
+}
+.fact-d {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.card h2 .muted {
+  font: 500 12px var(--font);
+}
+
+/* ---- Профиль канала: радар и оценки во времени ---- */
+.radar {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  overflow: visible;
+}
+.rd-ring {
+  fill: none;
+  stroke: var(--border);
+}
+.rd-ring.outer {
+  stroke: var(--track);
+}
+.rd-axis {
+  stroke: var(--border);
+}
+.rd-base {
+  fill: none;
+  stroke: #8e86a0;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+.rd-shape {
+  fill: rgba(139, 92, 246, 0.28);
+  stroke: var(--violet);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.5));
+  transform-origin: 150px 150px;
+  animation: rd-grow 0.6s var(--ease) both;
+}
+@keyframes rd-grow {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}
+.rd-label {
+  fill: var(--text-2);
+  font: 600 12px var(--font);
+}
+.rd-val {
+  fill: var(--text);
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.rd-legend {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.rd-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rd-legend .sw-shape {
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
+  background: rgba(139, 92, 246, 0.4);
+  box-shadow: inset 0 0 0 2px var(--violet);
+}
+.rd-legend .sw-base {
+  width: 16px;
+  border-top: 2px dashed #8e86a0;
+}
+.rd-sum {
+  margin: 10px 0 0;
+}
+.rd-sum b {
+  color: var(--text);
+}
+.tl {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+.tl-line {
+  fill: none;
+  stroke: var(--track);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.tl-avg {
+  stroke: #8e86a0;
+  stroke-dasharray: 4 4;
+  vector-effect: non-scaling-stroke;
+}
+.tl-t {
+  fill: #8e86a0;
+  font-size: 11px;
+}
+.tl-dot {
+  animation: pop-in 0.4s var(--ease) both;
+}
+
+/* ---- Анимации: появление списков лесенкой, кольцо оценки прорисовывается, «идеально» дышит ---- */
+/* Только при переходе в раздел (класс entering на ~0,7 с), а не при каждом обновлении данных */
+.view.entering .vcard,
+.view.entering .ch-item,
+.view.entering .hb,
+.view.entering .fact,
+.view.entering .card {
+  animation: rise-in 0.36s var(--ease) both;
+}
+.view.entering .ch-item {
+  animation-delay: calc(var(--i, 0) * 24ms);
+}
+.view.entering .hb {
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+.view.entering .vcard:nth-of-type(1),
+.view.entering .card:nth-of-type(1) {
+  animation-delay: 0ms;
+}
+.view.entering .vcard:nth-of-type(2),
+.view.entering .card:nth-of-type(2) {
+  animation-delay: 30ms;
+}
+.view.entering .vcard:nth-of-type(3),
+.view.entering .card:nth-of-type(3) {
+  animation-delay: 60ms;
+}
+.view.entering .vcard:nth-of-type(4),
+.view.entering .card:nth-of-type(4) {
+  animation-delay: 90ms;
+}
+.view.entering .vcard:nth-of-type(5),
+.view.entering .card:nth-of-type(5) {
+  animation-delay: 120ms;
+}
+.view.entering .vcard:nth-of-type(6),
+.view.entering .card:nth-of-type(6) {
+  animation-delay: 150ms;
+}
+.view.entering .vcard:nth-of-type(7),
+.view.entering .card:nth-of-type(7) {
+  animation-delay: 180ms;
+}
+.view.entering .vcard:nth-of-type(8),
+.view.entering .card:nth-of-type(8) {
+  animation-delay: 210ms;
+}
+.view.entering .vcard:nth-of-type(9),
+.view.entering .card:nth-of-type(9) {
+  animation-delay: 240ms;
+}
+.view.entering .vcard:nth-of-type(10),
+.view.entering .card:nth-of-type(10) {
+  animation-delay: 270ms;
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+.ring .fill {
+  animation: ring-draw 0.8s var(--ease) both;
+}
+@keyframes ring-draw {
+  from {
+    stroke-dasharray: 0 400;
+  }
+}
+.score.perfect,
+.grade.perfect {
+  animation: perfect-pulse 2.4s ease-in-out infinite;
+}
+@keyframes perfect-pulse {
+  50% {
+    box-shadow: 0 0 0 2px #34d399, 0 0 22px 5px rgba(52, 211, 153, 0.5);
+  }
+}
+/* Уведомление уходит плавно */
+.toast.leaving {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.25s, transform 0.25s;
+}
+.update-bar.leaving {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.25s, transform 0.25s;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1056,7 +1513,6 @@ textarea {
 }
 .gear svg {
   display: block;
-  filter: drop-shadow(0 0 4px rgba(167, 139, 250, 0.45));
 }
 .link-btn {
   margin-left: auto;
@@ -1182,21 +1638,6 @@ textarea {
   color: var(--violet);
   font: 700 13px var(--font-display);
   text-align: center;
-}
-.ch-ava {
-  flex: none;
-  border-radius: 50%;
-  object-fit: cover;
-  background: var(--surface-3);
-}
-.ch-letter {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--violet-tint);
-  color: var(--violet-ink);
-  font-family: var(--font-display);
-  font-weight: 700;
 }
 .ch-item .vinfo {
   flex: 1;

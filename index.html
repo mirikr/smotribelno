@@ -47,6 +47,7 @@
       </section>
       <section id="view-ratings" class="view" aria-labelledby="h-ratings" hidden>
         <h1 id="h-ratings" class="visually-hidden">Оценки</h1>
+        <div class="seg seg-scroll" id="ratings-seg" role="group" aria-label="Какие видео показать"></div>
         <input id="ratings-search" class="search" type="search" placeholder="Поиск по названию и каналу" aria-label="Поиск по оценкам" />
         <div id="ratings-list"></div>
       </section>
@@ -70,10 +71,11 @@
     </div>
 
     <nav class="tabbar" aria-label="Разделы">
-      <button type="button" data-view="home" class="on" aria-label="Главная"><span aria-hidden="true">⌂</span></button>
-      <button type="button" data-view="later" aria-label="Смотреть позже+"><span aria-hidden="true">＋</span><b id="n-later"></b></button>
-      <button type="button" data-view="ratings" aria-label="Оценки"><span aria-hidden="true">★</span><b id="n-ratings"></b></button>
-      <button type="button" data-view="channels" aria-label="Каналы"><span aria-hidden="true">◉</span></button>
+      <!-- Значки — рисунки одного размера и толщины линий (символы шрифта на iPhone разного размера) -->
+      <button type="button" data-view="home" class="on" aria-label="Главная"><span aria-hidden="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v10.5a1 1 0 0 0 1 1h3.5v-6h4v6h3.5a1 1 0 0 0 1-1V9"/></svg></span></button>
+      <button type="button" data-view="later" aria-label="Смотреть позже+"><span aria-hidden="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span><b id="n-later"></b></button>
+      <button type="button" data-view="ratings" aria-label="Оценки"><span aria-hidden="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></span><b id="n-ratings"></b></button>
+      <button type="button" data-view="channels" aria-label="Каналы"><span aria-hidden="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="m10.5 10 4 2.5-4 2.5z" fill="currentColor"/><path d="M7 3.5h10"/></svg></span></button>
       <button type="button" data-view="stats" aria-label="Статистика"><span aria-hidden="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20.5h18" opacity=".45"/><path d="M3 15.5c2.6 0 3.4-7 6.6-7s3.6 5.5 6.6 5.5S19.8 7 21 4.5"/><path d="M3 18c2.4 0 3.8-3.5 6.4-3.5S13.6 17 16.4 17s3.4-2.5 4.6-3.5" opacity=".55"/></svg></span></button>
     </nav>
 

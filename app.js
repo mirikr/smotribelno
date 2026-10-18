@@ -165,9 +165,9 @@
     const g = TR.grade(total);
     return g ? `<span class="score${g.perfect ? ' perfect' : ''}" style="background:${g.color}">${g.perfect ? '★ ' : ''}${total}</span>` : '';
   };
-  function card(v, started) {
+  function card(v, started, note = '') {
     const pct = Math.round((started ? v.watch?.position : v.watch?.maxProgress) * 100) || 0;
-    const meta = [v.channel ? esc(v.channel) : '', started && v.duration ? `осталось ${TR.fmtSpent(v.duration * (1 - v.watch.position))}` : ''].filter(Boolean).join(' · ');
+    const meta = [v.channel ? esc(v.channel) : '', started && v.duration ? `осталось ${TR.fmtSpent(v.duration * (1 - v.watch.position))}` : '', note ? esc(note) : ''].filter(Boolean).join(' · ');
     return `<button type="button" class="vcard${started ? ' started' : ''}" data-open="${v.id}">
       ${thumb(v, pct)}
       <span class="vinfo"><span class="vtitle">${esc(v.title || 'Видео ' + v.id)}</span><span class="vmeta">${meta || '&nbsp;'}</span>
@@ -196,18 +196,55 @@
     $('#n-later').textContent = queue.length + started.length || '';
   }
 
+  // Оценки: «Оценённые», «Ждут оценки» (досмотрено, но без оценки — в т. ч. на компьютере), «Бросили»
+  const rState = { tab: 'rated' };
+  const awaitingList = () =>
+    Object.values(db.videos)
+      .filter((v) => TR.awaitingRating(v) && !TR.isStarted(v, settings().autoWatchedPct))
+      .sort((a, b) => Math.max(b.watchedAt || 0, b.watch?.lastAt || 0) - Math.max(a.watchedAt || 0, a.watch?.lastAt || 0));
   function renderRatings() {
     const q = ($('#ratings-search').value || '').toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean);
     const hay = (v) => `${v.title || ''} ${v.channel || ''}`.toLowerCase().replace(/ё/g, 'е');
-    const list = Object.values(db.videos)
-      .filter((v) => v.rating && q.every((w) => hay(v).includes(w)))
-      .sort((a, b) => (b.rating.updatedAt || 0) - (a.rating.updatedAt || 0));
-    const all = Object.values(db.videos).filter((v) => v.rating).length;
-    $('#ratings-list').innerHTML = list.length
-      ? list.map((v) => card(v, false)).join('')
-      : `<div class="empty">${all ? 'Ничего не нашлось.' : 'Оценок пока нет. Откройте видео и подвигайте ползунки.'}</div>`;
-    $('#n-ratings').textContent = '';
+    const V = Object.values(db.videos);
+    const rated = V.filter((v) => v.rating).sort((a, b) => (b.rating.updatedAt || 0) - (a.rating.updatedAt || 0));
+    const awaiting = awaitingList();
+    const ask = V.filter((v) => TR.isDropCandidate(v)).sort((a, b) => (b.watch?.lastAt || 0) - (a.watch?.lastAt || 0));
+    const dropped = V.filter((v) => v.dropped).sort((a, b) => b.dropped.at - a.dropped.at);
+    const seg = $('#ratings-seg');
+    seg.innerHTML = [
+      ['rated', `Оценённые · ${rated.length}`],
+      ['todo', `Ждут оценки · ${awaiting.length}`],
+      ['dropped', `Бросили · ${ask.length + dropped.length}`],
+    ]
+      .map(([v, l]) => `<button type="button" data-rtab="${v}" class="${rState.tab === v ? 'on' : ''}">${l}</button>`)
+      .join('');
+    const match = (v) => q.every((w) => hay(v).includes(w));
+    let html = '';
+    if (rState.tab === 'rated') {
+      const list = rated.filter(match);
+      html = list.length ? list.map((v) => card(v, false)).join('') : `<div class="empty">${rated.length ? 'Ничего не нашлось.' : 'Оценок пока нет. Откройте видео и подвигайте ползунки.'}</div>`;
+    } else if (rState.tab === 'todo') {
+      const list = awaiting.filter(match);
+      html = list.length
+        ? list.map((v) => card(v, false, TR.fromOtherDevice(v) ? 'досмотрено на другом устройстве' : 'досмотрено')).join('')
+        : '<div class="empty">Все просмотренные видео оценены 🎉</div>';
+    } else {
+      const a = ask.filter(match);
+      const d = dropped.filter(match);
+      html =
+        (a.length ? `<h2 class="list-head">Почему не досмотрели? <span>· ${a.length}</span></h2>${a.map((v) => card(v, false, `на ${Math.round(TR.maxPos(v) * 100)}%`)).join('')}` : '') +
+        (d.length ? `<h2 class="list-head">Брошенные <span>· ${d.length}</span></h2>${d.map((v) => card(v, false, TR.dropReason(v.dropped.reason).label)).join('')}` : '') ||
+        '<div class="empty">Брошенных видео нет. Сюда попадают видео, которые начали, но ушли раньше 60% и не возвращались три дня.</div>';
+    }
+    $('#ratings-list').innerHTML = html;
+    $('#n-ratings').textContent = awaiting.length || '';
   }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-rtab]');
+    if (!b) return;
+    rState.tab = b.dataset.rtab;
+    renderRatings();
+  });
 
   function renderData() {
     const V = Object.values(db.videos);
@@ -337,7 +374,10 @@
 
     // Неделя оценок с понедельника и серия дней подряд с оценками
     const by = ratedDays();
-    const streak = ratingStreak(by);
+    // Серия — дни подряд с YouTube (по сводке с компьютера, как в расширении); без неё — дни с оценками
+    const yt = youtubeStreak();
+    const streak = yt ? yt.cur : ratingStreak(by);
+    const streakWhat = yt ? 'с YouTube' : 'с оценками';
     const monday = new Date();
     monday.setHours(12, 0, 0, 0);
     monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
@@ -357,7 +397,7 @@
     }).join('');
     const nowIdx = (new Date().getDay() + 6) % 7;
     const weekHtml = `<div class="card home-week">
-      <div class="wk-top">${streak ? `<span class="wk-streak">${fireNum(streak)}</span><span>${plural(streak, 'день', 'дня', 'дней')} подряд с оценками</span>` : '<span class="muted">Серия начнётся с первой оценки</span>'}</div>
+      <div class="wk-top">${streak ? `<span class="wk-streak">${fireNum(streak)}</span><span>${plural(streak, 'день', 'дня', 'дней')} подряд ${streakWhat}</span>${yt ? `<span class="spacer"></span><span class="muted">рекорд ${yt.best}</span>` : ''}` : `<span class="muted">${yt ? 'Серия начнётся с первого дня с YouTube' : 'Серия начнётся с первой оценки'}</span>`}</div>
       <div class="wk-grid">${days}</div>
       <div class="wk-grid wk-labels">${WD.map((w, i) => `<span class="${i === nowIdx ? 'now' : ''}">${w}</span>`).join('')}</div>
     </div>`;
@@ -379,12 +419,15 @@
   }
 
   // ---------- Каналы ----------
+  // Полный список — со сводки с компьютера (stats.channels: адрес, аватарка, видео в истории YouTube,
+  // минуты за 7/30/90/365 дней и за всё время), плюс каналы видео, которые есть здесь.
   const chState = { sort: 'score', q: '' };
   const fmtMin = (m) => TR.fmtSpent((m || 0) * 60);
+  const WIN = { 7: 0, 30: 1, 90: 2, 365: 3, 0: 4 }; // индексы окон в stats.channels и stats.topVideos
 
   function channelList() {
     const map = {};
-    const get = (name) => (map[name] ||= { name, url: '', icon: '', rated: [], later: 0, min: 0, dropped: 0, finished: 0, reasons: {} });
+    const get = (name) => (map[name] ||= { name, url: '', icon: '', rated: [], later: 0, min: 0, mins: [0, 0, 0, 0, 0], views: 0, dropped: 0, finished: 0, reasons: {} });
     for (const v of Object.values(db.videos)) {
       if (!v.channel) continue;
       const c = get(v.channel);
@@ -396,29 +439,42 @@
         c.reasons[v.dropped.reason] = (c.reasons[v.dropped.reason] || 0) + 1;
       } else if (v.watchedAt) c.finished++;
     }
+    const v2 = db.stats?.v === 2;
     for (const [name, x] of Object.entries(db.stats?.channels || {})) {
       const c = get(name);
-      c.min = x[0] || 0;
-      if (!c.url && x[1]) c.url = x[1];
-      c.icon = TR.safeIconSrc(x[2]);
+      if (v2) {
+        // [адрес, аватарка, видео в истории, мин 7, 30, 90, 365, всё время]
+        if (!c.url && x[0]) c.url = x[0];
+        c.icon = TR.safeIconSrc(x[1]);
+        c.views = x[2] || 0;
+        c.mins = x.slice(3, 8).map((n) => n || 0);
+        c.min = c.mins[4];
+      } else {
+        c.min = x[0] || 0;
+        if (!c.url && x[1]) c.url = x[1];
+        c.icon = TR.safeIconSrc(x[2]);
+      }
     }
     for (const c of Object.values(map)) {
+      c.rated.sort((a, b) => (a.rating.updatedAt || 0) - (b.rating.updatedAt || 0));
       c.avg = c.rated.length ? Math.round(c.rated.reduce((s, v) => s + v.rating.total, 0) / c.rated.length) : null;
       const n = c.finished + c.dropped;
       c.finishPct = c.dropped && n >= 3 ? Math.round((c.finished / n) * 100) : null;
     }
     return Object.values(map);
   }
+  // Аватарка поверх буквы: если картинка не загрузится, останется буква
   const chAvatar = (c, size) =>
-    c.icon
-      ? `<img class="ch-ava" src="${esc(c.icon)}" alt="" width="${size}" height="${size}" loading="lazy" referrerpolicy="no-referrer">`
-      : `<span class="ch-ava ch-letter" style="width:${size}px;height:${size}px;font-size:${Math.round(size / 2.4)}px">${esc((c.name.trim()[0] || '?').toUpperCase())}</span>`;
+    `<span class="ch-ava" style="width:${size}px;height:${size}px;font-size:${Math.round(size / 2.4)}px">${esc((c.name.trim()[0] || '?').toUpperCase())}${
+      c.icon ? `<img src="${esc(c.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''
+    }</span>`;
 
   function renderChannels() {
     const box = $('#channels-box');
     if (!box.firstChild) {
       box.innerHTML = `<input id="ch-search" class="search" type="search" placeholder="Поиск канала" aria-label="Поиск канала">
-        <div class="seg" id="ch-sort" style="margin-bottom:12px"><button type="button" data-chsort="score">По оценке</button><button type="button" data-chsort="time">По времени</button><button type="button" data-chsort="later">В «Позже+»</button></div>
+        <div class="seg" id="ch-sort" style="margin-bottom:8px"><button type="button" data-chsort="score">По оценке</button><button type="button" data-chsort="time">По времени</button><button type="button" data-chsort="views">По просмотрам</button></div>
+        <p class="muted" id="ch-summary" style="margin:0 0 10px"></p>
         <div id="ch-list"></div>`;
       $('#ch-search').addEventListener('input', (e) => {
         chState.q = e.target.value;
@@ -429,30 +485,94 @@
         if (!b) return;
         chState.sort = b.dataset.chsort;
         renderChannels();
+        window.scrollTo(0, 0);
       });
     }
     $$('#ch-sort button').forEach((b) => b.classList.toggle('on', b.dataset.chsort === chState.sort));
+    const all = channelList();
     const q = chState.q.toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean);
-    let list = channelList().filter((c) => q.every((w) => c.name.toLowerCase().replace(/ё/g, 'е').includes(w)));
+    let list = all.filter((c) => q.every((w) => c.name.toLowerCase().replace(/ё/g, 'е').includes(w)));
     const sorters = {
-      score: (a, b) => (b.avg ?? -1) - (a.avg ?? -1) || b.rated.length - a.rated.length || b.min - a.min,
-      time: (a, b) => b.min - a.min || (b.avg ?? -1) - (a.avg ?? -1),
-      later: (a, b) => b.later - a.later || b.min - a.min,
+      // по оценке — только оценённые, выше те, у кого оценок больше; остальные — ниже, по времени
+      score: (a, b) => (b.avg != null) - (a.avg != null) || (b.avg ?? -1) - (a.avg ?? -1) || b.rated.length - a.rated.length || b.min - a.min,
+      time: (a, b) => b.min - a.min || b.views - a.views,
+      views: (a, b) => b.views - a.views || b.min - a.min,
     };
-    list = list.sort(sorters[chState.sort]).slice(0, 150);
+    list = list.sort(sorters[chState.sort]).slice(0, 300);
+    const rated = all.filter((c) => c.avg != null).length;
+    $('#ch-summary').textContent = all.length ? `Каналов: ${all.length} · с оценками: ${rated}${db.stats?.v === 2 ? '' : ' · полный список и время придут с компьютера через Google Drive'}` : '';
     $('#ch-list').innerHTML = list.length
       ? list
           .map((c, i) => {
             const meta = [
-              c.rated.length ? `${c.rated.length} ${plural(c.rated.length, 'оценка', 'оценки', 'оценок')}` : 'без оценок',
+              c.rated.length ? `${c.rated.length} ${plural(c.rated.length, 'оценка', 'оценки', 'оценок')}` : '',
               c.min ? fmtMin(c.min) : '',
+              c.views ? `в истории: ${c.views}` : '',
               c.later ? `в «Позже+»: ${c.later}` : '',
               c.finishPct != null ? `досматриваете ${c.finishPct}%` : '',
             ].filter(Boolean);
-            return `<button type="button" class="ch-item" data-channel="${esc(c.name)}"><span class="ch-rank">${i + 1}</span>${chAvatar(c, 44)}<span class="vinfo"><span class="vtitle">${esc(c.name)}</span><span class="vmeta">${meta.join(' · ')}</span></span>${c.avg != null ? scoreBadge(c.avg) : ''}</button>`;
+            const strip = c.rated
+              .slice(-24)
+              .map((v) => `<i style="background:${TR.grade(v.rating.total).mark}"></i>`)
+              .join('');
+            return `<button type="button" class="ch-item" data-channel="${esc(c.name)}" style="--i:${Math.min(i, 10)}"><span class="ch-rank">${i + 1}</span>${chAvatar(c, 44)}<span class="vinfo"><span class="vtitle">${esc(c.name)}</span><span class="vmeta">${meta.join(' · ') || '&nbsp;'}</span>${strip ? `<span class="ch-strip">${strip}</span>` : ''}</span>${c.avg != null ? scoreBadge(c.avg) : ''}</button>`;
           })
           .join('')
-      : `<div class="empty">${Object.keys(db.videos).length ? 'Ничего не нашлось.' : 'Каналы появятся, когда будут оценки или видео в «Позже+».'}</div>`;
+      : `<div class="empty">${all.length ? 'Ничего не нашлось.' : 'Каналы появятся, когда будут оценки или видео в «Позже+».'}</div>`;
+  }
+
+  // Радар по критериям: фигура канала поверх ваших средних по всем видео (пунктир) — как в расширении
+  function radarSvg(axes) {
+    const n = axes.length;
+    const S = 300;
+    const c = S / 2;
+    const R = 92;
+    const pt = (i, v) => {
+      const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+      const r = (v / TR.SLIDER_MAX) * R;
+      return [c + Math.cos(a) * r, c + Math.sin(a) * r];
+    };
+    const poly = (vals) => vals.map((v, i) => pt(i, v).map((x) => x.toFixed(1)).join(',')).join(' ');
+    let svg = '';
+    for (const lvl of [2, 4, 6, 8, 10]) svg += `<polygon class="rd-ring${lvl === 10 ? ' outer' : ''}" points="${poly(axes.map(() => lvl))}"/>`;
+    axes.forEach((_, i) => {
+      const [x, y] = pt(i, TR.SLIDER_MAX);
+      svg += `<line class="rd-axis" x1="${c}" y1="${c}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+    });
+    if (axes.some((a) => a.base != null)) svg += `<polygon class="rd-base" points="${poly(axes.map((a) => a.base ?? 0))}"/>`;
+    svg += `<polygon class="rd-shape" points="${poly(axes.map((a) => a.val ?? 0))}"/>`;
+    axes.forEach((a, i) => {
+      const [x, y] = pt(i, a.val);
+      const col = TR.scoreMark(Math.round((a.val / TR.SLIDER_MAX) * TR.MAX_SCORE));
+      svg += `<circle class="rd-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="${col}"/>`;
+    });
+    axes.forEach((a, i) => {
+      const [x, y] = pt(i, TR.SLIDER_MAX + 2.6);
+      const anchor = Math.abs(x - c) < 8 ? 'middle' : x > c ? 'start' : 'end';
+      svg += `<text class="rd-label" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${anchor}">${esc(a.name)} <tspan class="rd-val">${String(Math.round(a.val * 10) / 10).replace('.', ',')}</tspan></text>`;
+    });
+    return `<svg class="radar" viewBox="-40 -10 380 320" role="img" aria-label="Средние оценки канала по критериям">${svg}</svg>`;
+  }
+
+  // Оценки канала во времени: точки цвета оценки, пунктир — среднее
+  function timelineSvg(list, avg) {
+    const W = 600;
+    const H = 150;
+    const m = { l: 10, r: 10, t: 14, b: 24 };
+    const ts = list.map((v) => v.rating.updatedAt || 0);
+    const t0 = Math.min(...ts);
+    const span = Math.max(1, Math.max(...ts) - t0);
+    const x = (t) => m.l + (list.length === 1 ? 0.5 : (t - t0) / span) * (W - m.l - m.r);
+    const y = (s) => m.t + (1 - s / TR.MAX_SCORE) * (H - m.t - m.b);
+    const pts = list.map((v) => [x(v.rating.updatedAt || 0), y(v.rating.total), v]);
+    const path = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const fmtM = (t) => new Date(t).toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' });
+    return `<svg class="tl" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Оценки видео канала по времени">
+      <line class="tl-avg" x1="${m.l}" x2="${W - m.r}" y1="${y(avg).toFixed(1)}" y2="${y(avg).toFixed(1)}"/>
+      <path class="tl-line" d="${path}"/>
+      ${pts.map(([px, py, v]) => `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="6" fill="${TR.grade(v.rating.total).mark}" class="tl-dot"/>`).join('')}
+      <text class="tl-t" x="${m.l}" y="${H - 6}">${fmtM(t0)}</text><text class="tl-t" x="${W - m.r}" y="${H - 6}" text-anchor="end">${fmtM(t0 + span)}</text>
+    </svg>`;
   }
 
   // Профиль канала — в том же листе снизу, что и видео
@@ -461,29 +581,56 @@
     if (!c) return;
     const s = settings();
     sheet.id = null;
-    // Средние по критериям: сначала общие для всех типов, потом самые частые
+    const mean = (list, id) => {
+      const xs = list.map((v) => v.rating.scores?.[id]).filter((x) => typeof x === 'number');
+      return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+    };
+    const allRated = Object.values(db.videos).filter((v) => v.rating);
+    // Оси — критерии, по которым канал оценивали: сначала общие для всех типов, потом самые частые
     const acc = {};
     for (const v of c.rated) for (const [id, x] of Object.entries(v.rating.scores)) if (typeof x === 'number') ((acc[id] ||= { id, sum: 0, n: 0 }).sum += x), acc[id].n++;
-    const bars = Object.values(acc)
+    const axes = Object.values(acc)
       .sort((a, b) => TR.COMMON_CRITERIA.includes(b.id) - TR.COMMON_CRITERIA.includes(a.id) || b.n - a.n)
       .slice(0, 6)
-      .map((x) => critBar(TR.critName(x.id, s), Math.round((x.sum / x.n) * 10) / 10))
-      .join('');
+      .map((x) => ({ id: x.id, name: TR.critName(x.id, s), val: x.sum / x.n, base: mean(allRated, x.id) }));
+    const strong = axes.slice().sort((a, b) => b.val - a.val)[0];
+    const weak = axes.slice().sort((a, b) => a.val - b.val)[0];
+    const fmt1 = (x) => String(Math.round(x * 10) / 10).replace('.', ',');
+    const chart = axes.length >= 3 ? radarSvg(axes) : axes.length ? `<div class="crit-bars">${axes.map((a) => critBar(a.name, Math.round(a.val * 10) / 10)).join('')}</div>` : '';
+    let trend = '';
+    if (c.rated.length >= 4) {
+      const half = Math.floor(c.rated.length / 2);
+      const a1 = c.rated.slice(0, half).reduce((x, v) => x + v.rating.total, 0) / half;
+      const a2 = c.rated.slice(half).reduce((x, v) => x + v.rating.total, 0) / (c.rated.length - half);
+      const d = Math.round(a2 - a1);
+      trend = Math.abs(d) < 3 ? 'Канал держит уровень.' : d > 0 ? `Канал растёт: новые видео в среднем на <b>${d}</b> выше прежних.` : `Канал проседает: новые видео в среднем на <b>${-d}</b> ниже прежних.`;
+    }
     const best = c.rated.slice().sort((a, b) => b.rating.total - a.rating.total).slice(0, 3);
     const later = Object.values(db.videos).filter((v) => v.channel === name && v.later && !v.watchedAt).sort((a, b) => b.later.priority - a.later.priority);
+    const notes = Object.values(db.videos).filter((v) => v.channel === name && (v.note || v.moments?.length)).sort((a, b) => (b.noteAt || 0) - (a.noteAt || 0)).slice(0, 4);
     const reasons = Object.entries(c.reasons).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([r]) => TR.dropReason(r).label.toLowerCase());
     const meta = [
       c.min ? `смотрели ${fmtMin(c.min)}` : '',
+      c.views ? `видео в истории: ${c.views}` : '',
       c.rated.length ? `${c.rated.length} ${plural(c.rated.length, 'оценка', 'оценки', 'оценок')}` : 'оценок пока нет',
       c.finishPct != null ? `досматриваете ${c.finishPct}%` : '',
       c.dropped ? `бросили ${c.dropped}: ${reasons.join(', ')}` : '',
     ].filter(Boolean);
+    const g = c.avg != null ? TR.grade(c.avg) : null;
     $('#sheet-body').innerHTML = `
       <button type="button" class="sh-close" data-sh="close" aria-label="Закрыть">✕</button>
       <div class="ch-head">${chAvatar(c, 64)}<div><h2 id="sh-title">${esc(c.name)}</h2><div class="muted">${meta.join(' · ')}</div></div></div>
-      ${c.avg != null ? `<div class="sh-sec rate-top">${ringSvg(c.avg, 84)}<div><span class="grade" style="background:${TR.grade(c.avg).color}">${TR.grade(c.avg).label}</span><div class="muted" style="margin-top:6px">средняя оценка канала</div></div></div>` : ''}
-      ${bars ? `<div class="sh-sec"><span class="sh-label">По критериям</span><div class="crit-bars">${bars}</div></div>` : ''}
+      ${g ? `<div class="sh-sec rate-top">${ringSvg(c.avg, 84)}<div><span class="grade${g.perfect ? ' perfect' : ''}" style="background:${g.color}">${g.perfect ? '★ ' : ''}${g.label}</span><div class="muted" style="margin-top:6px">средняя оценка канала</div></div></div>` : ''}
+      ${
+        chart
+          ? `<div class="sh-sec"><span class="sh-label">Сильные и слабые стороны</span>${chart}
+              ${axes.length >= 3 ? '<div class="rd-legend"><span><i class="sw-shape"></i>этот канал</span><span><i class="sw-base"></i>все ваши оценки</span></div>' : ''}
+              ${strong ? `<p class="muted rd-sum">Сильнее всего — <b>${esc(strong.name)}</b> ${fmt1(strong.val)}${weak && weak !== strong ? `, слабее всего — <b>${esc(weak.name)}</b> ${fmt1(weak.val)}` : ''}.</p>` : ''}</div>`
+          : ''
+      }
+      ${c.rated.length >= 2 ? `<div class="sh-sec"><span class="sh-label">Оценки во времени</span>${timelineSvg(c.rated, c.avg)}${trend ? `<p class="muted rd-sum">${trend}</p>` : ''}</div>` : ''}
       ${best.length ? `<div class="sh-sec"><span class="sh-label">Лучшее</span>${best.map((v) => card(v, false)).join('')}</div>` : ''}
+      ${notes.length ? `<div class="sh-sec"><span class="sh-label">Ваши отзывы и моменты</span>${notes.map((v) => card(v, false, v.note ? `«${v.note.slice(0, 60)}${v.note.length > 60 ? '…' : ''}»` : `моментов: ${v.moments.length}`)).join('')}</div>` : ''}
       ${later.length ? `<div class="sh-sec"><span class="sh-label">Ждёт в «Позже+»</span>${later.slice(0, 5).map((v) => card(v, false)).join('')}</div>` : ''}
       ${c.url ? `<div class="sh-sec"><a class="btn wide" href="${esc(c.url)}" target="_blank" rel="noopener">Открыть канал на YouTube ↗</a></div>` : ''}`;
     if (!sheetEl.open) sheetEl.showModal();
@@ -495,37 +642,138 @@
   });
 
   // ---------- Статистика ----------
-  // Время просмотра приходит с компьютера через Google Drive (сводка по дням); оценки — свои.
-  const stState = { mode: 'month', off: 0 };
-  function renderStats() {
-    const days = db.stats?.days || {};
-    const mins = (k) => (days[k] ? (days[k][0] || 0) + (days[k][1] || 0) : 0);
-    const keyOf = (d) => TR.dateKey(d);
-    const back = (n) => {
-      const d = new Date();
-      d.setHours(12, 0, 0, 0);
-      d.setDate(d.getDate() - n);
-      return d;
-    };
-    const sumBack = (n) => Array.from({ length: n }, (_, i) => mins(keyOf(back(i)))).reduce((a, b) => a + b, 0);
-    let streak = 0;
-    for (let i = mins(keyOf(back(0))) ? 0 : 1; mins(keyOf(back(i))); i++) streak++;
-    const has = Object.keys(days).length > 0;
-    const ratedBy = ratedDays();
+  // Время просмотра приходит с компьютера через Google Drive: сводка по дням (с историей YouTube с других
+  // устройств), часам, каналам и видео, «Интересные факты» — то же, что в статистике расширения. Оценки — свои.
+  const stState = { range: 30, mode: 'month', off: 0, open: new Set() };
+  const RANGES = [
+    [7, '7 дней'],
+    [30, '30 дней'],
+    [90, '90 дней'],
+    [365, 'Год'],
+    [0, 'Всё время'],
+  ];
+  const keyOf = (d) => TR.dateKey(d);
+  const dayBack = (n) => {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() - n);
+    return d;
+  };
+  const statDays = () => db.stats?.days || {};
+  const dayMin = (k) => {
+    const d = statDays()[k];
+    return d ? (d[0] || 0) + (d[1] || 0) : 0;
+  };
+  // Серия дней подряд с YouTube (как на компьютере); без сводки с компьютера — по дням с оценками
+  function youtubeStreak() {
+    const days = statDays();
+    const keys = Object.keys(days).filter((k) => dayMin(k) > 0).sort();
+    if (!keys.length) return null;
+    let cur = 0;
+    for (let i = dayMin(keyOf(dayBack(0))) ? 0 : 1; dayMin(keyOf(dayBack(i))); i++) cur++;
+    let best = 1;
+    let run = 1;
+    for (let i = 1; i < keys.length; i++) {
+      const gap = Math.round((new Date(keys[i] + 'T12:00:00') - new Date(keys[i - 1] + 'T12:00:00')) / 86400000);
+      run = gap === 1 ? run + 1 : 1;
+      best = Math.max(best, run);
+    }
+    return { cur, best };
+  }
 
-    // Кинолента за 30 дней: высота — время, цвет — средняя оценка оценённого в этот день
-    const last = Array.from({ length: 30 }, (_, i) => back(29 - i));
-    const maxM = Math.max(30, ...last.map((d) => mins(keyOf(d))));
-    const film = last
-      .map((d, i) => {
-        const k = keyOf(d);
-        const m = mins(k);
-        const r = ratedBy[k];
-        const avg = r ? Math.round(r.reduce((a, b) => a + b, 0) / r.length) : null;
-        const h = m ? Math.max(4, Math.round((m / maxM) * 100)) : 0;
-        return `<div class="fm-col" title="${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}: ${m ? fmtMin(m) : 'без YouTube'}"><span style="height:${h}%;background:${avg != null ? TR.scoreMark(avg) : 'var(--violet-line)'}"></span>${i % 7 === 1 ? `<small>${d.getDate()}</small>` : ''}</div>`;
+  // Горизонтальные полоски с подписью: первые 8, остальное — «Показать все»
+  function hbars(id, rows) {
+    const open = stState.open.has(id);
+    const max = Math.max(1, ...rows.map((r) => r.value));
+    const shown = open ? rows : rows.slice(0, 8);
+    return (
+      `<div class="hbars">${shown
+        .map(
+          (r, i) => `<div class="hb${r.channel ? ' hb-link' : ''}" ${r.channel ? `data-channel="${esc(r.channel)}"` : r.video ? `data-open="${r.video}"` : ''} style="--i:${Math.min(i, 10)}">
+            ${r.lead || ''}<span class="hb-body"><span class="hb-top"><span class="hb-name">${esc(r.name)}</span><b>${r.label}</b></span>
+            <span class="hb-track"><span style="width:${Math.max(2, (r.value / max) * 100).toFixed(1)}%;${r.color ? `background:${r.color}` : ''}"></span></span>${r.sub ? `<span class="hb-sub">${r.sub}</span>` : ''}</span></div>`
+        )
+        .join('')}</div>` + (rows.length > 8 ? `<button type="button" class="link-btn more" data-more="${id}">${open ? 'Свернуть' : `Показать все (${rows.length})`}</button>` : '')
+    );
+  }
+
+  function renderStats() {
+    const S = db.stats || {};
+    const v2 = S.v === 2;
+    const days = statDays();
+    const has = Object.keys(days).length > 0;
+    const range = stState.range;
+    const wi = WIN[range];
+    const today = keyOf(dayBack(0));
+    const firstKey = Object.keys(days).sort()[0] || today;
+    const span = range || Math.max(1, Math.round((new Date(today + 'T12:00:00') - new Date(firstKey + 'T12:00:00')) / 86400000) + 1);
+    const keys = Array.from({ length: span }, (_, i) => keyOf(dayBack(span - 1 - i)));
+    const rMin = keys.reduce((a, k) => a + dayMin(k), 0);
+    const rEst = keys.reduce((a, k) => a + (days[k]?.[1] || 0), 0);
+    const rViews = keys.reduce((a, k) => a + (days[k]?.[2] || 0), 0);
+    const active = keys.filter((k) => dayMin(k) > 0).length;
+    const st = youtubeStreak();
+    const ratedBy = ratedDays();
+    const approx = rEst > rMin / 2 ? '≈ ' : '';
+
+    // Кинолента: до 90 дней — по дням, год — по неделям, всё время — по месяцам
+    const groups = [];
+    if (span <= 90) for (const k of keys) groups.push({ keys: [k], label: new Date(k + 'T12:00:00').getDate(), title: new Date(k + 'T12:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) });
+    else if (range === 365) for (let i = 0; i < keys.length; i += 7) groups.push({ keys: keys.slice(i, i + 7), label: '', title: `неделя с ${new Date(keys[i] + 'T12:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}` });
+    else {
+      const byM = {};
+      for (const k of keys) (byM[k.slice(0, 7)] ||= []).push(k);
+      for (const [m, ks] of Object.entries(byM)) groups.push({ keys: ks, label: '', title: new Date(m + '-15T12:00:00').toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }) });
+    }
+    const gMin = groups.map((g) => g.keys.reduce((a, k) => a + dayMin(k), 0));
+    const maxG = Math.max(30, ...gMin);
+    const every = Math.max(1, Math.ceil(groups.length / 6));
+    const film = groups
+      .map((g, i) => {
+        const r = g.keys.flatMap((k) => ratedBy[k] || []);
+        const avg = r.length ? Math.round(r.reduce((a, b) => a + b, 0) / r.length) : null;
+        const h = gMin[i] ? Math.max(4, Math.round((gMin[i] / maxG) * 100)) : 0;
+        const lbl = g.label !== '' && i % every === every - 1 ? `<small>${g.label}</small>` : '';
+        return `<div class="fm-col" title="${g.title}: ${gMin[i] ? fmtMin(gMin[i]) : 'без YouTube'}"><span style="height:${h}%;--d:${i};background:${avg != null ? TR.scoreMark(avg) : 'var(--violet-line)'}"></span>${lbl}</div>`;
       })
       .join('');
+
+    // Каналы и видео за период
+    const chans = channelList();
+    const topCh = chans
+      .filter((c) => c.mins[wi] > 0)
+      .sort((a, b) => b.mins[wi] - a.mins[wi])
+      .map((c) => ({ name: c.name, channel: c.name, value: c.mins[wi], label: fmtMin(c.mins[wi]), lead: chAvatar(c, 32), sub: c.avg != null ? `в среднем ${c.avg}` : '' }));
+    const worth = chans
+      .filter((c) => c.rated.length >= 2 && c.mins[wi] > 0)
+      .sort((a, b) => b.mins[wi] - a.mins[wi])
+      .map((c) => {
+        const bad = c.avg < 50;
+        return { name: c.name, channel: c.name, value: c.mins[wi], label: `${fmtMin(c.mins[wi])} · ${c.avg}`, lead: chAvatar(c, 32), color: TR.scoreMark(c.avg), sub: bad ? 'много времени — низкая оценка' : `${c.rated.length} ${plural(c.rated.length, 'оценка', 'оценки', 'оценок')}` };
+      });
+    const topVid = (S.topVideos?.[wi] || []).map(([id, title, channel, min]) => ({
+      name: db.videos[id]?.title || title || 'Видео ' + id,
+      video: id,
+      value: min,
+      label: fmtMin(min),
+      lead: `<img class="hb-thumb" src="${TR.thumbUrl(id)}" alt="" loading="lazy">`,
+      sub: esc(channel || ''),
+    }));
+    // По часам суток и дням недели
+    const hrs = Array(24).fill(0);
+    const wd = Array(7).fill(0);
+    for (const k of keys) {
+      (S.hours?.[k] || []).forEach((n, h) => (hrs[h] += n || 0));
+      const v = days[k]?.[2] || 0;
+      wd[(new Date(k + 'T12:00:00').getDay() + 6) % 7] += v || (v2 ? 0 : dayMin(k));
+    }
+    const vbars = (vals, labels, every2) => {
+      const mx = Math.max(1, ...vals);
+      return `<div class="vbars">${vals.map((n, i) => `<div class="vb" title="${labels[i]}: ${n}"><span style="height:${n ? Math.max(4, (n / mx) * 100) : 0}%;--d:${i}"></span><small>${i % every2 === 0 ? labels[i] : ''}</small></div>`).join('')}</div>`;
+    };
+    const hourLabels = hrs.map((_, h) => String(h));
+    const topHour = hrs.indexOf(Math.max(...hrs));
+    const wdNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
     // Итоги месяца или года
     const now = new Date();
@@ -533,31 +781,41 @@
     const prefix = stState.mode === 'year' ? String(start.getFullYear()) : keyOf(start).slice(0, 7);
     const inP = (ts) => ts && keyOf(new Date(ts)).startsWith(prefix);
     const pKeys = Object.keys(days).filter((k) => k.startsWith(prefix));
-    const pMin = pKeys.reduce((a, k) => a + mins(k), 0);
+    const pMin = pKeys.reduce((a, k) => a + dayMin(k), 0);
     const V = Object.values(db.videos);
-    const rated = V.filter((v) => v.rating && inP(v.rating.updatedAt));
-    const avg = rated.length ? Math.round(rated.reduce((a, v) => a + v.rating.total, 0) / rated.length) : null;
-    const best = rated.slice().sort((a, b) => b.rating.total - a.rating.total || b.rating.updatedAt - a.rating.updatedAt)[0];
-    const byCh = {};
-    for (const v of rated) if (v.channel) byCh[v.channel] = (byCh[v.channel] || 0) + 1;
-    const topCh = Object.entries(byCh).sort((a, b) => b[1] - a[1])[0];
+    const pRated = V.filter((v) => v.rating && inP(v.rating.updatedAt));
+    const pAvg = pRated.length ? Math.round(pRated.reduce((a, v) => a + v.rating.total, 0) / pRated.length) : null;
+    const pBest = pRated.slice().sort((a, b) => b.rating.total - a.rating.total || b.rating.updatedAt - a.rating.updatedAt)[0];
     const moments = V.reduce((n, v) => n + (v.moments || []).filter((m) => inP(m.at)).length, 0);
-    const dropped = V.filter((v) => v.dropped && inP(v.dropped.at)).length;
+    const pDropped = V.filter((v) => v.dropped && inP(v.dropped.at)).length;
     const title = stState.mode === 'year' ? `${start.getFullYear()}` : start.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }).replace(' г.', '');
     const first = [...Object.keys(days), ...V.filter((v) => v.rating).map((v) => keyOf(new Date(v.rating.updatedAt)))].sort()[0] || keyOf(now);
     const canBack = (stState.mode === 'year' ? first.slice(0, 4) : first.slice(0, 7)) < prefix;
+    // Канал периода — больше всего времени (по сводке), иначе больше всего оценок
+    const pChTime = {};
+    if (v2 && stState.off === 0) for (const c of chans) if (c.mins[stState.mode === 'year' ? 3 : 1] > 0) pChTime[c.name] = c.mins[stState.mode === 'year' ? 3 : 1];
+    const byCh = {};
+    for (const v of pRated) if (v.channel) byCh[v.channel] = (byCh[v.channel] || 0) + 1;
+    const pTopCh = Object.entries(Object.keys(pChTime).length ? pChTime : byCh).sort((a, b) => b[1] - a[1])[0];
 
+    const rangeSeg = `<div class="seg seg-scroll" style="margin-bottom:12px">${RANGES.map(([n, l]) => `<button type="button" data-range="${n}" class="${range === n ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     $('#stats-box').innerHTML = `
+      ${rangeSeg}
       ${
         has
           ? `<div class="stat-tiles">
-              <div class="card st"><span>Сегодня</span><b>${fmtMin(mins(keyOf(back(0))))}</b></div>
-              <div class="card st"><span>7 дней</span><b>${fmtMin(sumBack(7))}</b></div>
-              <div class="card st"><span>30 дней</span><b>${fmtMin(sumBack(30))}</b></div>
+              <div class="card st"><span>На YouTube</span><b data-count>${approx}${fmtMin(rMin)}</b></div>
+              <div class="card st"><span>В среднем в день</span><b>${fmtMin(Math.round(rMin / span))}</b></div>
+              <div class="card st"><span>${v2 && rViews ? 'Видео' : 'Дней с YouTube'}</span><b>${v2 && rViews ? rViews : active}</b></div>
             </div>
-            <div class="card"><div class="wk-top">${streak ? `<span class="wk-streak">${fireNum(streak)}</span><span>${plural(streak, 'день', 'дня', 'дней')} подряд с YouTube</span>` : '<span class="muted">Серия начнётся с первого дня с YouTube</span>'}</div>
-              <span class="sh-label" style="margin-top:12px">Кинолента · 30 дней</span><div class="film">${film}</div>
-              <p class="muted" style="margin:8px 0 0">Высота — сколько смотрели, цвет — средняя оценка за день.</p></div>`
+            <div class="card"><div class="wk-top">${st?.cur ? `<span class="wk-streak">${fireNum(st.cur)}</span><span>${plural(st.cur, 'день', 'дня', 'дней')} подряд с YouTube</span>` : '<span class="muted">Серия начнётся с первого дня с YouTube</span>'}<span class="spacer"></span><span class="muted">рекорд ${st?.best || 0}</span></div>
+              <span class="sh-label" style="margin-top:12px">Кинолента · ${RANGES.find((r) => r[0] === range)[1].toLowerCase()}</span><div class="film">${film}</div>
+              <p class="muted" style="margin:8px 0 0">Высота — сколько смотрели, цвет — средняя оценка оценённого за ${span <= 90 ? 'день' : range === 365 ? 'неделю' : 'месяц'}.</p></div>
+            ${worth.length ? `<div class="card"><h2>Стоит ли времени</h2><p class="muted">Каналы с двумя и больше оценками: сколько времени ушло за период и как вы их оцениваете.</p>${hbars('worth', worth)}</div>` : ''}
+            ${topCh.length ? `<div class="card"><h2>Каналы, на которые ушло больше всего времени</h2>${hbars('topch', topCh)}</div>` : ''}
+            ${topVid.length ? `<div class="card"><h2>Видео, на которые ушло больше всего времени</h2>${hbars('topvid', topVid)}</div>` : ''}
+            ${hrs.some(Boolean) ? `<div class="card"><h2>По часам суток</h2>${vbars(hrs, hourLabels, 3)}<p class="muted" style="margin:8px 0 0">Чаще всего начинаете смотреть в ${topHour}:00–${topHour + 1}:00.</p></div>` : ''}
+            ${wd.some(Boolean) ? `<div class="card"><h2>По дням недели</h2>${vbars(wd, wdNames, 1)}</div>` : ''}`
           : `<div class="card"><h2>Время просмотра</h2><p class="muted" style="margin:0">Время приходит с компьютера: подключите Google Drive в расширении («Настройки» → «История и синхронизация») и здесь (⚙ сверху). На телефоне его не посчитать — смотрите вы в приложении YouTube.</p></div>`
       }
       <div class="card">
@@ -566,14 +824,34 @@
         <div class="seg" style="margin:10px 0 12px"><button type="button" data-stmode="month" class="${stState.mode === 'month' ? 'on' : ''}">Месяц</button><button type="button" data-stmode="year" class="${stState.mode === 'year' ? 'on' : ''}">Год</button></div>
         <div class="stats">
           <div><b>${has ? fmtMin(pMin) : '—'}</b><span>на YouTube${has ? ` · дней ${pKeys.length}` : ''}</span></div>
-          <div><b>${rated.length}</b><span>оценено${avg != null ? ` · в среднем ${avg}` : ''}</span></div>
-          <div><b>${moments} · ${dropped}</b><span>моментов · брошено</span></div>
+          <div><b>${pRated.length}</b><span>оценено${pAvg != null ? ` · в среднем ${pAvg}` : ''}</span></div>
+          <div><b>${moments} · ${pDropped}</b><span>моментов · брошено</span></div>
         </div>
-        ${best ? `<span class="sh-label" style="margin-top:14px">Видео ${stState.mode === 'year' ? 'года' : 'месяца'}</span>${card(best, false)}` : ''}
-        ${topCh ? `<span class="sh-label" style="margin-top:10px">Канал ${stState.mode === 'year' ? 'года' : 'месяца'}</span><button type="button" class="ch-item" data-channel="${esc(topCh[0])}">${chAvatar(channelList().find((c) => c.name === topCh[0]) || { name: topCh[0] }, 44)}<span class="vinfo"><span class="vtitle">${esc(topCh[0])}</span><span class="vmeta">${topCh[1]} ${plural(topCh[1], 'оценка', 'оценки', 'оценок')}</span></span></button>` : ''}
-      </div>`;
+        ${pBest ? `<span class="sh-label" style="margin-top:14px">Видео ${stState.mode === 'year' ? 'года' : 'месяца'}</span>${card(pBest, false)}` : ''}
+        ${pTopCh ? `<span class="sh-label" style="margin-top:10px">Канал ${stState.mode === 'year' ? 'года' : 'месяца'}</span><button type="button" class="ch-item" data-channel="${esc(pTopCh[0])}">${chAvatar(chans.find((c) => c.name === pTopCh[0]) || { name: pTopCh[0] }, 44)}<span class="vinfo"><span class="vtitle">${esc(pTopCh[0])}</span><span class="vmeta">${Object.keys(pChTime).length ? fmtMin(pTopCh[1]) : `${pTopCh[1]} ${plural(pTopCh[1], 'оценка', 'оценки', 'оценок')}`}</span></span></button>` : ''}
+      </div>
+      ${
+        S.facts?.length
+          ? `<div class="card"><h2>Интересные факты <span class="muted">· за всё время</span></h2><div class="facts">${S.facts
+              .map((f) => `<div class="fact"><span class="fact-ico">${esc(f.icon)}</span><span><span class="fact-k">${esc(f.k)}</span><b>${esc(f.v)}</b><span class="fact-d">${esc(f.d)}</span></span></div>`)
+              .join('')}</div></div>`
+          : ''
+      }`;
   }
   document.addEventListener('click', (e) => {
+    const r = e.target.closest('[data-range]');
+    if (r) {
+      stState.range = Number(r.dataset.range);
+      stState.open.clear();
+      return renderStats();
+    }
+    const more = e.target.closest('[data-more]');
+    if (more) {
+      const id = more.dataset.more;
+      if (stState.open.has(id)) stState.open.delete(id);
+      else stState.open.add(id);
+      return renderStats();
+    }
     const m = e.target.closest('[data-stmode]');
     if (m) {
       stState.mode = m.dataset.stmode;
@@ -601,6 +879,59 @@
   // ---------- Лист видео ----------
   const sheet = { id: null, type: null, picked: null, scores: {}, skip: new Set(), shareT: 0 };
   const sheetEl = $('#sheet');
+
+  // Закрытие листа — уезжает вниз и гаснет, потом закрывается
+  let sheetClosing = false;
+  function closeSheet() {
+    if (!sheetEl.open || sheetClosing) return;
+    sheetClosing = true;
+    sheetEl.classList.add('closing');
+    setTimeout(() => {
+      sheetEl.classList.remove('closing', 'full');
+      sheetEl.style.transform = '';
+      sheetEl.close();
+      sheetClosing = false;
+    }, 220);
+  }
+
+  // Полоска сверху листа: тянуть вниз — закрыть, вверх — развернуть на весь экран
+  const drag = { y0: null, dy: 0 };
+  sheetEl.addEventListener(
+    'touchstart',
+    (e) => {
+      const onGrip = e.target.closest('.sheet-grip, .sh-head, .ch-head');
+      drag.y0 = onGrip || sheetEl.scrollTop <= 0 ? e.touches[0].clientY : null;
+      drag.grip = !!onGrip;
+      drag.dy = 0;
+    },
+    { passive: true }
+  );
+  sheetEl.addEventListener(
+    'touchmove',
+    (e) => {
+      if (drag.y0 == null) return;
+      drag.dy = e.touches[0].clientY - drag.y0;
+      if (drag.dy > 0 && (drag.grip || sheetEl.scrollTop <= 0)) {
+        e.preventDefault();
+        sheetEl.style.transition = 'none';
+        sheetEl.style.transform = `translateY(${drag.dy}px)`;
+      } else if (drag.dy < -50 && drag.grip) {
+        sheetEl.classList.add('full');
+      }
+    },
+    { passive: false }
+  );
+  sheetEl.addEventListener('touchend', () => {
+    if (drag.y0 == null) return;
+    sheetEl.style.transition = '';
+    if (drag.dy > 110) closeSheet();
+    else sheetEl.style.transform = '';
+    drag.y0 = null;
+  });
+  // Нажатие на полоску — развернуть или свернуть
+  sheetEl.addEventListener('click', (e) => {
+    if (e.target.closest('.sheet-grip')) sheetEl.classList.toggle('full');
+  });
 
   function openSheet(id, shareT = 0) {
     const v = video(id);
@@ -664,7 +995,7 @@
             </div>`
           )
           .join('')}
-        <div class="row" style="margin-top:14px"><button type="button" class="btn primary" data-sh="save">Сохранить оценку</button>${v.rating ? '<button type="button" class="btn" data-sh="unrate">Удалить</button>' : ''}</div>
+        <div class="row" style="margin-top:14px"><button type="button" class="btn primary" data-sh="save">Сохранить оценку</button>${v.rating ? '<button type="button" class="btn" data-sh="unrate">Удалить</button>' : TR.awaitingRating(v) ? '<button type="button" class="btn" data-sh="norate" title="Убрать из «Ждут оценки»">Не оценивать</button>' : ''}</div>
       </div>
 
       <div class="sh-sec">
@@ -741,7 +1072,7 @@
   sheetEl.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) {
-      if (e.target === sheetEl) sheetEl.close(); // нажатие на затемнение
+      if (e.target === sheetEl) closeSheet(); // нажатие на затемнение
       return;
     }
     const id = sheet.id;
@@ -775,7 +1106,7 @@
     }
     switch (b.dataset.sh) {
       case 'close':
-        sheetEl.close();
+        closeSheet();
         break;
       case 'watched':
         setWatched(id, !video(id).watchedAt);
@@ -798,14 +1129,21 @@
         if (sheet.autoAdded) setLater(id, 0);
         saveNoteIfChanged();
         toast(`Оценка ${video(id).rating.total} сохранена`);
-        sheetEl.close();
+        closeSheet();
         render();
         break;
       }
       case 'unrate':
         if (!confirm('Удалить оценку этого видео?')) return;
         rate(id, {});
-        sheetEl.close();
+        closeSheet();
+        render();
+        break;
+      case 'norate':
+        video(id).noRate = Date.now(); // убрать из «Ждут оценки» — уйдёт и на компьютер
+        save();
+        toast('Убрано из «Ждут оценки»');
+        closeSheet();
         render();
         break;
     }
@@ -818,14 +1156,14 @@
 
   // ---------- Обмен файлами с компьютером ----------
   // Храним только то, что нужно на телефоне: оценки, список, отзывы, «бросили», начатое — без статистики по дням.
-  const KEEP = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel'];
+  const KEEP = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden'];
   function slim(v) {
     const o = {};
     for (const k of KEEP) if (v[k] != null) o[k] = v[k];
     if (v.watch) o.watch = { real: v.watch.real, position: v.watch.position, maxProgress: v.watch.maxProgress, lastAt: v.watch.lastAt, remote: v.watch.remote };
     return o;
   }
-  const worthKeeping = (v) => v.rating || v.later || v.note || v.moments?.length || v.dropped || v.ratingDel || v.laterDel || v.droppedDel || TR.isStarted(v);
+  const worthKeeping = (v) => TR.worthSyncing(v);
 
   async function importFile(file) {
     const json = JSON.parse(await file.text());
@@ -1145,9 +1483,14 @@
   function toast(text) {
     const t = $('#toast');
     t.textContent = text;
+    t.classList.remove('leaving');
     t.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (t.hidden = true), 2200);
+    // уходит плавно: сначала гаснет, потом прячется
+    toastTimer = setTimeout(() => {
+      t.classList.add('leaving');
+      toastTimer = setTimeout(() => (t.hidden = true), 260);
+    }, 2200);
   }
 
   // Разделы: нижнее меню, название сверху (→ главная), «весь список» на главной
@@ -1166,10 +1509,26 @@
     render();
     window.scrollTo(0, 0);
     const sec = $('#view-' + to);
-    sec.classList.remove('enter-r', 'enter-l');
+    sec.classList.remove('enter-r', 'enter-l', 'entering');
     void sec.offsetWidth; // перезапуск анимации
     sec.classList.add('enter-' + dir);
+    markEntering(sec);
   });
+  // Клавиатура открыта (фокус в поле ввода) — нижнее меню прячем, чтобы iPhone не тащил его над клавиатурой
+  document.addEventListener('focusin', (e) => {
+    if (e.target.matches('input:not([type="range"]):not([type="checkbox"]), textarea')) document.body.classList.add('kb-open');
+  });
+  document.addEventListener('focusout', () => setTimeout(() => {
+    if (!document.activeElement?.matches?.('input:not([type="range"]), textarea')) document.body.classList.remove('kb-open');
+  }, 50));
+
+  // Появление карточек лесенкой — только при входе в раздел
+  let enterTimer = null;
+  function markEntering(sec) {
+    sec.classList.add('entering');
+    clearTimeout(enterTimer);
+    enterTimer = setTimeout(() => sec.classList.remove('entering'), 900);
+  }
   document.addEventListener('click', (e) => {
     const c = e.target.closest('[data-open]');
     if (c) openSheet(c.dataset.open);
@@ -1228,6 +1587,7 @@
 
   const backFromGoogle = takeAuthFromUrl();
   render();
+  markEntering($('#view-' + view));
   const shared = location.search.includes('url=') || location.search.includes('text=');
   handleShare();
   // При открытии — синхронизация; если токен истёк, тихий вход (кроме открытия через «Поделиться», чтобы не потерять ссылку)
