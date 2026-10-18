@@ -26,20 +26,10 @@
 html {
   -webkit-text-size-adjust: 100%;
 }
-/* Оболочка неподвижна: страница сама не прокручивается, прокручивается только список (main).
-   Иначе на iPhone при возвращении в приложение iOS на миг меняет высоту окна — и вся страница
-   вместе с нижней панелью дёргается вверх. */
-html,
+/* Обычная прокрутка страницы, как в ежедневнике: шапка прилипает сверху, нижнее меню закреплено у края окна.
+   Не делать страницу неподвижной «коробкой» высотой 100% (position: fixed + overflow: hidden): у приложения
+   с главного экрана iPhone такая коробка короче экрана, и снизу остаётся пустая полоса. */
 body {
-  height: 100%;
-  overflow: hidden;
-  overscroll-behavior: none;
-}
-body {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
   margin: 0;
   background: var(--bg);
   color: var(--text);
@@ -76,14 +66,14 @@ a {
 
 /* ---- Шапка ---- */
 .top {
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: 5;
-  flex: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
   /* Отступ под строку состояния: у уже установленного приложения iOS оставляет прозрачную строку
-     поверх страницы, у нового — обычную (тогда отступ 0). Шапка неподвижна, поэтому не дёргается. */
+     поверх страницы, у нового — обычную (тогда отступ 0). */
   padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 10px;
   background: var(--bg);
   box-shadow: 0 10px 14px -6px var(--bg);
@@ -137,7 +127,7 @@ a {
 }
 /* ---- Плашка «Доступна новая версия» — над нижним меню ---- */
 .update-bar {
-  position: absolute;
+  position: fixed;
   left: 12px;
   right: 12px;
   bottom: calc(70px + var(--safe-b));
@@ -211,7 +201,7 @@ a {
 
 /* ---- Потянуть вниз — обновить ---- */
 .ptr {
-  position: absolute;
+  position: fixed;
   left: 50%;
   top: 0;
   z-index: 4;
@@ -251,13 +241,9 @@ main.back {
   transition: transform 0.25s var(--ease), opacity 0.25s;
 }
 main {
-  flex: 1;
-  min-height: 0;
   overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  padding: 4px 16px 20px;
+  /* снизу — место под закреплённое меню */
+  padding: 4px 16px calc(84px + var(--safe-b));
 }
 .search {
   width: 100%;
@@ -384,9 +370,11 @@ main {
    Фон = цвет страницы (#110f16, он же theme-color и background_color в манифесте): если iOS оставит у приложения
    с главного экрана свою полосу внизу, она того же цвета и сливается с панелью. */
 .tabbar {
-  position: relative;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 6;
-  flex: none;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 2px;
@@ -785,7 +773,7 @@ textarea {
 
 /* ---- Уведомление ---- */
 .toast {
-  position: absolute;
+  position: fixed;
   left: 16px;
   right: 16px;
   bottom: calc(76px + var(--safe-b));

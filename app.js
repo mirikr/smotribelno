@@ -1100,7 +1100,7 @@
   mainEl.addEventListener(
     'touchstart',
     (e) => {
-      ptr.y0 = mainEl.scrollTop <= 0 && !sheetEl.open && e.touches.length === 1 ? e.touches[0].clientY : null;
+      ptr.y0 = window.scrollY <= 0 && !sheetEl.open && e.touches.length === 1 ? e.touches[0].clientY : null;
       ptr.d = 0;
       ptr.active = false;
     },
@@ -1111,7 +1111,7 @@
     (e) => {
       if (ptr.y0 == null) return;
       const dy = e.touches[0].clientY - ptr.y0;
-      if (dy <= 0 || mainEl.scrollTop > 0) {
+      if (dy <= 0 || window.scrollY > 0) {
         if (ptr.active) ptrPaint(0);
         ptr.active = false;
         return;
@@ -1158,13 +1158,13 @@
     if (!b) return;
     const to = b.dataset.view;
     if (to === view) {
-      $('main').scrollTo({ top: 0, behavior: 'smooth' }); // повторное нажатие — наверх
+      window.scrollTo({ top: 0, behavior: 'smooth' }); // повторное нажатие — наверх
       return;
     }
     const dir = ORDER.indexOf(to) > ORDER.indexOf(view) ? 'r' : 'l';
     view = to;
     render();
-    $('main').scrollTop = 0; // прокручивается только список, не страница
+    window.scrollTo(0, 0);
     const sec = $('#view-' + to);
     sec.classList.remove('enter-r', 'enter-l');
     void sec.offsetWidth; // перезапуск анимации
