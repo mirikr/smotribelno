@@ -163,7 +163,7 @@
   };
   const scoreBadge = (total) => {
     const g = TR.grade(total);
-    return g ? `<span class="score${g.perfect ? ' perfect' : ''}" style="background:${g.color}">${g.perfect ? '★ ' : ''}${total}</span>` : '';
+    return g ? `<span class="score${g.perfect ? ' perfect' : ''}" style="background:${g.color};--g:${g.color}">${g.perfect ? '★ ' : ''}${total}</span>` : '';
   };
   function card(v, started, note = '') {
     const pct = Math.round((started ? v.watch?.position : v.watch?.maxProgress) * 100) || 0;
@@ -182,9 +182,17 @@
     const queue = TR.laterQueue(db.videos).filter((v) => !ids.has(v.id));
     let html = '';
     if (started.length) html += `<h2 class="list-head">Продолжить <span>· ${started.length}</span></h2>${started.map((v) => card(v, true)).join('')}`;
-    for (const p of [3, 2, 1]) {
-      const g = queue.filter((v) => v.later.priority === p);
-      if (g.length) html += `<h2 class="list-head">${prioChip(p)}<span>${g.length} ${plural(g.length, 'видео', 'видео', 'видео')}</span></h2>${g.map((v) => card(v, false)).join('')}`;
+    // Отдельные подсвеченные блоки по важности; видны и пустыми — в них перетаскивают зажатием пальца
+    if (queue.length || started.length) {
+      html += '<p class="muted drag-hint">Зажмите видео и перетащите в другой блок, чтобы поменять важность.</p>';
+      for (const p of [3, 2, 1]) {
+        const g = queue.filter((v) => v.later.priority === p);
+        const P = TR.PRIORITIES[p];
+        html += `<section class="prio-group" data-prio="${p}" style="--pt:${P.tint};--pc:${P.color}">
+          <h2 class="list-head">${prioChip(p)}<span>${g.length} ${plural(g.length, 'видео', 'видео', 'видео')}</span></h2>
+          ${g.map((v) => card(v, false)).join('') || `<div class="drop-empty">Перетащите сюда — важность «${P.short}»</div>`}
+        </section>`;
+      }
     }
     $('#later-list').innerHTML =
       html ||
@@ -195,6 +203,116 @@
       }</div>`;
     $('#n-later').textContent = queue.length + started.length || '';
   }
+
+  // ---------- Перетаскивание в «Позже+»: зажать карточку ~0,4 с и вести пальцем в другой блок важности ----------
+  const dnd = { timer: null, card: null, ghost: null, id: null, x0: 0, y0: 0, dx: 0, dy: 0, over: null, active: false, suppressClick: false, raf: 0, lastY: 0 };
+  const laterListEl = $('#later-list');
+
+  function dndCancel() {
+    clearTimeout(dnd.timer);
+    dnd.timer = null;
+    if (!dnd.active) dnd.card = null;
+  }
+  function dndStart() {
+    dnd.timer = null;
+    const r = dnd.card.getBoundingClientRect();
+    dnd.dx = dnd.x0 - r.left;
+    dnd.dy = dnd.y0 - r.top;
+    const ghost = dnd.card.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    ghost.style.width = r.width + 'px';
+    ghost.style.transform = `translate(${r.left}px, ${r.top}px) scale(1.03)`;
+    document.body.appendChild(ghost);
+    dnd.ghost = ghost;
+    dnd.active = true;
+    dnd.card.classList.add('dragging');
+    laterListEl.classList.add('drag-active');
+    navigator.vibrate?.(12);
+  }
+  function dndMove(x, y) {
+    dnd.ghost.style.transform = `translate(${x - dnd.dx}px, ${y - dnd.dy}px) scale(1.03)`;
+    const under = document.elementFromPoint(x, y)?.closest?.('.prio-group');
+    if (under !== dnd.over) {
+      dnd.over?.classList.remove('drop-over');
+      under?.classList.add('drop-over');
+      dnd.over = under || null;
+    }
+    dnd.lastY = y;
+    // у верхнего и нижнего края — прокручиваем список
+    if (!dnd.raf) {
+      const step = () => {
+        dnd.raf = 0;
+        if (!dnd.active) return;
+        const h = innerHeight;
+        const v = dnd.lastY < 120 ? -Math.ceil((120 - dnd.lastY) / 8) : dnd.lastY > h - 140 ? Math.ceil((dnd.lastY - (h - 140)) / 8) : 0;
+        if (v) {
+          window.scrollBy(0, v);
+          dnd.raf = requestAnimationFrame(step);
+        }
+      };
+      dnd.raf = requestAnimationFrame(step);
+    }
+  }
+  function dndEnd() {
+    const id = dnd.id;
+    const g = dnd.over;
+    dnd.over?.classList.remove('drop-over');
+    dnd.ghost?.remove();
+    dnd.card?.classList.remove('dragging');
+    laterListEl.classList.remove('drag-active');
+    dnd.active = false;
+    dnd.ghost = dnd.card = dnd.over = null;
+    dnd.suppressClick = true; // отпускание пальца после перетаскивания — не «нажатие» на карточку
+    setTimeout(() => (dnd.suppressClick = false), 400);
+    if (!g || !id) return;
+    const p = Number(g.dataset.prio);
+    if (video(id).later?.priority === p) return;
+    setLater(id, p);
+    toast(`Важность: ${TR.PRIORITIES[p].label.toLowerCase()}`);
+    renderLater();
+    const moved = $(`#later-list [data-open="${id}"]`);
+    moved?.classList.add('just-moved');
+  }
+  laterListEl.addEventListener(
+    'touchstart',
+    (e) => {
+      const c = e.target.closest('.vcard[data-open]');
+      if (!c || e.touches.length > 1) return;
+      dnd.card = c;
+      dnd.id = c.dataset.open;
+      dnd.x0 = e.touches[0].clientX;
+      dnd.y0 = e.touches[0].clientY;
+      dnd.timer = setTimeout(dndStart, 420);
+    },
+    { passive: true }
+  );
+  laterListEl.addEventListener(
+    'touchmove',
+    (e) => {
+      const t = e.touches[0];
+      if (dnd.active) {
+        e.preventDefault(); // во время перетаскивания страница не прокручивается сама
+        return dndMove(t.clientX, t.clientY);
+      }
+      if (dnd.timer && Math.hypot(t.clientX - dnd.x0, t.clientY - dnd.y0) > 10) dndCancel(); // это прокрутка
+    },
+    { passive: false }
+  );
+  laterListEl.addEventListener('touchend', () => (dnd.active ? dndEnd() : dndCancel()));
+  laterListEl.addEventListener('touchcancel', () => (dnd.active ? dndEnd() : dndCancel()));
+  // Долгое нажатие на iPhone открывает меню ссылки/картинки — у карточек его нет
+  laterListEl.addEventListener('contextmenu', (e) => e.target.closest('.vcard') && e.preventDefault());
+  // После перетаскивания «клик» по карточке не открывает её
+  document.addEventListener(
+    'click',
+    (e) => {
+      if (dnd.suppressClick && e.target.closest('#later-list .vcard')) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    },
+    true
+  );
 
   // Оценки: «Оценённые», «Ждут оценки» (досмотрено, но без оценки — в т. ч. на компьютере), «Бросили»
   const rState = { tab: 'rated' };
@@ -366,7 +484,7 @@
           .join('');
         ticketHtml = `<div class="card ticket">
           <span class="sh-label">Последняя оценка</span>
-          <button type="button" class="tk-last" data-open="${last.id}">${ringSvg(last.rating.total, 76)}<span class="vinfo"><span class="vtitle">${esc(last.title || 'Видео ' + last.id)}</span><span class="vmeta">${esc(last.channel || '')}</span>${g ? `<span class="grade" style="background:${g.color};align-self:flex-start">${g.perfect ? '★ ' : ''}${g.label}</span>` : ''}</span></button>
+          <button type="button" class="tk-last" data-open="${last.id}">${ringSvg(last.rating.total, 76)}<span class="vinfo"><span class="vtitle">${esc(last.title || 'Видео ' + last.id)}</span><span class="vmeta">${esc(last.channel || '')}</span>${g ? `<span class="grade" style="background:${g.color};--g:${g.color};align-self:flex-start">${g.perfect ? '★ ' : ''}${g.label}</span>` : ''}</span></button>
           <div class="crit-bars">${bars}</div>
         </div>`;
       }
@@ -620,7 +738,7 @@
     $('#sheet-body').innerHTML = `
       <button type="button" class="sh-close" data-sh="close" aria-label="Закрыть">✕</button>
       <div class="ch-head">${chAvatar(c, 64)}<div><h2 id="sh-title">${esc(c.name)}</h2><div class="muted">${meta.join(' · ')}</div></div></div>
-      ${g ? `<div class="sh-sec rate-top">${ringSvg(c.avg, 84)}<div><span class="grade${g.perfect ? ' perfect' : ''}" style="background:${g.color}">${g.perfect ? '★ ' : ''}${g.label}</span><div class="muted" style="margin-top:6px">средняя оценка канала</div></div></div>` : ''}
+      ${g ? `<div class="sh-sec rate-top">${ringSvg(c.avg, 84)}<div><span class="grade${g.perfect ? ' perfect' : ''}" style="background:${g.color};--g:${g.color}">${g.perfect ? '★ ' : ''}${g.label}</span><div class="muted" style="margin-top:6px">средняя оценка канала</div></div></div>` : ''}
       ${
         chart
           ? `<div class="sh-sec"><span class="sh-label">Сильные и слабые стороны</span>${chart}
@@ -1050,6 +1168,7 @@
     ge.hidden = !g;
     ge.textContent = g ? (g.perfect ? '★ ' : '') + g.label : '';
     ge.style.background = g ? g.color : '';
+    ge.style.setProperty('--g', g ? g.color : 'transparent');
     const n = Object.keys(scores).length;
     const all = ids.filter((c) => !sheet.skip.has(c)).length;
     $('#sh-note').textContent = !n ? 'двигайте ползунки' : n < all ? `заполнено ${n} из ${all}` : '';
@@ -1449,7 +1568,8 @@
     (e) => {
       if (ptr.y0 == null) return;
       const dy = e.touches[0].clientY - ptr.y0;
-      if (dy <= 0 || window.scrollY > 0) {
+      if (dy <= 0 || window.scrollY > 0 || dnd.active) {
+        // тянем карточку в «Позже+» — это не жест обновления
         if (ptr.active) ptrPaint(0);
         ptr.active = false;
         return;

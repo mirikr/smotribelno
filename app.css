@@ -1730,3 +1730,121 @@ body.kb-open .update-bar {
 .card .sh-label {
   display: block;
 }
+/* ---- «Позже+»: блоки важности и перетаскивание зажатием ---- */
+.drag-hint {
+  margin: 14px 2px 8px;
+  font-size: 12px;
+}
+.prio-group {
+  margin-bottom: 14px;
+  padding: 2px 10px 6px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pt) 75%, transparent), rgba(17, 15, 22, 0) 200px);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc) 22%, transparent);
+  transition: box-shadow 0.2s, background-color 0.2s;
+}
+.prio-group > .list-head {
+  margin-top: 12px;
+}
+.prio-group .vcard {
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.vcard.dragging {
+  opacity: 0.3;
+}
+#later-list.drag-active .prio-group {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc) 40%, transparent);
+}
+.prio-group.drop-over {
+  background-color: color-mix(in srgb, var(--pt) 70%, transparent);
+  box-shadow: inset 0 0 0 2px var(--pc), 0 0 22px color-mix(in srgb, var(--pc) 35%, transparent) !important;
+}
+.drop-empty {
+  margin: 2px 0 8px;
+  padding: 16px;
+  border: 1px dashed color-mix(in srgb, var(--pc) 45%, transparent);
+  border-radius: 14px;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}
+/* Карточка «в руке»: следует за пальцем поверх всего */
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  margin: 0;
+  pointer-events: none;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6), 0 0 0 2px var(--violet-line), 0 0 24px rgba(139, 92, 246, 0.35);
+  opacity: 0.95;
+  animation: none !important;
+  transition: none;
+}
+.vcard.just-moved {
+  animation: just-moved 1.2s var(--ease);
+}
+@keyframes just-moved {
+  0% {
+    box-shadow: 0 0 0 2px var(--violet), 0 0 24px rgba(139, 92, 246, 0.5);
+  }
+}
+/* ---- Оценки мягко светятся своим цветом, по плашке пробегает блик (как на компьютере) ---- */
+@keyframes grade-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 6px -1px color-mix(in srgb, var(--g, transparent) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 14px 1px color-mix(in srgb, var(--g, transparent) 75%, transparent);
+  }
+}
+@keyframes grade-glint {
+  0%,
+  55% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+.score,
+.grade {
+  position: relative;
+  overflow: hidden;
+  animation: grade-breathe 3.4s ease-in-out infinite;
+}
+.score::after,
+.grade::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  pointer-events: none;
+  animation: grade-glint 4.2s ease-in-out infinite;
+}
+.vcard:nth-of-type(3n + 1) .score,
+.vcard:nth-of-type(3n + 1) .score::after {
+  animation-delay: -1.3s;
+}
+.vcard:nth-of-type(3n + 2) .score,
+.vcard:nth-of-type(3n + 2) .score::after {
+  animation-delay: -2.6s;
+}
+/* «Шедевр» — как раньше, зелёный пульс */
+.score.perfect,
+.grade.perfect {
+  overflow: hidden;
+  animation: perfect-pulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .score,
+  .grade,
+  .score::after,
+  .grade::after {
+    animation: none;
+  }
+}
