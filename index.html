@@ -22,7 +22,10 @@
   </head>
   <body>
     <header class="top">
-      <div class="brand"><span class="star">★</span> Смотрибельно</div>
+      <div class="top-row">
+        <button type="button" class="brand" data-view="home" aria-label="Главная"><span class="star">★</span> Смотрибельно</button>
+        <button type="button" class="gear" data-view="data" aria-label="Настройки и данные">⚙</button>
+      </div>
       <form class="link-form" id="link-form" autocomplete="off">
         <input id="link-input" type="url" inputmode="url" placeholder="Ссылка на видео YouTube" aria-label="Ссылка на видео YouTube" />
         <button type="button" class="paste-btn" id="paste-btn">Вставить</button>
@@ -30,8 +33,15 @@
       </form>
     </header>
 
+    <!-- Потянуть список вниз — обновить -->
+    <div class="ptr" id="ptr" aria-hidden="true"><span class="ptr-star">★</span></div>
+
     <main>
-      <section id="view-later" class="view" aria-labelledby="h-later">
+      <section id="view-home" class="view" aria-labelledby="h-home">
+        <h1 id="h-home" class="visually-hidden">Главная</h1>
+        <div id="home"></div>
+      </section>
+      <section id="view-later" class="view" aria-labelledby="h-later" hidden>
         <h1 id="h-later" class="visually-hidden">Смотреть позже+</h1>
         <div id="later-list"></div>
       </section>
@@ -40,16 +50,26 @@
         <input id="ratings-search" class="search" type="search" placeholder="Поиск по названию и каналу" aria-label="Поиск по оценкам" />
         <div id="ratings-list"></div>
       </section>
+      <section id="view-channels" class="view" aria-labelledby="h-channels" hidden>
+        <h1 id="h-channels" class="visually-hidden">Каналы</h1>
+        <div id="channels-box"></div>
+      </section>
+      <section id="view-stats" class="view" aria-labelledby="h-stats" hidden>
+        <h1 id="h-stats" class="visually-hidden">Статистика</h1>
+        <div id="stats-box"></div>
+      </section>
       <section id="view-data" class="view" aria-labelledby="h-data" hidden>
-        <h1 id="h-data" class="view-title">Данные</h1>
+        <h1 id="h-data" class="view-title">Настройки и данные</h1>
         <div id="data-box"></div>
       </section>
     </main>
 
     <nav class="tabbar" aria-label="Разделы">
-      <button type="button" data-view="later" class="on"><span aria-hidden="true">＋</span>Позже+<b id="n-later"></b></button>
+      <button type="button" data-view="home" class="on"><span aria-hidden="true">⌂</span>Главная</button>
+      <button type="button" data-view="later"><span aria-hidden="true">＋</span>Позже+<b id="n-later"></b></button>
       <button type="button" data-view="ratings"><span aria-hidden="true">★</span>Оценки<b id="n-ratings"></b></button>
-      <button type="button" data-view="data"><span aria-hidden="true">⇄</span>Данные</button>
+      <button type="button" data-view="channels"><span aria-hidden="true">◉</span>Каналы</button>
+      <button type="button" data-view="stats"><span aria-hidden="true">▥</span>Статистика</button>
     </nav>
 
     <!-- Видео: смотреть, важность, оценка, момент, отзыв, «не досмотрел» -->

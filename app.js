@@ -154,7 +154,7 @@
   }
 
   // ---------- Списки ----------
-  let view = 'later';
+  let view = 'home';
   const thumb = (v, pct) => `<span class="vthumb"><img src="${TR.thumbUrl(v.id)}" alt="" loading="lazy">${v.duration ? `<span class="dur">${TR.fmtClock(v.duration)}</span>` : ''}${pct ? `<span class="bar" style="width:${pct}%"></span>` : ''}</span>`;
   const prioChip = (p) => {
     const P = TR.PRIORITIES[p];
@@ -252,11 +252,348 @@
       </div>`;
   }
 
+  // ---------- Главная: что смотреть дальше, оценить просмотренное, неделя оценок, дальше в списке ----------
+  const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+  const fireNum = (n) => `<span class="fire-num"><span class="flames" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><s></s><s></s><s></s></span><b>${n}</b></span>`;
+  const critBar = (name, val) =>
+    `<div class="crit-bar"><div class="lbl"><span>${esc(name)}</span><b>${val}</b></div><div class="track"><div class="fill" style="width:${(val / TR.SLIDER_MAX) * 100}%;background:${TR.scoreMark(Math.round((val / TR.SLIDER_MAX) * TR.MAX_SCORE))}"></div></div></div>`;
+  const ringSvg = (total, size) => {
+    const g = TR.grade(total);
+    const len = 2 * Math.PI * 52;
+    return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 128 128" role="img" aria-label="Оценка ${total ?? 'нет'}"><circle class="track" cx="64" cy="64" r="52" stroke-width="12"/><circle class="fill" cx="64" cy="64" r="52" stroke-width="12" transform="rotate(-90 64 64)" stroke="${g ? g.mark : 'transparent'}" stroke-dasharray="${((len * (total || 0)) / TR.MAX_SCORE).toFixed(1)} ${len.toFixed(1)}" style="--glow:${g ? g.mark : 'transparent'}"/><text x="64" y="76" text-anchor="middle">${total ?? '—'}</text></svg>`;
+  };
+
+  // Дни, когда что-то оценивали (на телефоне нет учёта времени — серия по оценкам)
+  function ratedDays() {
+    const by = {};
+    for (const v of Object.values(db.videos)) if (v.rating?.updatedAt) (by[TR.dateKey(new Date(v.rating.updatedAt))] ||= []).push(v.rating.total);
+    return by;
+  }
+  function ratingStreak(by) {
+    let cur = 0;
+    const d = new Date();
+    if (!by[TR.dateKey(d)]) d.setDate(d.getDate() - 1);
+    while (by[TR.dateKey(d)]) {
+      cur++;
+      d.setDate(d.getDate() - 1);
+    }
+    return cur;
+  }
+
+  function renderHome() {
+    const s = settings();
+    const V = Object.values(db.videos);
+    const next = TR.watchNext(db.videos, s.autoWatchedPct);
+    const hero = next[0];
+    let heroHtml;
+    if (hero) {
+      const started = TR.isStarted(hero, s.autoWatchedPct);
+      const pos = hero.watch?.position || 0;
+      const url = started ? TR.resumeUrl(hero) : TR.watchUrl(hero.id);
+      const meta = [hero.channel ? esc(hero.channel) : '', started && hero.duration ? `осталось ${TR.fmtSpent(hero.duration * (1 - pos))}` : hero.duration ? TR.fmtClock(hero.duration) : ''].filter(Boolean).join(' · ');
+      heroHtml = `<div class="home-hero">
+        <button type="button" class="hh-shot" data-open="${hero.id}"><img src="${TR.thumbUrl(hero.id).replace('mqdefault', 'hqdefault')}" alt="">${started ? '<span class="hh-badge">▶ Продолжить</span>' : hero.later ? `<span class="hh-badge">${prioChip(hero.later.priority)}</span>` : ''}${started ? `<span class="bar" style="width:${Math.round(pos * 100)}%"></span>` : ''}</button>
+        <div class="hh-body">
+          <span class="sh-label">${started ? 'Продолжить' : 'Смотреть дальше'}</span>
+          <button type="button" class="hh-title" data-open="${hero.id}">${esc(hero.title || 'Видео ' + hero.id)}</button>
+          <span class="muted">${meta || '&nbsp;'}</span>
+          <div class="row"><a class="btn primary" href="${url}" target="_blank" rel="noopener">▶ ${started ? 'Продолжить' : 'Смотреть'}</a><button type="button" class="btn" data-open="${hero.id}">Подробнее</button></div>
+        </div>
+      </div>`;
+    } else {
+      heroHtml = `<div class="card home-empty"><p class="muted" style="margin:0">Здесь появится видео, которое стоит посмотреть следующим: начатое или самое важное из «Смотреть позже+».<br><br>${
+        IOS ? 'В YouTube: «Поделиться» → «Копировать ссылку», здесь — «Вставить».' : 'В YouTube: «Поделиться» → «Смотрибельно».'
+      }</p></div>`;
+    }
+
+    // Оцените просмотренное — или последняя оценка
+    // Начатое и недосмотренное — в «Продолжить», а не в «Оцените»
+    const awaiting = V.filter((v) => TR.awaitingRating(v) && !TR.isStarted(v, s.autoWatchedPct)).sort((a, b) => (b.watchedAt || b.watch?.lastAt || 0) - (a.watchedAt || a.watch?.lastAt || 0));
+    let ticketHtml = '';
+    if (awaiting.length) {
+      const v = awaiting[0];
+      ticketHtml = `<div class="card ticket">
+        <span class="sh-label">Оцените просмотренное${awaiting.length > 1 ? ` · ещё ${awaiting.length - 1}` : ''}</span>
+        <button type="button" class="tk-row" data-open="${v.id}">${thumb(v, 0)}<span class="vinfo"><span class="vtitle">${esc(v.title || 'Видео ' + v.id)}</span><span class="vmeta">${esc(v.channel || '')}</span></span></button>
+        <button type="button" class="btn primary wide" data-open="${v.id}">Оценить</button>
+      </div>`;
+    } else {
+      const last = V.filter((v) => v.rating).sort((a, b) => (b.rating.updatedAt || 0) - (a.rating.updatedAt || 0))[0];
+      if (last) {
+        const g = TR.grade(last.rating.total);
+        const ids = TR.typeCriteria(TR.ratingType(last.rating), s).map((c) => c.id);
+        const bars = [...ids, ...Object.keys(last.rating.scores).filter((id) => !ids.includes(id))]
+          .filter((id) => typeof last.rating.scores[id] === 'number')
+          .map((id) => critBar(TR.critName(id, s), last.rating.scores[id]))
+          .join('');
+        ticketHtml = `<div class="card ticket">
+          <span class="sh-label">Последняя оценка</span>
+          <button type="button" class="tk-last" data-open="${last.id}">${ringSvg(last.rating.total, 76)}<span class="vinfo"><span class="vtitle">${esc(last.title || 'Видео ' + last.id)}</span><span class="vmeta">${esc(last.channel || '')}</span>${g ? `<span class="grade" style="background:${g.color};align-self:flex-start">${g.perfect ? '★ ' : ''}${g.label}</span>` : ''}</span></button>
+          <div class="crit-bars">${bars}</div>
+        </div>`;
+      }
+    }
+
+    // Неделя оценок с понедельника и серия дней подряд с оценками
+    const by = ratedDays();
+    const streak = ratingStreak(by);
+    const monday = new Date();
+    monday.setHours(12, 0, 0, 0);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    const todayKey = TR.dateKey();
+    const days = WD.map((w, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const k = TR.dateKey(d);
+      const scores = (by[k] || []).sort((a, b) => b - a).slice(0, 3);
+      const cls = k > todayKey ? 'future' : k === todayKey ? 'now' : scores.length ? '' : 'none';
+      return `<div class="wk-day ${cls}"><div class="wk-bars">${scores
+        .map((t) => {
+          const g = TR.grade(t);
+          return `<span style="background:${g.mark}${g.perfect ? ';box-shadow:0 0 10px 2px rgba(52,211,153,.7)' : ''}"></span>`;
+        })
+        .join('')}</div></div>`;
+    }).join('');
+    const nowIdx = (new Date().getDay() + 6) % 7;
+    const weekHtml = `<div class="card home-week">
+      <div class="wk-top">${streak ? `<span class="wk-streak">${fireNum(streak)}</span><span>${plural(streak, 'день', 'дня', 'дней')} подряд с оценками</span>` : '<span class="muted">Серия начнётся с первой оценки</span>'}</div>
+      <div class="wk-grid">${days}</div>
+      <div class="wk-grid wk-labels">${WD.map((w, i) => `<span class="${i === nowIdx ? 'now' : ''}">${w}</span>`).join('')}</div>
+    </div>`;
+
+    // Дальше в списке и сводка
+    const rest = next.slice(1, 4);
+    const rated = V.filter((v) => v.rating);
+    const avg = rated.length ? Math.round(rated.reduce((a, v) => a + v.rating.total, 0) / rated.length) : null;
+    const restHtml = rest.length
+      ? `<h2 class="list-head">Дальше в списке <button type="button" class="link-btn" data-view="later">весь список →</button></h2>${rest.map((v) => card(v, TR.isStarted(v, s.autoWatchedPct))).join('')}`
+      : '';
+    const statsHtml = `<div class="card"><div class="stats">
+      <div><b>${TR.laterQueue(db.videos).length}</b><span>в «Позже+»</span></div>
+      <div><b>${rated.length}</b><span>оценок</span></div>
+      <div><b>${avg ?? '—'}</b><span>в среднем</span></div>
+    </div></div>`;
+
+    $('#home').innerHTML = heroHtml + ticketHtml + weekHtml + restHtml + statsHtml;
+  }
+
+  // ---------- Каналы ----------
+  const chState = { sort: 'score', q: '' };
+  const fmtMin = (m) => TR.fmtSpent((m || 0) * 60);
+
+  function channelList() {
+    const map = {};
+    const get = (name) => (map[name] ||= { name, url: '', icon: '', rated: [], later: 0, min: 0, dropped: 0, finished: 0, reasons: {} });
+    for (const v of Object.values(db.videos)) {
+      if (!v.channel) continue;
+      const c = get(v.channel);
+      if (!c.url && v.channelUrl) c.url = v.channelUrl;
+      if (v.rating) c.rated.push(v);
+      if (v.later && !v.watchedAt) c.later++;
+      if (v.dropped) {
+        c.dropped++;
+        c.reasons[v.dropped.reason] = (c.reasons[v.dropped.reason] || 0) + 1;
+      } else if (v.watchedAt) c.finished++;
+    }
+    for (const [name, x] of Object.entries(db.stats?.channels || {})) {
+      const c = get(name);
+      c.min = x[0] || 0;
+      if (!c.url && x[1]) c.url = x[1];
+      c.icon = TR.safeIconSrc(x[2]);
+    }
+    for (const c of Object.values(map)) {
+      c.avg = c.rated.length ? Math.round(c.rated.reduce((s, v) => s + v.rating.total, 0) / c.rated.length) : null;
+      const n = c.finished + c.dropped;
+      c.finishPct = c.dropped && n >= 3 ? Math.round((c.finished / n) * 100) : null;
+    }
+    return Object.values(map);
+  }
+  const chAvatar = (c, size) =>
+    c.icon
+      ? `<img class="ch-ava" src="${esc(c.icon)}" alt="" width="${size}" height="${size}" loading="lazy" referrerpolicy="no-referrer">`
+      : `<span class="ch-ava ch-letter" style="width:${size}px;height:${size}px;font-size:${Math.round(size / 2.4)}px">${esc((c.name.trim()[0] || '?').toUpperCase())}</span>`;
+
+  function renderChannels() {
+    const box = $('#channels-box');
+    if (!box.firstChild) {
+      box.innerHTML = `<input id="ch-search" class="search" type="search" placeholder="Поиск канала" aria-label="Поиск канала">
+        <div class="seg" id="ch-sort" style="margin-bottom:12px"><button type="button" data-chsort="score">По оценке</button><button type="button" data-chsort="time">По времени</button><button type="button" data-chsort="later">В «Позже+»</button></div>
+        <div id="ch-list"></div>`;
+      $('#ch-search').addEventListener('input', (e) => {
+        chState.q = e.target.value;
+        renderChannels();
+      });
+      $('#ch-sort').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-chsort]');
+        if (!b) return;
+        chState.sort = b.dataset.chsort;
+        renderChannels();
+      });
+    }
+    $$('#ch-sort button').forEach((b) => b.classList.toggle('on', b.dataset.chsort === chState.sort));
+    const q = chState.q.toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean);
+    let list = channelList().filter((c) => q.every((w) => c.name.toLowerCase().replace(/ё/g, 'е').includes(w)));
+    const sorters = {
+      score: (a, b) => (b.avg ?? -1) - (a.avg ?? -1) || b.rated.length - a.rated.length || b.min - a.min,
+      time: (a, b) => b.min - a.min || (b.avg ?? -1) - (a.avg ?? -1),
+      later: (a, b) => b.later - a.later || b.min - a.min,
+    };
+    list = list.sort(sorters[chState.sort]).slice(0, 150);
+    $('#ch-list').innerHTML = list.length
+      ? list
+          .map((c, i) => {
+            const meta = [
+              c.rated.length ? `${c.rated.length} ${plural(c.rated.length, 'оценка', 'оценки', 'оценок')}` : 'без оценок',
+              c.min ? fmtMin(c.min) : '',
+              c.later ? `в «Позже+»: ${c.later}` : '',
+              c.finishPct != null ? `досматриваете ${c.finishPct}%` : '',
+            ].filter(Boolean);
+            return `<button type="button" class="ch-item" data-channel="${esc(c.name)}"><span class="ch-rank">${i + 1}</span>${chAvatar(c, 44)}<span class="vinfo"><span class="vtitle">${esc(c.name)}</span><span class="vmeta">${meta.join(' · ')}</span></span>${c.avg != null ? scoreBadge(c.avg) : ''}</button>`;
+          })
+          .join('')
+      : `<div class="empty">${Object.keys(db.videos).length ? 'Ничего не нашлось.' : 'Каналы появятся, когда будут оценки или видео в «Позже+».'}</div>`;
+  }
+
+  // Профиль канала — в том же листе снизу, что и видео
+  function openChannel(name) {
+    const c = channelList().find((x) => x.name === name);
+    if (!c) return;
+    const s = settings();
+    sheet.id = null;
+    // Средние по критериям: сначала общие для всех типов, потом самые частые
+    const acc = {};
+    for (const v of c.rated) for (const [id, x] of Object.entries(v.rating.scores)) if (typeof x === 'number') ((acc[id] ||= { id, sum: 0, n: 0 }).sum += x), acc[id].n++;
+    const bars = Object.values(acc)
+      .sort((a, b) => TR.COMMON_CRITERIA.includes(b.id) - TR.COMMON_CRITERIA.includes(a.id) || b.n - a.n)
+      .slice(0, 6)
+      .map((x) => critBar(TR.critName(x.id, s), Math.round((x.sum / x.n) * 10) / 10))
+      .join('');
+    const best = c.rated.slice().sort((a, b) => b.rating.total - a.rating.total).slice(0, 3);
+    const later = Object.values(db.videos).filter((v) => v.channel === name && v.later && !v.watchedAt).sort((a, b) => b.later.priority - a.later.priority);
+    const reasons = Object.entries(c.reasons).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([r]) => TR.dropReason(r).label.toLowerCase());
+    const meta = [
+      c.min ? `смотрели ${fmtMin(c.min)}` : '',
+      c.rated.length ? `${c.rated.length} ${plural(c.rated.length, 'оценка', 'оценки', 'оценок')}` : 'оценок пока нет',
+      c.finishPct != null ? `досматриваете ${c.finishPct}%` : '',
+      c.dropped ? `бросили ${c.dropped}: ${reasons.join(', ')}` : '',
+    ].filter(Boolean);
+    $('#sheet-body').innerHTML = `
+      <button type="button" class="sh-close" data-sh="close" aria-label="Закрыть">✕</button>
+      <div class="ch-head">${chAvatar(c, 64)}<div><h2 id="sh-title">${esc(c.name)}</h2><div class="muted">${meta.join(' · ')}</div></div></div>
+      ${c.avg != null ? `<div class="sh-sec rate-top">${ringSvg(c.avg, 84)}<div><span class="grade" style="background:${TR.grade(c.avg).color}">${TR.grade(c.avg).label}</span><div class="muted" style="margin-top:6px">средняя оценка канала</div></div></div>` : ''}
+      ${bars ? `<div class="sh-sec"><span class="sh-label">По критериям</span><div class="crit-bars">${bars}</div></div>` : ''}
+      ${best.length ? `<div class="sh-sec"><span class="sh-label">Лучшее</span>${best.map((v) => card(v, false)).join('')}</div>` : ''}
+      ${later.length ? `<div class="sh-sec"><span class="sh-label">Ждёт в «Позже+»</span>${later.slice(0, 5).map((v) => card(v, false)).join('')}</div>` : ''}
+      ${c.url ? `<div class="sh-sec"><a class="btn wide" href="${esc(c.url)}" target="_blank" rel="noopener">Открыть канал на YouTube ↗</a></div>` : ''}`;
+    if (!sheetEl.open) sheetEl.showModal();
+    sheetEl.scrollTop = 0;
+  }
+  document.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-channel]');
+    if (c) openChannel(c.dataset.channel);
+  });
+
+  // ---------- Статистика ----------
+  // Время просмотра приходит с компьютера через Google Drive (сводка по дням); оценки — свои.
+  const stState = { mode: 'month', off: 0 };
+  function renderStats() {
+    const days = db.stats?.days || {};
+    const mins = (k) => (days[k] ? (days[k][0] || 0) + (days[k][1] || 0) : 0);
+    const keyOf = (d) => TR.dateKey(d);
+    const back = (n) => {
+      const d = new Date();
+      d.setHours(12, 0, 0, 0);
+      d.setDate(d.getDate() - n);
+      return d;
+    };
+    const sumBack = (n) => Array.from({ length: n }, (_, i) => mins(keyOf(back(i)))).reduce((a, b) => a + b, 0);
+    let streak = 0;
+    for (let i = mins(keyOf(back(0))) ? 0 : 1; mins(keyOf(back(i))); i++) streak++;
+    const has = Object.keys(days).length > 0;
+    const ratedBy = ratedDays();
+
+    // Кинолента за 30 дней: высота — время, цвет — средняя оценка оценённого в этот день
+    const last = Array.from({ length: 30 }, (_, i) => back(29 - i));
+    const maxM = Math.max(30, ...last.map((d) => mins(keyOf(d))));
+    const film = last
+      .map((d, i) => {
+        const k = keyOf(d);
+        const m = mins(k);
+        const r = ratedBy[k];
+        const avg = r ? Math.round(r.reduce((a, b) => a + b, 0) / r.length) : null;
+        const h = m ? Math.max(4, Math.round((m / maxM) * 100)) : 0;
+        return `<div class="fm-col" title="${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}: ${m ? fmtMin(m) : 'без YouTube'}"><span style="height:${h}%;background:${avg != null ? TR.scoreMark(avg) : 'var(--violet-line)'}"></span>${i % 7 === 1 ? `<small>${d.getDate()}</small>` : ''}</div>`;
+      })
+      .join('');
+
+    // Итоги месяца или года
+    const now = new Date();
+    const start = stState.mode === 'year' ? new Date(now.getFullYear() + stState.off, 0, 1, 12) : new Date(now.getFullYear(), now.getMonth() + stState.off, 1, 12);
+    const prefix = stState.mode === 'year' ? String(start.getFullYear()) : keyOf(start).slice(0, 7);
+    const inP = (ts) => ts && keyOf(new Date(ts)).startsWith(prefix);
+    const pKeys = Object.keys(days).filter((k) => k.startsWith(prefix));
+    const pMin = pKeys.reduce((a, k) => a + mins(k), 0);
+    const V = Object.values(db.videos);
+    const rated = V.filter((v) => v.rating && inP(v.rating.updatedAt));
+    const avg = rated.length ? Math.round(rated.reduce((a, v) => a + v.rating.total, 0) / rated.length) : null;
+    const best = rated.slice().sort((a, b) => b.rating.total - a.rating.total || b.rating.updatedAt - a.rating.updatedAt)[0];
+    const byCh = {};
+    for (const v of rated) if (v.channel) byCh[v.channel] = (byCh[v.channel] || 0) + 1;
+    const topCh = Object.entries(byCh).sort((a, b) => b[1] - a[1])[0];
+    const moments = V.reduce((n, v) => n + (v.moments || []).filter((m) => inP(m.at)).length, 0);
+    const dropped = V.filter((v) => v.dropped && inP(v.dropped.at)).length;
+    const title = stState.mode === 'year' ? `${start.getFullYear()}` : start.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }).replace(' г.', '');
+    const first = [...Object.keys(days), ...V.filter((v) => v.rating).map((v) => keyOf(new Date(v.rating.updatedAt)))].sort()[0] || keyOf(now);
+    const canBack = (stState.mode === 'year' ? first.slice(0, 4) : first.slice(0, 7)) < prefix;
+
+    $('#stats-box').innerHTML = `
+      ${
+        has
+          ? `<div class="stat-tiles">
+              <div class="card st"><span>Сегодня</span><b>${fmtMin(mins(keyOf(back(0))))}</b></div>
+              <div class="card st"><span>7 дней</span><b>${fmtMin(sumBack(7))}</b></div>
+              <div class="card st"><span>30 дней</span><b>${fmtMin(sumBack(30))}</b></div>
+            </div>
+            <div class="card"><div class="wk-top">${streak ? `<span class="wk-streak">${fireNum(streak)}</span><span>${plural(streak, 'день', 'дня', 'дней')} подряд с YouTube</span>` : '<span class="muted">Серия начнётся с первого дня с YouTube</span>'}</div>
+              <span class="sh-label" style="margin-top:12px">Кинолента · 30 дней</span><div class="film">${film}</div>
+              <p class="muted" style="margin:8px 0 0">Высота — сколько смотрели, цвет — средняя оценка за день.</p></div>`
+          : `<div class="card"><h2>Время просмотра</h2><p class="muted" style="margin:0">Время приходит с компьютера: подключите Google Drive в расширении («Настройки» → «История и синхронизация») и здесь (⚙ сверху). На телефоне его не посчитать — смотрите вы в приложении YouTube.</p></div>`
+      }
+      <div class="card">
+        <div class="recap-head"><h2>${stState.off === 0 ? (stState.mode === 'year' ? 'Этот год' : 'Этот месяц') : 'Итоги'} · ${title}</h2>
+          <div class="nav2"><button type="button" data-st="-1" aria-label="Раньше" ${canBack ? '' : 'disabled'}>‹</button><button type="button" data-st="1" aria-label="Позже" ${stState.off >= 0 ? 'disabled' : ''}>›</button></div></div>
+        <div class="seg" style="margin:10px 0 12px"><button type="button" data-stmode="month" class="${stState.mode === 'month' ? 'on' : ''}">Месяц</button><button type="button" data-stmode="year" class="${stState.mode === 'year' ? 'on' : ''}">Год</button></div>
+        <div class="stats">
+          <div><b>${has ? fmtMin(pMin) : '—'}</b><span>на YouTube${has ? ` · дней ${pKeys.length}` : ''}</span></div>
+          <div><b>${rated.length}</b><span>оценено${avg != null ? ` · в среднем ${avg}` : ''}</span></div>
+          <div><b>${moments} · ${dropped}</b><span>моментов · брошено</span></div>
+        </div>
+        ${best ? `<span class="sh-label" style="margin-top:14px">Видео ${stState.mode === 'year' ? 'года' : 'месяца'}</span>${card(best, false)}` : ''}
+        ${topCh ? `<span class="sh-label" style="margin-top:10px">Канал ${stState.mode === 'year' ? 'года' : 'месяца'}</span><button type="button" class="ch-item" data-channel="${esc(topCh[0])}">${chAvatar(channelList().find((c) => c.name === topCh[0]) || { name: topCh[0] }, 44)}<span class="vinfo"><span class="vtitle">${esc(topCh[0])}</span><span class="vmeta">${topCh[1]} ${plural(topCh[1], 'оценка', 'оценки', 'оценок')}</span></span></button>` : ''}
+      </div>`;
+  }
+  document.addEventListener('click', (e) => {
+    const m = e.target.closest('[data-stmode]');
+    if (m) {
+      stState.mode = m.dataset.stmode;
+      stState.off = 0;
+      return renderStats();
+    }
+    const n = e.target.closest('[data-st]');
+    if (n && !n.disabled) {
+      stState.off = Math.min(0, stState.off + Number(n.dataset.st));
+      renderStats();
+    }
+  });
+
   function render() {
     renderLater();
+    if (view === 'home') renderHome();
+    if (view === 'channels') renderChannels();
+    if (view === 'stats') renderStats();
     if (view === 'ratings') renderRatings();
     if (view === 'data') renderData();
-    for (const name of ['later', 'ratings', 'data']) $('#view-' + name).hidden = view !== name;
+    for (const name of ['home', 'later', 'ratings', 'channels', 'stats', 'data']) $('#view-' + name).hidden = view !== name;
     $$('.tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
   }
 
@@ -628,6 +965,7 @@
       const r = await TR.driveSync(drive.token, db.videos, { settings: db.settings });
       for (const [id, v] of Object.entries(r.changes)) db.videos[id] = TR.slimVideo(v);
       if (r.remoteCriteria) db.settings.criteria = r.remoteCriteria;
+      if (r.remoteStats) db.stats = r.remoteStats; // время по дням и каналам — с компьютера
       save(false);
       drive = { ...drive, needLogin: false, error: '', at: Date.now(), received: Object.keys(r.changes).length, total: r.total };
       sessionStorage.removeItem('smotribelno:silent');
@@ -682,6 +1020,76 @@
     if (document.visibilityState === 'visible' && drive.on && Date.now() - (drive.at || 0) > 60000) syncDrive();
   });
 
+  // ---------- Потянуть вниз — обновить ----------
+  // На iPhone у приложения с главного экрана нет своего жеста обновления, поэтому свой:
+  // тянем список вниз от самого верха, звезда проворачивается; после порога — перезагрузка
+  // (она же подтягивает изменения с Google Drive и новую версию приложения).
+  const PTR_MAX = 110;
+  const PTR_GO = 70;
+  const ptrEl = $('#ptr');
+  const mainEl = $('main');
+  const ptr = { y0: null, d: 0, active: false };
+
+  function ptrPaint(d) {
+    const topY = $('.top').offsetHeight;
+    ptrEl.style.transform = `translateY(${topY - 44 + d}px) rotate(${d * 3}deg)`;
+    ptrEl.style.opacity = String(Math.min(1, d / PTR_GO));
+    ptrEl.classList.toggle('ready', d >= PTR_GO);
+    mainEl.style.transform = d ? `translateY(${d}px)` : '';
+  }
+  function ptrReset() {
+    ptrEl.classList.add('back');
+    mainEl.classList.add('back');
+    ptrPaint(0);
+    setTimeout(() => {
+      ptrEl.classList.remove('back');
+      mainEl.classList.remove('back');
+    }, 260);
+  }
+
+  mainEl.addEventListener(
+    'touchstart',
+    (e) => {
+      ptr.y0 = mainEl.scrollTop <= 0 && !sheetEl.open && e.touches.length === 1 ? e.touches[0].clientY : null;
+      ptr.d = 0;
+      ptr.active = false;
+    },
+    { passive: true }
+  );
+  mainEl.addEventListener(
+    'touchmove',
+    (e) => {
+      if (ptr.y0 == null) return;
+      const dy = e.touches[0].clientY - ptr.y0;
+      if (dy <= 0 || mainEl.scrollTop > 0) {
+        if (ptr.active) ptrPaint(0);
+        ptr.active = false;
+        return;
+      }
+      ptr.active = true;
+      e.preventDefault(); // без «резинки» iOS — список двигаем сами
+      ptr.d = Math.min(PTR_MAX, dy * 0.5);
+      ptrPaint(ptr.d);
+    },
+    { passive: false }
+  );
+  mainEl.addEventListener('touchend', () => {
+    if (!ptr.active) return;
+    ptr.active = false;
+    ptr.y0 = null;
+    if (ptr.d < PTR_GO) return ptrReset();
+    // Держим звезду на месте и крутим, пока перезагружаемся
+    ptrEl.classList.add('back', 'loading');
+    mainEl.classList.add('back');
+    ptrPaint(56);
+    setTimeout(() => location.reload(), 380);
+  });
+  mainEl.addEventListener('touchcancel', () => {
+    if (ptr.active) ptrReset();
+    ptr.active = false;
+    ptr.y0 = null;
+  });
+
   // ---------- Навигация, ссылка, «Поделиться» ----------
   let toastTimer;
   function toast(text) {
@@ -692,12 +1100,25 @@
     toastTimer = setTimeout(() => (t.hidden = true), 2200);
   }
 
-  $('.tabbar').addEventListener('click', (e) => {
+  // Разделы: нижнее меню, название сверху (→ главная), «весь список» на главной
+  // Переход: новый раздел въезжает с той стороны, куда перешли по нижнему меню, и проявляется
+  const ORDER = ['home', 'later', 'ratings', 'channels', 'stats', 'data'];
+  document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-view]');
     if (!b) return;
-    view = b.dataset.view;
+    const to = b.dataset.view;
+    if (to === view) {
+      $('main').scrollTo({ top: 0, behavior: 'smooth' }); // повторное нажатие — наверх
+      return;
+    }
+    const dir = ORDER.indexOf(to) > ORDER.indexOf(view) ? 'r' : 'l';
+    view = to;
     render();
     $('main').scrollTop = 0; // прокручивается только список, не страница
+    const sec = $('#view-' + to);
+    sec.classList.remove('enter-r', 'enter-l');
+    void sec.offsetWidth; // перезапуск анимации
+    sec.classList.add('enter-' + dir);
   });
   document.addEventListener('click', (e) => {
     const c = e.target.closest('[data-open]');

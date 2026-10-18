@@ -6,6 +6,7 @@
   --surface-3: #2c2738;
   --border: #2a2535;
   --track: #352f43;
+  --dashed: #3a3447;
   --text: #f4f1fa;
   --text-2: #b8b0c9;
   --violet: #c4b5fd;
@@ -86,7 +87,13 @@ a {
   box-shadow: 0 10px 14px -6px var(--bg);
 }
 .brand {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
   font: 700 18px var(--font-display);
+  text-align: left;
 }
 .star {
   color: var(--violet);
@@ -125,6 +132,76 @@ a {
   color: #fff;
   font-weight: 700;
   box-shadow: 0 0 14px rgba(139, 92, 246, 0.45);
+}
+/* ---- Переходы между разделами ---- */
+.view.enter-r {
+  animation: view-in-r 0.26s var(--ease);
+}
+.view.enter-l {
+  animation: view-in-l 0.26s var(--ease);
+}
+@keyframes view-in-r {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@keyframes view-in-l {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+.tabbar button {
+  transition: background 0.2s, color 0.2s, box-shadow 0.25s;
+}
+.tabbar button span {
+  transition: transform 0.25s var(--ease);
+}
+.tabbar button.on span {
+  transform: translateY(-1px) scale(1.12);
+}
+
+/* ---- Потянуть вниз — обновить ---- */
+.ptr {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  border: 1px solid var(--violet-line);
+  border-radius: 50%;
+  background: var(--violet-tint);
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.35);
+}
+.ptr-star {
+  color: var(--violet);
+  font-size: 20px;
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(167, 139, 250, 0.9);
+}
+.ptr.ready {
+  border-color: var(--violet);
+  box-shadow: 0 0 24px rgba(167, 139, 250, 0.6);
+}
+.ptr.loading .ptr-star {
+  animation: ptr-spin 0.8s linear infinite;
+}
+@keyframes ptr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ptr.back,
+main.back {
+  transition: transform 0.25s var(--ease), opacity 0.25s;
 }
 main {
   flex: 1;
@@ -263,8 +340,8 @@ main {
   bottom: calc(12px + var(--safe-b));
   z-index: 6;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 22px;
@@ -672,4 +749,488 @@ textarea {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ---- Из расширения: полоски критериев, неделя и огонь серии (dashboard.css) ---- */
+.crit-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px 18px;
+  margin-top: 10px;
+}
+.crit-bar {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.crit-bar .lbl {
+  display: flex;
+  justify-content: space-between;
+}
+.crit-bar .lbl b {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.crit-bar .track {
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--track);
+}
+.crit-bar .fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--violet);
+}
+
+
+.wk-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.wk-streak {
+  font: 700 32px/1 var(--font-display);
+  color: #f5f3ff;
+  text-shadow: 0 0 14px rgba(167, 139, 250, 0.9), 0 0 2px rgba(91, 33, 182, 0.9);
+}
+
+/* Фиолетовый огонь за числом серии: языки пламени колышутся не в такт, вверх летят искры */
+.fire-num {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+  padding: 0 0.12em;
+}
+.fire-num > b {
+  position: relative;
+}
+.fire-num > b {
+  text-shadow: 0 0 2px rgba(46, 16, 101, 0.95), 0 2px 8px rgba(46, 16, 101, 0.85);
+}
+/* Пламя выше числа: снизу — до основания, сверху — почти на высоту ещё одного числа */
+.flames {
+  position: absolute;
+  left: -16%;
+  right: -16%;
+  bottom: -8%;
+  top: -80%;
+  z-index: -1;
+  pointer-events: none;
+}
+/* Язык пламени: заострённый верх, светлое основание, к кончику уходит в прозрачный фиолетовый */
+.flames i {
+  position: absolute;
+  bottom: 0;
+  width: 30%;
+  height: 70%;
+  border-radius: 50% 50% 46% 46% / 82% 82% 18% 18%;
+  background: linear-gradient(to top, rgba(237, 233, 254, 0.85) 0%, rgba(196, 181, 253, 0.9) 18%, rgba(139, 92, 246, 0.8) 48%, rgba(109, 40, 217, 0.35) 78%, rgba(109, 40, 217, 0) 100%);
+  filter: blur(2px);
+  transform-origin: 50% 100%;
+  mix-blend-mode: screen;
+  animation: flame 1.5s ease-in-out infinite;
+}
+.flames i:nth-child(1) {
+  left: 2%;
+  height: 52%;
+  animation-duration: 1.3s;
+  animation-delay: -0.4s;
+}
+.flames i:nth-child(2) {
+  left: 18%;
+  height: 80%;
+  animation-duration: 1.7s;
+  animation-delay: -1.1s;
+}
+.flames i:nth-child(3) {
+  left: 35%;
+  height: 100%;
+  animation-duration: 1.45s;
+}
+.flames i:nth-child(4) {
+  left: 52%;
+  height: 74%;
+  animation-duration: 1.6s;
+  animation-delay: -0.7s;
+}
+.flames i:nth-child(5) {
+  left: 68%;
+  height: 50%;
+  animation-duration: 1.25s;
+  animation-delay: -0.2s;
+}
+/* Ровное свечение у основания */
+.flames::before {
+  content: '';
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: -6%;
+  height: 34%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(167, 139, 250, 0.75), rgba(124, 58, 237, 0.35) 55%, rgba(124, 58, 237, 0));
+  filter: blur(4px);
+  animation: flame-base 2.2s ease-in-out infinite;
+}
+.flames s {
+  position: absolute;
+  bottom: 45%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ede9fe;
+  box-shadow: 0 0 6px 1px rgba(196, 181, 253, 0.9);
+  opacity: 0;
+  animation: spark 2.2s ease-out infinite;
+}
+.flames s:nth-of-type(1) {
+  left: 30%;
+  --dx: -6px;
+}
+.flames s:nth-of-type(2) {
+  left: 58%;
+  --dx: 8px;
+  animation-delay: -0.8s;
+  animation-duration: 2.6s;
+}
+.flames s:nth-of-type(3) {
+  left: 45%;
+  --dx: 2px;
+  animation-delay: -1.5s;
+  animation-duration: 1.9s;
+}
+@keyframes flame {
+  0%,
+  100% {
+    transform: scale(1, 1) skewX(0deg);
+    opacity: 0.85;
+  }
+  25% {
+    transform: scale(0.88, 1.18) skewX(-6deg);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.08, 0.86) skewX(4deg);
+    opacity: 0.9;
+  }
+  75% {
+    transform: scale(0.94, 1.1) skewX(-3deg);
+    opacity: 0.72;
+  }
+}
+@keyframes flame-base {
+  50% {
+    opacity: 0.7;
+    transform: scaleX(1.08);
+  }
+}
+@keyframes spark {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx, 0), -2.2em) scale(0.3);
+    opacity: 0;
+  }
+}
+/* В плашке календаря число меньше — и огонь компактнее */
+.streak .fire-num .flames {
+  top: -60%;
+}
+.wk-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.wk-day {
+  height: 60px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.wk-day.none {
+  background: transparent;
+  border: 1px dashed var(--dashed);
+}
+.wk-day.future {
+  background: transparent;
+  border: 1px dashed var(--dashed);
+  opacity: 0.5;
+}
+.wk-day.now {
+  background: var(--violet-tint);
+  box-shadow: inset 0 0 0 1px #6d5bb0, 0 0 18px rgba(139, 92, 246, 0.3);
+}
+.wk-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wk-bars span {
+  height: 5px;
+  border-radius: 3px;
+}
+.wk-labels {
+  margin-top: -6px;
+  color: var(--text-2);
+  font-size: 11px;
+  text-align: center;
+}
+.wk-labels .now {
+  color: var(--violet-ink);
+  font-weight: 700;
+}
+
+/* ---- Шапка: название и ⚙ ---- */
+.top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.gear {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 18px;
+  line-height: 1;
+}
+.link-btn {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--violet);
+  font: 600 13px var(--font);
+}
+
+/* ---- Главная ---- */
+.home-hero {
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--violet-line);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 0 24px rgba(139, 92, 246, 0.18);
+}
+.hh-shot {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: 0;
+  background: var(--surface-3);
+}
+.hh-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.hh-shot .bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  background: var(--violet);
+  box-shadow: 0 0 10px rgba(167, 139, 250, 0.8);
+}
+.hh-badge {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(17, 15, 22, 0.8);
+  color: var(--violet-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+.hh-badge .prio {
+  padding: 0;
+  background: none !important;
+}
+.hh-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px 16px;
+}
+.hh-body .sh-label {
+  margin: 0;
+}
+.hh-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 700 17px/1.3 var(--font);
+  text-align: left;
+}
+.hh-body .row {
+  margin-top: 6px;
+}
+.ticket .sh-label {
+  margin-bottom: 10px;
+}
+.tk-row,
+.tk-last,
+.ch-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+.tk-row {
+  margin-bottom: 12px;
+}
+.tk-row .vthumb {
+  width: 120px;
+  flex: none;
+}
+.tk-last {
+  margin-bottom: 10px;
+}
+.home-week .wk-top {
+  margin-bottom: 12px;
+}
+.crit-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---- Каналы ---- */
+.ch-item {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.ch-rank {
+  width: 20px;
+  flex: none;
+  color: var(--violet);
+  font: 700 13px var(--font-display);
+  text-align: center;
+}
+.ch-ava {
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-3);
+}
+.ch-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--violet-tint);
+  color: var(--violet-ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.ch-item .vinfo {
+  flex: 1;
+}
+.ch-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 40px;
+}
+.ch-head h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+/* ---- Статистика ---- */
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.stat-tiles .card {
+  margin-bottom: 12px;
+  padding: 12px;
+}
+.st span {
+  display: block;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.st b {
+  font: 700 14px var(--font-display);
+  white-space: nowrap;
+}
+.film {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 110px;
+  padding-bottom: 16px;
+}
+.fm-col {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  height: 100%;
+}
+.fm-col span {
+  width: 100%;
+  border-radius: 3px 3px 1px 1px;
+}
+.fm-col small {
+  position: absolute;
+  left: 50%;
+  bottom: -16px;
+  transform: translateX(-50%);
+  color: var(--text-2);
+  font-size: 10px;
+}
+.recap-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.recap-head h2 {
+  flex: 1;
+  margin: 0;
+}
+.recap-head h2::first-letter {
+  text-transform: uppercase;
+}
+.nav2 {
+  display: flex;
+  gap: 6px;
+}
+.nav2 button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.nav2 button:disabled {
+  opacity: 0.35;
+}
+.card .sh-label {
+  display: block;
 }

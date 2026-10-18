@@ -487,7 +487,9 @@ const TR = (() => {
 
   // Одна синхронизация: прочитать файл, слить с локальным, вернуть что поменять здесь, записать файл, если он устарел.
   // local — { id: видео }. Возвращает { changes: { id: видео }, uploaded, total }.
-  async function driveSync(token, local, { settings, fetchFn = fetch } = {}) {
+  // stats — сводка статистики с компьютера (время по дням и каналам, иконки каналов): телефон её только читает
+  // и при записи файла сохраняет как есть.
+  async function driveSync(token, local, { settings, stats, fetchFn = fetch } = {}) {
     const api = 'https://www.googleapis.com/drive/v3/files';
     const list = await (await driveFetch(token, `${api}?spaces=appDataFolder&fields=files(id,modifiedTime)&q=${encodeURIComponent(`name='${DRIVE_FILE}'`)}`, {}, fetchFn)).json();
     const fileId = list.files?.[0]?.id || null;
@@ -510,10 +512,12 @@ const TR = (() => {
       } else if (r) remoteChanged = true;
     }
     if (settings?.criteria && stableJson(settings.criteria) !== stableJson(remote.settings?.criteria)) remoteChanged = true;
+    if (stats && stableJson(stats) !== stableJson(remote.stats)) remoteChanged = true;
     // Свой набор критериев с другого устройства — подписи для старых оценок
     const remoteCriteria = remote.settings?.criteria || null;
+    const outStats = stats || remote.stats || null;
     if (remoteChanged) {
-      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA }, videos: next });
+      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA }, stats: outStats, videos: next });
       if (fileId) {
         await driveFetch(token, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }, fetchFn);
       } else {
@@ -523,7 +527,7 @@ const TR = (() => {
         await driveFetch(token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart }, fetchFn);
       }
     }
-    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria };
+    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria, remoteStats: outStats };
   }
 
   // Отправка операции в background (он сериализует все записи)
