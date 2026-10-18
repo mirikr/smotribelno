@@ -1,6 +1,6 @@
 // Работа без сети: оболочка приложения в кэше, обновляется в фоне при каждом открытии.
 // Превью видео (i.ytimg.com) и запросы к YouTube не кэшируются.
-const CACHE = 'smotribelno-v2';
+const CACHE = 'smotribelno-v3';
 const SHELL = ['./', './index.html', './app.css', './app.js', './manifest.webmanifest', './icons/192.png', './shared.js', './starhall.css'];
 
 self.addEventListener('install', (e) => {

@@ -27,7 +27,10 @@
     return { videos: {}, settings: {}, importedAt: 0, exportedAt: 0, changedAt: 0 };
   }
   function save(changed = true) {
-    if (changed) db.changedAt = Date.now();
+    if (changed) {
+      db.changedAt = Date.now();
+      scheduleDrive(); // правка — на Диск через несколько секунд
+    }
     try {
       localStorage.setItem(KEY, JSON.stringify(db));
     } catch (e) {
@@ -210,6 +213,7 @@
     const fmt = (ts) => (ts ? new Date(ts).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : 'ещё не было');
     const pending = db.changedAt > (db.exportedAt || 0);
     $('#data-box').innerHTML = `
+      ${driveCardHtml()}
       <div class="card"><div class="stats">
         <div><b>${V.filter((v) => v.later && !v.watchedAt).length}</b><span>в «Позже+»</span></div>
         <div><b>${V.filter((v) => v.rating).length}</b><span>оценок</span></div>
@@ -556,6 +560,128 @@
     }
   });
 
+  // ---------- Синхронизация через Google Drive ----------
+  // Тот же файл в скрытой папке приложения на Диске, что и у расширения (TR.driveSync).
+  // Вход — переход на страницу Google и обратно; токен живёт час, потом тихо обновляется (prompt=none).
+  const DKEY = 'smotribelno:drive';
+  const REDIRECT = location.origin + location.pathname.replace(/index\.html$/, '');
+  let drive = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(DKEY) || 'null') || { on: false };
+    } catch {
+      return { on: false };
+    }
+  })();
+  const saveDrive = () => {
+    try {
+      localStorage.setItem(DKEY, JSON.stringify(drive));
+    } catch {
+      // нет места — синхронизация продолжит работать до перезапуска
+    }
+  };
+  let driveTimer = null;
+  let driveBusy = false;
+
+  function scheduleDrive(ms = 8000) {
+    if (!drive.on) return;
+    clearTimeout(driveTimer);
+    driveTimer = setTimeout(() => syncDrive(), ms);
+  }
+
+  function driveLogin(interactive) {
+    const state = Math.random().toString(36).slice(2);
+    sessionStorage.setItem('smotribelno:oauth-state', state);
+    location.href = TR.googleAuthUrl({ redirectUri: REDIRECT, interactive, state });
+  }
+
+  // Вернулись со страницы Google: токен в #фрагменте адреса
+  function takeAuthFromUrl() {
+    if (!location.hash.includes('access_token') && !location.hash.includes('error=')) return false;
+    const got = TR.parseAuthFragment(location.href);
+    const expected = sessionStorage.getItem('smotribelno:oauth-state');
+    history.replaceState(null, '', location.pathname + location.search);
+    if (!got || (got.state && expected && got.state !== expected)) return false;
+    if (got.token) {
+      drive = { ...drive, on: true, token: got.token, exp: got.exp, needLogin: false, error: '' };
+    } else {
+      drive = { ...drive, needLogin: true, error: got.error === 'access_denied' ? 'Доступ к Диску не разрешён' : 'Нужно войти в Google снова' };
+    }
+    saveDrive();
+    return true;
+  }
+
+  async function syncDrive({ allowRedirect = false } = {}) {
+    if (!drive.on || driveBusy || !TR.GOOGLE_CLIENT_ID) return;
+    if (!drive.token || !(drive.exp > Date.now())) {
+      // Токен истёк: при открытии приложения один раз тихо обновляем, иначе ждём кнопку
+      if (allowRedirect && !sessionStorage.getItem('smotribelno:silent')) {
+        sessionStorage.setItem('smotribelno:silent', '1');
+        return driveLogin(false);
+      }
+      drive.needLogin = true;
+      saveDrive();
+      if (view === 'data') renderData();
+      return;
+    }
+    driveBusy = true;
+    try {
+      const r = await TR.driveSync(drive.token, db.videos, { settings: db.settings });
+      for (const [id, v] of Object.entries(r.changes)) db.videos[id] = TR.slimVideo(v);
+      if (r.remoteCriteria) db.settings.criteria = r.remoteCriteria;
+      save(false);
+      drive = { ...drive, needLogin: false, error: '', at: Date.now(), received: Object.keys(r.changes).length, total: r.total };
+      sessionStorage.removeItem('smotribelno:silent');
+      if (Object.keys(r.changes).length) render();
+    } catch (e) {
+      drive = { ...drive, error: e.message, at: Date.now(), needLogin: !!e.auth };
+      if (e.auth) drive.token = null;
+    } finally {
+      driveBusy = false;
+      saveDrive();
+      if (view === 'data') renderData();
+    }
+  }
+
+  function driveCardHtml() {
+    if (!TR.GOOGLE_CLIENT_ID) return '<div class="card"><h2>Google Drive</h2><p class="muted">Синхронизация с компьютером через Google Drive скоро появится. Пока — обмен файлами ниже.</p></div>';
+    const when = drive.at ? new Date(drive.at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '';
+    const status = !drive.on
+      ? 'Оценки, список, отзывы и моменты будут общими с расширением на компьютере. Хранятся в скрытой папке приложения на вашем Google Диске — приложению виден только этот файл.'
+      : drive.needLogin
+        ? drive.error || 'Нужно войти в Google снова'
+        : drive.error
+          ? `Ошибка: ${esc(drive.error)}`
+          : drive.at
+            ? `Синхронизировано ${when}${drive.received ? ` · получено ${drive.received}` : ''} · на Диске видео: ${drive.total ?? '—'}`
+            : 'Синхронизирую…';
+    return `<div class="card"><h2>Google Drive ${drive.on ? (drive.needLogin ? '· нужен вход' : '· включено') : ''}</h2>
+      <p class="muted">${status}</p>
+      <div class="row">${
+        !drive.on || drive.needLogin
+          ? `<button type="button" class="btn primary" data-drive="login">${drive.on ? 'Войти в Google' : 'Подключить Google Drive'}</button>`
+          : '<button type="button" class="btn primary" data-drive="sync">Синхронизировать сейчас</button>'
+      }${drive.on ? '<button type="button" class="btn" data-drive="off">Отключить</button>' : ''}</div></div>`;
+  }
+
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-drive]');
+    if (!b) return;
+    if (b.dataset.drive === 'login') return driveLogin(true);
+    if (b.dataset.drive === 'sync') {
+      b.disabled = true;
+      return syncDrive();
+    }
+    if (b.dataset.drive === 'off' && confirm('Отключить синхронизацию? Данные на телефоне и на Диске останутся.')) {
+      drive = { on: false };
+      saveDrive();
+      renderData();
+    }
+  });
+  // Вернулись в приложение — подтянуть изменения с компьютера (не чаще раза в минуту)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && drive.on && Date.now() - (drive.at || 0) > 60000) syncDrive();
+  });
+
   // ---------- Навигация, ссылка, «Поделиться» ----------
   let toastTimer;
   function toast(text) {
@@ -629,7 +755,13 @@
   // Попросить браузер не удалять данные при нехватке места (Safari иначе может очистить сайт)
   navigator.storage?.persist?.().catch(() => {});
 
+  const backFromGoogle = takeAuthFromUrl();
   render();
+  const shared = location.search.includes('url=') || location.search.includes('text=');
   handleShare();
+  // При открытии — синхронизация; если токен истёк, тихий вход (кроме открытия через «Поделиться», чтобы не потерять ссылку)
+  const silentBounce = !!sessionStorage.getItem('smotribelno:silent');
+  if (drive.on) syncDrive({ allowRedirect: !shared && !backFromGoogle });
+  if (backFromGoogle && !silentBounce) toast(drive.token ? 'Google Drive подключён — синхронизирую' : drive.error || 'Вход не завершён');
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 })();

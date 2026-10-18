@@ -110,6 +110,7 @@ const TR = (() => {
     ytLogo: true, // кнопка в логотипе YouTube — мягкий фиолетовый вместо красного
     askDropped: true, // спрашивать «почему бросили», когда уходите с видео, не досмотрев
     cleanupAt: 0, // когда последний раз разбирали «Смотреть позже+» (или отложили разбор)
+    driveSync: false, // синхронизация с телефоном через Google Drive (у каждого компьютера своя — вход в Google)
   };
 
   // 3 — высокий, 2 — средний, 1 — низкий.
@@ -418,6 +419,113 @@ const TR = (() => {
     return v;
   }
 
+  // ---- Синхронизация через Google Drive (расширение ↔ телефон) ----
+  // Один файл smotribelno.json в скрытой папке приложения на Диске пользователя (appDataFolder):
+  // приложению виден только он. Вход — OAuth 2.0 (токен на час), клиент «Веб-приложение» из Google Cloud
+  // пользователя; расширение и телефон должны использовать один и тот же клиент — иначе папки приложения разные.
+  // Client ID «Веб-приложения» из Google Cloud (проект Smotribelno). Не секрет — виден в коде сайта.
+  // Адреса возврата в клиенте: https://mirikr.github.io/smotribelno/ и https://cmlcimgiapgbmebablclaadioipbfkde.chromiumapp.org/
+  const GOOGLE_CLIENT_ID = '440091117815-s0dqu2jsomao1ps8blqf2gn57s9ipgq7.apps.googleusercontent.com';
+  const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+  const DRIVE_FILE = 'smotribelno.json';
+  const DRIVE_APP = 'Smotribelno-drive';
+  const SYNC_FIELDS = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel'];
+
+  // В файл на Диске — только то, что нужно другому устройству; статистика по дням остаётся на месте
+  function slimVideo(v) {
+    const o = {};
+    for (const k of SYNC_FIELDS) if (v[k] != null) o[k] = v[k];
+    if (v.watch) {
+      const w = { real: v.watch.real, position: v.watch.position, maxProgress: v.watch.maxProgress, lastAt: v.watch.lastAt, remote: v.watch.remote };
+      for (const k of Object.keys(w)) if (w[k] == null) delete w[k];
+      o.watch = w;
+    }
+    return o;
+  }
+  const worthSyncing = (v) => !!(v && (v.rating || v.later || v.note || v.moments?.length || v.dropped || v.ratingDel || v.laterDel || v.droppedDel || isStarted(v)));
+
+  // Сравнение без учёта порядка полей
+  function stableJson(o) {
+    if (Array.isArray(o)) return '[' + o.map(stableJson).join(',') + ']';
+    if (o && typeof o === 'object') {
+      return '{' + Object.keys(o).filter((k) => o[k] !== undefined).sort().map((k) => JSON.stringify(k) + ':' + stableJson(o[k])).join(',') + '}';
+    }
+    return JSON.stringify(o);
+  }
+
+  // Адрес входа Google: response_type=token — токен приходит в #фрагменте адреса возврата
+  function googleAuthUrl({ redirectUri, interactive, state, hint }) {
+    const q = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      response_type: 'token',
+      redirect_uri: redirectUri,
+      scope: DRIVE_SCOPE,
+      include_granted_scopes: 'true',
+      prompt: interactive ? 'select_account' : 'none',
+    });
+    if (state) q.set('state', state);
+    if (hint) q.set('login_hint', hint);
+    return 'https://accounts.google.com/o/oauth2/v2/auth?' + q;
+  }
+  function parseAuthFragment(url) {
+    const h = new URLSearchParams(String(url).split('#')[1] || '');
+    if (h.get('error')) return { error: h.get('error') };
+    const token = h.get('access_token');
+    return token ? { token, exp: Date.now() + (Number(h.get('expires_in')) || 3600) * 1000 - 60000, state: h.get('state') } : null;
+  }
+
+  async function driveFetch(token, url, opts = {}, fetchFn = fetch) {
+    const r = await fetchFn(url, { ...opts, headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) } });
+    if (r.status === 401 || r.status === 403) {
+      const e = new Error(r.status === 401 ? 'Нужно войти в Google снова' : 'Google не дал доступ к Диску');
+      e.auth = true;
+      throw e;
+    }
+    if (!r.ok) throw new Error('Google Drive ответил ' + r.status);
+    return r;
+  }
+
+  // Одна синхронизация: прочитать файл, слить с локальным, вернуть что поменять здесь, записать файл, если он устарел.
+  // local — { id: видео }. Возвращает { changes: { id: видео }, uploaded, total }.
+  async function driveSync(token, local, { settings, fetchFn = fetch } = {}) {
+    const api = 'https://www.googleapis.com/drive/v3/files';
+    const list = await (await driveFetch(token, `${api}?spaces=appDataFolder&fields=files(id,modifiedTime)&q=${encodeURIComponent(`name='${DRIVE_FILE}'`)}`, {}, fetchFn)).json();
+    const fileId = list.files?.[0]?.id || null;
+    const remote = fileId ? await (await driveFetch(token, `${api}/${fileId}?alt=media`, {}, fetchFn)).json().catch(() => ({})) : {};
+    const rv = remote?.app === DRIVE_APP && remote.videos && typeof remote.videos === 'object' ? remote.videos : {};
+    const changes = {};
+    const next = {};
+    let remoteChanged = !fileId;
+    for (const id of new Set([...Object.keys(local), ...Object.keys(rv)])) {
+      if (!/^[\w-]{11}$/.test(id)) continue;
+      const l = local[id];
+      const r = rv[id];
+      const merged = mergeNewer(l, r ? { ...r, id } : r);
+      if (!merged) continue;
+      if (l && stableJson(merged) !== stableJson(l)) changes[id] = merged;
+      else if (!l && worthSyncing(merged)) changes[id] = merged;
+      if (worthSyncing(merged)) {
+        next[id] = slimVideo(merged);
+        if (!r || stableJson(next[id]) !== stableJson(r)) remoteChanged = true;
+      } else if (r) remoteChanged = true;
+    }
+    if (settings?.criteria && stableJson(settings.criteria) !== stableJson(remote.settings?.criteria)) remoteChanged = true;
+    // Свой набор критериев с другого устройства — подписи для старых оценок
+    const remoteCriteria = remote.settings?.criteria || null;
+    if (remoteChanged) {
+      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA }, videos: next });
+      if (fileId) {
+        await driveFetch(token, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }, fetchFn);
+      } else {
+        const boundary = 'smotribelno' + Date.now();
+        const meta = JSON.stringify({ name: DRIVE_FILE, parents: ['appDataFolder'], mimeType: 'application/json' });
+        const multipart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+        await driveFetch(token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart }, fetchFn);
+      }
+    }
+    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria };
+  }
+
   // Отправка операции в background (он сериализует все записи)
   async function send(type, payload = {}) {
     const res = await chrome.runtime.sendMessage({ type, ...payload });
@@ -480,6 +588,14 @@ const TR = (() => {
     resumeUrl,
     MOBILE_APP,
     mergeNewer,
+    GOOGLE_CLIENT_ID,
+    DRIVE_SCOPE,
+    slimVideo,
+    worthSyncing,
+    stableJson,
+    googleAuthUrl,
+    parseAuthFragment,
+    driveSync,
     send,
   };
 })();
