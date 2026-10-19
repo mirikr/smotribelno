@@ -1754,7 +1754,7 @@ body.kb-open .update-bar {
 .vcard.dragging {
   opacity: 0.3;
 }
-#later-list.drag-active .prio-group {
+#view-later.drag-active .prio-group {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc) 40%, transparent);
 }
 .prio-group.drop-over {
@@ -1847,4 +1847,574 @@ body.kb-open .update-bar {
   .grade::after {
     animation: none;
   }
+}
+/* ---- Перетаскивание: прорезь на месте, куда встанет видео, и «желе» ---- */
+.prio-group,
+#pl-items {
+  position: relative;
+}
+.dnd-hidden {
+  display: none !important;
+}
+.drop-slot {
+  margin-bottom: 10px;
+  border: 2px dashed color-mix(in srgb, var(--pc, var(--violet)) 70%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--pc, var(--violet)) 12%, transparent);
+  box-shadow: inset 0 0 22px color-mix(in srgb, var(--pc, var(--violet)) 22%, transparent);
+  transform-origin: 50% 50%;
+}
+.drop-slot.pop {
+  animation: slot-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes slot-pop {
+  0% {
+    scale: 1 0.55;
+    opacity: 0.4;
+  }
+  55% {
+    scale: 1.02 1.08;
+  }
+  100% {
+    scale: 1 1;
+    opacity: 1;
+  }
+}
+.prio-group:has(.drop-slot) .drop-empty {
+  display: none;
+}
+/* Блок, в который ведут видео, пружинисто покачивается (свойство scale — не мешает сдвигам transform) */
+.prio-group.jelly,
+#pl-items.jelly {
+  animation: jelly 0.62s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: 50% 0;
+}
+@keyframes jelly {
+  0% {
+    scale: 1 1;
+  }
+  22% {
+    scale: 1.028 0.972;
+  }
+  44% {
+    scale: 0.985 1.022;
+  }
+  64% {
+    scale: 1.01 0.992;
+  }
+  82% {
+    scale: 0.997 1.004;
+  }
+  100% {
+    scale: 1 1;
+  }
+}
+.drag-ghost {
+  will-change: transform;
+}
+
+/* ---- Плейлисты на телефоне ---- */
+#later-seg {
+  margin: 4px 0 14px;
+}
+.pl-card {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+}
+.pl-card:active {
+  scale: 0.985;
+}
+.pl-cover {
+  display: grid;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--surface-3);
+}
+.pl-cover img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  display: block;
+}
+.pl-cover.n2 {
+  grid-template-columns: 1fr 1fr;
+}
+.pl-cover.n3 {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.pl-cover.n3 img:first-child {
+  grid-row: span 2;
+}
+.pl-cover.n4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.pl-cover.n2,
+.pl-cover.n3,
+.pl-cover.n4 {
+  gap: 2px;
+}
+.pl-cover.empty {
+  place-items: center;
+  color: var(--violet-line);
+  font-size: 26px;
+}
+.pl-card-b {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pl-name {
+  font: 600 15px/1.25 var(--font-display);
+}
+.pl-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+.pl-bar span {
+  display: block;
+  height: 100%;
+  background: var(--violet);
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.8);
+}
+.pl-new {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.pl-new input,
+.pl-q,
+.pl-title {
+  font-size: 16px; /* иначе iOS увеличивает страницу при вводе */
+}
+.pl-new input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.pl-hint {
+  margin: 6px 2px 0;
+  font-size: 13px;
+}
+.pl-back {
+  margin-bottom: 10px;
+}
+.pl-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.16), rgba(17, 15, 22, 0) 65%), var(--surface);
+}
+.pl-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pl-emoji {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 24px;
+}
+.pl-title {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.pl-title:focus {
+  border-color: var(--violet);
+  background: var(--surface-2);
+  outline: none;
+}
+.pl-emoji-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pl-emoji-pick button {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 22px;
+}
+.pl-done {
+  color: #6ee7b7;
+  font-weight: 700;
+}
+.pl-q {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.pl-res {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.pl-res-i {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 28px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.pl-res-i:active {
+  background: var(--surface-2);
+}
+.pl-res-i.in {
+  opacity: 0.55;
+}
+.pl-res-go {
+  color: var(--violet);
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+#pl-items {
+  margin-top: 10px;
+}
+.pl-it {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+.pl-num {
+  color: var(--text-2);
+  font: 600 14px var(--font-display);
+  text-align: center;
+  margin-bottom: 10px;
+}
+.pl-it.done .pl-num {
+  color: #6ee7b7;
+}
+.pl-it .vcard {
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chip.ghost {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--track);
+}
+.pl-next {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--violet-tint);
+  color: var(--violet);
+  font-size: 13px;
+  text-align: left;
+}
+.pl-next b {
+  color: var(--text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .drop-slot.pop,
+  .prio-group.jelly,
+  #pl-items.jelly {
+    animation: none;
+  }
+}
+/* ---- Google Диск отключился: уведомление на весь экран ---- */
+.relogin {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: radial-gradient(ellipse 70% 50% at 50% 30%, rgba(139, 92, 246, 0.28), rgba(17, 15, 22, 0) 70%), rgba(10, 8, 16, 0.82);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: relogin-in 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.relogin-card {
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 30px 26px 26px;
+  border: 1px solid var(--violet-line);
+  border-radius: 26px;
+  background: var(--surface);
+  text-align: center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 50px rgba(139, 92, 246, 0.25);
+  animation: relogin-card 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.relogin-ico {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: var(--violet-tint);
+  color: var(--violet);
+  box-shadow: inset 0 0 0 1px var(--violet-line), 0 0 30px rgba(139, 92, 246, 0.35);
+}
+.relogin-card h2 {
+  margin: 0;
+  font: 600 22px/1.2 var(--font-display, 'Unbounded', sans-serif);
+  text-wrap: balance;
+}
+.relogin-card p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.relogin-why {
+  font-size: 12px;
+}
+.relogin-why:empty {
+  display: none;
+}
+.relogin-btns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+@keyframes relogin-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes relogin-card {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .relogin,
+  .relogin-card {
+    animation: none;
+  }
+}
+/* ---- Главная на телефоне: лента «Тоже начато» и оценка с крупным превью ---- */
+.hc-strip {
+  display: flex;
+  gap: 10px;
+  margin: 0 -16px 14px;
+  padding: 2px 16px 6px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 16px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.hc-strip::-webkit-scrollbar {
+  display: none;
+}
+.hc-card {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(62vw, 230px);
+  padding: 8px;
+  border: 1px solid var(--violet-line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  scroll-snap-align: start;
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.14);
+}
+.hc-card:active {
+  scale: 0.98;
+}
+.hc-shot {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--surface-3);
+}
+.hc-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.hc-shot .bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--violet);
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.8);
+}
+.hc-play {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(17, 15, 22, 0.75);
+  color: var(--violet-ink);
+  font-size: 11px;
+}
+.hc-t {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.tk-wide {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tk-wide .sh-label {
+  margin-bottom: 0;
+}
+.tk-shot {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface-3);
+}
+.tk-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.tk-shot .dur {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  font-size: 12px;
+  font-weight: 700;
+}
+.tk-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tk-wide .tk-last {
+  margin-bottom: 0;
+}
+.tk-wide .row .btn {
+  flex: 1;
+}
+.tk-hint {
+  margin: -2px 0 0;
+  font-size: 12px;
+}
+/* Блик на плашках оценки — фоном самой плашки, а не отдельным слоем: строчная плашка (в карточке канала)
+   не обрезала слой, и по экрану проезжал белый прямоугольник. Фон не выходит за скруглённые края, свечение вокруг остаётся. */
+.score::after,
+.grade::after {
+  content: none;
+}
+.score,
+.grade {
+  display: inline-flex;
+  align-items: center;
+  background-image: linear-gradient(100deg, transparent 38%, rgba(255, 255, 255, 0.34) 50%, transparent 62%) !important;
+  background-size: 300% 100% !important;
+  background-repeat: no-repeat !important;
+  animation: grade-breathe 3.4s ease-in-out infinite, grade-shine 4.2s ease-in-out infinite;
+}
+.score.perfect,
+.grade.perfect {
+  animation: perfect-pulse 2.4s ease-in-out infinite, grade-shine 4.2s ease-in-out infinite;
+}
+@keyframes grade-shine {
+  0%,
+  55% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -20% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .score,
+  .grade {
+    animation: none;
+  }
+}
+/* Крестик листа — чуть ниже, чтобы не наслаивался на полоску сверху и на верх развёрнутого листа */
+.sh-close {
+  top: 22px;
+  z-index: 3;
+}
+.sheet.full .sh-close {
+  top: calc(22px + env(safe-area-inset-top, 0px));
 }

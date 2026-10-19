@@ -43,7 +43,9 @@
       </section>
       <section id="view-later" class="view" aria-labelledby="h-later" hidden>
         <h1 id="h-later" class="visually-hidden">Смотреть позже+</h1>
+        <div class="seg" id="later-seg" role="group" aria-label="Очередь или плейлисты"></div>
         <div id="later-list"></div>
+        <div id="pl-view" hidden></div>
       </section>
       <section id="view-ratings" class="view" aria-labelledby="h-ratings" hidden>
         <h1 id="h-ratings" class="visually-hidden">Оценки</h1>
@@ -86,6 +88,21 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" hidden></div>
+
+    <!-- Google Диск отключился: на весь экран, пока не войдут снова или не нажмут «Позже» -->
+    <div class="relogin" id="relogin" role="alertdialog" aria-modal="true" aria-labelledby="relogin-t" aria-describedby="relogin-d" hidden>
+      <div class="relogin-card">
+        <div class="relogin-ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1-.5 9.5H7z"/><path d="M10 12.5l4 4M14 12.5l-4 4"/></svg>
+        </div>
+        <h2 id="relogin-t">Google Диск отключился</h2>
+        <p id="relogin-d">Google попросил войти снова. Пока вы не войдёте, оценки, список и плейлисты с телефона не попадут на компьютер, а с компьютера — сюда.</p>
+        <div class="relogin-btns">
+          <button type="button" class="btn primary" id="relogin-go">Войти в Google</button>
+          <button type="button" class="btn" id="relogin-later">Позже</button>
+        </div>
+      </div>
+    </div>
 
     <script src="./shared.js"></script>
     <script src="app.js"></script>

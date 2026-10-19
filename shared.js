@@ -233,6 +233,42 @@ const TR = (() => {
   function thumbUrl(id) {
     return `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
   }
+  // Крупное превью (большая карточка «Продолжить», билет оценки): 1280×720, если у видео его нет — на ступень ниже.
+  // Лестница: maxresdefault → hq720 → sddefault → hqdefault; следующую ступень даёт thumbFallback (YouTube отвечает 404).
+  const THUMB_STEPS = ['maxresdefault', 'hq720', 'sddefault', 'hqdefault'];
+  function thumbHQ(id) {
+    return `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
+  }
+  function thumbFallback(src) {
+    const m = String(src || '').match(/^(https:\/\/i\.ytimg\.com\/vi\/[\w-]{11}\/)(\w+)\.jpg/);
+    const i = m ? THUMB_STEPS.indexOf(m[2]) : -1;
+    return i >= 0 && i < THUMB_STEPS.length - 1 ? `${m[1]}${THUMB_STEPS[i + 1]}.jpg` : null;
+  }
+  // Подменять недоступное крупное превью на следующее (один обработчик на документ: у страниц расширения нет инлайн-скриптов)
+  function watchThumbFallback(doc = document) {
+    doc.addEventListener(
+      'error',
+      (e) => {
+        const img = e.target;
+        if (img?.tagName !== 'IMG') return;
+        const next = thumbFallback(img.currentSrc || img.src);
+        if (next) img.src = next;
+      },
+      true
+    );
+    // maxresdefault иногда отдаётся заглушкой 120×90 без ошибки — тоже идём ниже
+    doc.addEventListener(
+      'load',
+      (e) => {
+        const img = e.target;
+        if (img?.tagName === 'IMG' && img.naturalWidth && img.naturalWidth <= 120 && /\/(maxresdefault|hq720)\.jpg/.test(img.src)) {
+          const next = thumbFallback(img.src);
+          if (next) img.src = next;
+        }
+      },
+      true
+    );
+  }
 
   function watchUrl(id) {
     return `https://www.youtube.com/watch?v=${id}`;
@@ -279,10 +315,17 @@ const TR = (() => {
   }
 
   // Непросмотренные видео из «Смотреть позже+»: сначала важные, внутри — свежие
+  // Порядок «Смотреть позже+»: по важности, внутри блока — свой порядок, который задали перетаскиванием
+  // (later.order: 1, 2, 3…). Добавленное после этого — сверху блока, новое выше.
+  function laterCmp(a, b) {
+    const oa = a.later.order != null;
+    const ob = b.later.order != null;
+    return b.later.priority - a.later.priority || oa - ob || (oa ? a.later.order - b.later.order : b.later.addedAt - a.later.addedAt);
+  }
   function laterQueue(videos) {
     return Object.values(videos)
       .filter((v) => v.later && !v.watchedAt)
-      .sort((a, b) => b.later.priority - a.later.priority || b.later.addedAt - a.later.addedAt);
+      .sort(laterCmp);
   }
 
   // Начатое, но не досмотренное видео — его нужно «продолжить».
@@ -416,6 +459,12 @@ const TR = (() => {
       v.watchedAt = inc.watchedAt || null;
       if (inc.watchedUpd) v.watchedUpd = inc.watchedUpd;
     }
+    // Плейлисты видео: весь набор {плейлист: место в нём} со своим временем изменения
+    if ((inc.plAt || 0) > (cur.plAt || 0)) {
+      v.plAt = inc.plAt;
+      if (inc.pl && Object.keys(inc.pl).length) v.pl = copy(inc.pl);
+      else delete v.pl;
+    }
     if (inc.watch) {
       const a = cur.watch || {};
       const b = inc.watch;
@@ -423,6 +472,62 @@ const TR = (() => {
       v.watch = { ...a, real: Math.max(a.real || 0, b.real || 0), maxProgress: Math.max(a.maxProgress || 0, b.maxProgress || 0), position: later.position ?? a.position ?? b.position, lastAt: Math.max(a.lastAt || 0, b.lastAt || 0) || undefined };
     }
     return v;
+  }
+
+  // ---- Плейлисты ----
+  // Список плейлистов — в chrome.storage.local['playlists'] = { lists: { id: { name, emoji, createdAt, updatedAt, del? } } }
+  // (удалённый остаётся «надгробием» del, чтобы удаление доехало до других устройств).
+  // Что в плейлисте — в записи самого видео: v.pl = { id плейлиста: место (1, 2, 3…) }, v.plAt — время изменения.
+  // Так состав едет вместе с видео той же синхронизацией, что оценки и «позже».
+  const PLAYLISTS_KEY = 'playlists';
+  const PLAYLIST_EMOJI = ['🎬', '🍿', '📚', '🎧', '🎮', '💡', '🧠', '🔥', '🍳', '✈️', '💪', '😂', '🎵', '🧪', '⚽', '🌙'];
+  const isPlaylistId = (id) => /^[a-z0-9]{4,16}$/.test(id || '');
+  function newPlaylistId() {
+    return (Date.now().toString(36) + Math.random().toString(36).slice(2, 5)).slice(-12);
+  }
+  function playlistList(store) {
+    return Object.entries(store?.lists || {})
+      .filter(([id, p]) => isPlaylistId(id) && p && !p.del)
+      .map(([id, p]) => ({ id, ...p }))
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  }
+  // Видео плейлиста по порядку
+  function playlistItems(videos, plId) {
+    return Object.values(videos || {})
+      .filter((v) => v?.pl && plId in v.pl)
+      .sort((a, b) => a.pl[plId] - b.pl[plId] || (a.title || '').localeCompare(b.title || ''));
+  }
+  // Сводка: сколько видео, общая длительность, сколько просмотрено, средняя оценка
+  function playlistSummary(items) {
+    const rated = items.filter((v) => v.rating);
+    return {
+      count: items.length,
+      duration: items.reduce((s, v) => s + (v.duration || 0), 0),
+      left: items.filter((v) => !v.watchedAt).reduce((s, v) => s + (v.duration || 0) * (1 - Math.min(v.watch?.position || 0, 1)), 0),
+      watched: items.filter((v) => v.watchedAt).length,
+      avg: rated.length ? Math.round(rated.reduce((s, v) => s + v.rating.total, 0) / rated.length) : null,
+    };
+  }
+  // Что смотреть дальше: первое непросмотренное после текущего видео (или с начала)
+  function playlistNext(videos, plId, afterId) {
+    const items = playlistItems(videos, plId);
+    const from = afterId ? items.findIndex((v) => v.id === afterId) + 1 : 0;
+    return [...items.slice(from), ...items.slice(0, Math.max(0, from - 1))].find((v) => !v.watchedAt && v.id !== afterId) || null;
+  }
+  // Списки двух устройств: у каждого плейлиста побеждает более поздняя правка (переименование, значок, удаление)
+  function mergePlaylists(a, b) {
+    const out = { lists: {} };
+    const la = a?.lists || {};
+    const lb = b?.lists || {};
+    for (const id of new Set([...Object.keys(la), ...Object.keys(lb)])) {
+      if (!isPlaylistId(id)) continue;
+      const x = la[id];
+      const y = lb[id];
+      const t = (p) => Math.max(p?.updatedAt || 0, p?.del || 0, p?.createdAt || 0);
+      const w = !x ? y : !y ? x : t(y) > t(x) ? y : x;
+      if (w) out.lists[id] = JSON.parse(JSON.stringify(w));
+    }
+    return out;
   }
 
   // ---- Синхронизация через Google Drive (расширение ↔ телефон) ----
@@ -435,7 +540,7 @@ const TR = (() => {
   const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
   const DRIVE_FILE = 'smotribelno.json';
   const DRIVE_APP = 'Smotribelno-drive';
-  const SYNC_FIELDS = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden'];
+  const SYNC_FIELDS = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden', 'pl', 'plAt'];
 
   // В файл на Диске — только то, что нужно другому устройству; статистика по дням остаётся на месте
   function slimVideo(v) {
@@ -451,7 +556,7 @@ const TR = (() => {
   // Ещё — просмотренное за 60 дней без оценки («Ждут оценки») и брошенное без причины: их тоже разбирают с телефона
   const recentlyWatched = (v) => Date.now() - Math.max(v.watchedAt || 0, v.watch?.lastAt || 0) < 60 * 86400000;
   const worthSyncing = (v) =>
-    !!(v && (v.rating || v.later || v.note || v.moments?.length || v.dropped || v.ratingDel || v.laterDel || v.droppedDel || isStarted(v) || ((awaitingRating(v) || isDropCandidate(v)) && recentlyWatched(v))));
+    !!(v && (v.rating || v.later || v.note || v.moments?.length || v.dropped || v.ratingDel || v.laterDel || v.droppedDel || isStarted(v) || ((awaitingRating(v) || isDropCandidate(v)) && recentlyWatched(v)) || (v.pl && Object.keys(v.pl).length) || Date.now() - (v.plAt || 0) < 60 * 86400000));
 
   // Сравнение без учёта порядка полей
   function stableJson(o) {
@@ -498,7 +603,7 @@ const TR = (() => {
   // local — { id: видео }. Возвращает { changes: { id: видео }, uploaded, total }.
   // stats — сводка статистики с компьютера (время по дням и каналам, иконки каналов): телефон её только читает
   // и при записи файла сохраняет как есть.
-  async function driveSync(token, local, { settings, stats, fetchFn = fetch } = {}) {
+  async function driveSync(token, local, { settings, stats, playlists, fetchFn = fetch } = {}) {
     const api = 'https://www.googleapis.com/drive/v3/files';
     const list = await (await driveFetch(token, `${api}?spaces=appDataFolder&fields=files(id,modifiedTime)&q=${encodeURIComponent(`name='${DRIVE_FILE}'`)}`, {}, fetchFn)).json();
     const fileId = list.files?.[0]?.id || null;
@@ -522,11 +627,15 @@ const TR = (() => {
     }
     if (settings?.criteria && stableJson(settings.criteria) !== stableJson(remote.settings?.criteria)) remoteChanged = true;
     if (stats && stableJson(stats) !== stableJson(remote.stats)) remoteChanged = true;
+    // Список плейлистов: сливаем по каждому плейлисту; null — у устройства его нет (старая версия), не трогаем
+    const outPlaylists = playlists || remote.playlists ? mergePlaylists(playlists, remote.playlists) : null;
+    if (outPlaylists && stableJson(outPlaylists) !== stableJson(remote.playlists || null)) remoteChanged = true;
+    const playlistsChanged = !!(outPlaylists && playlists !== undefined && stableJson(outPlaylists) !== stableJson(playlists || { lists: {} }));
     // Свой набор критериев с другого устройства — подписи для старых оценок
     const remoteCriteria = remote.settings?.criteria || null;
     const outStats = stats || remote.stats || null;
     if (remoteChanged) {
-      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA }, stats: outStats, videos: next });
+      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA }, stats: outStats, playlists: outPlaylists, videos: next });
       if (fileId) {
         await driveFetch(token, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }, fetchFn);
       } else {
@@ -536,7 +645,7 @@ const TR = (() => {
         await driveFetch(token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart }, fetchFn);
       }
     }
-    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria, remoteStats: outStats };
+    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria, remoteStats: outStats, playlists: playlistsChanged ? outPlaylists : null };
   }
 
   // Отправка операции в background (он сериализует все записи)
@@ -610,6 +719,19 @@ const TR = (() => {
     googleAuthUrl,
     parseAuthFragment,
     driveSync,
+    laterCmp,
+    thumbHQ,
+    thumbFallback,
+    watchThumbFallback,
+    PLAYLISTS_KEY,
+    PLAYLIST_EMOJI,
+    isPlaylistId,
+    newPlaylistId,
+    playlistList,
+    playlistItems,
+    playlistSummary,
+    playlistNext,
+    mergePlaylists,
     send,
   };
 })();

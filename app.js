@@ -16,6 +16,8 @@
     return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? b : c;
   };
 
+  TR.watchThumbFallback(); // крупные превью: 720p, а нет — на ступень ниже
+
   // ---------- Хранилище ----------
   let db = load();
   function load() {
@@ -47,12 +49,23 @@
     const v = video(id);
     const now = Date.now();
     if (priority) {
-      v.later = { priority, addedAt: v.later?.addedAt || now, updatedAt: now };
+      const keep = v.later?.priority === priority && v.later.order != null ? { order: v.later.order } : {}; // в другом блоке — наверх
+      v.later = { priority, addedAt: v.later?.addedAt || now, updatedAt: now, ...keep };
       delete v.laterDel;
     } else if (v.later) {
       v.laterDel = now;
       delete v.later;
     }
+    save();
+  }
+  // Блок важности после перетаскивания: все его видео по порядку (как laterOrder в расширении)
+  function setLaterOrder(priority, ids) {
+    const now = Date.now();
+    ids.forEach((id, i) => {
+      const v = video(id);
+      if (!v.later || (v.later.priority === priority && v.later.order === i + 1)) return;
+      v.later = { ...v.later, priority, order: i + 1, updatedAt: now };
+    });
     save();
   }
   function rate(id, scores, vtype, skip) {
@@ -96,6 +109,63 @@
     v.noteAt = Date.now();
     save();
   }
+  // Плейлисты — как в расширении (TR.playlistList): список в db.playlists, что в плейлисте — в v.pl
+  const plStore = () => (db.playlists ||= { lists: {} });
+  function plCreate(name, addId) {
+    const store = plStore();
+    const plId = TR.newPlaylistId();
+    const now = Date.now();
+    store.lists[plId] = { name: String(name).trim().slice(0, 60) || 'Новый плейлист', emoji: TR.PLAYLIST_EMOJI[Object.keys(store.lists).length % TR.PLAYLIST_EMOJI.length], createdAt: now, updatedAt: now };
+    if (addId) plToggle(addId, plId, true);
+    save();
+    return plId;
+  }
+  function plUpdate(plId, patch) {
+    const p = plStore().lists[plId];
+    if (!p || p.del) return;
+    if (patch.name != null) p.name = String(patch.name).trim().slice(0, 60) || p.name;
+    if (patch.emoji && TR.PLAYLIST_EMOJI.includes(patch.emoji)) p.emoji = patch.emoji;
+    p.updatedAt = Date.now();
+    save();
+  }
+  function plDelete(plId) {
+    const now = Date.now();
+    plStore().lists[plId] = { del: now };
+    for (const v of Object.values(db.videos)) {
+      if (!v.pl || !(plId in v.pl)) continue;
+      delete v.pl[plId];
+      if (!Object.keys(v.pl).length) delete v.pl;
+      v.plAt = now;
+    }
+    save();
+  }
+  function plToggle(id, plId, on) {
+    const v = video(id);
+    const has = !!v.pl && plId in v.pl;
+    const want = on == null ? !has : !!on;
+    if (want === has) return want;
+    if (want) {
+      const last = TR.playlistItems(db.videos, plId).reduce((m, x) => Math.max(m, x.pl[plId] || 0), 0);
+      v.pl = { ...(v.pl || {}), [plId]: last + 1 };
+    } else {
+      delete v.pl[plId];
+      if (!Object.keys(v.pl).length) delete v.pl;
+    }
+    v.plAt = Date.now();
+    save();
+    return want;
+  }
+  function plOrder(plId, ids) {
+    const now = Date.now();
+    ids.forEach((id, i) => {
+      const v = db.videos[id];
+      if (!v?.pl || !(plId in v.pl) || v.pl[plId] === i + 1) return;
+      v.pl = { ...v.pl, [plId]: i + 1 };
+      v.plAt = now;
+    });
+    save();
+  }
+
   function setDropped(id, reason) {
     const v = video(id);
     if (reason) {
@@ -175,16 +245,38 @@
     </button>`;
   }
 
+  // Состояние перетаскивания (см. «Перетаскивание» ниже) — объявлено здесь: renderLater проверяет его при каждом вызове
+  const dnd = { timer: null, card: null, item: null, ghost: null, slot: null, box: null, id: null, x0: 0, y0: 0, dx: 0, dy: 0, fx: 0, fy: 0, gx: 0, gy: 0, rot: 0, mode: 'prio', active: false, suppressClick: false, raf: 0 };
+  // «Позже»: переключатель «Очередь / Плейлисты» (как в расширении); открытый плейлист — lState.open
+  const lState = { mode: 'queue', open: null, q: '' };
+  try {
+    lState.mode = localStorage.getItem('smotribelno:lmode') === 'pl' ? 'pl' : 'queue';
+  } catch {
+    // без памяти браузера — с очереди
+  }
+
   function renderLater() {
+    if (dnd.active) return; // видео в руке — список перерисуем, когда отпустят
     const s = settings();
     const started = TR.startedVideos(db.videos, s.autoWatchedPct);
     const ids = new Set(started.map((v) => v.id));
     const queue = TR.laterQueue(db.videos).filter((v) => !ids.has(v.id));
+    $('#n-later').textContent = queue.length + started.length || '';
+    const lists = TR.playlistList(plStore());
+    $('#later-seg').innerHTML = [
+      ['queue', `Очередь · ${queue.length + started.length}`],
+      ['pl', `Плейлисты${lists.length ? ' · ' + lists.length : ''}`],
+    ]
+      .map(([v, l]) => `<button type="button" data-lmode="${v}" class="${lState.mode === v ? 'on' : ''}">${l}</button>`)
+      .join('');
+    $('#later-list').hidden = lState.mode === 'pl';
+    $('#pl-view').hidden = lState.mode !== 'pl';
+    if (lState.mode === 'pl') return renderPlaylists(lists);
     let html = '';
     if (started.length) html += `<h2 class="list-head">Продолжить <span>· ${started.length}</span></h2>${started.map((v) => card(v, true)).join('')}`;
     // Отдельные подсвеченные блоки по важности; видны и пустыми — в них перетаскивают зажатием пальца
     if (queue.length || started.length) {
-      html += '<p class="muted drag-hint">Зажмите видео и перетащите в другой блок, чтобы поменять важность.</p>';
+      html += '<p class="muted drag-hint">Зажмите видео и перетащите: на другое место или в другой блок важности.</p>';
       for (const p of [3, 2, 1]) {
         const g = queue.filter((v) => v.later.priority === p);
         const P = TR.PRIORITIES[p];
@@ -201,12 +293,203 @@
       }${
         Object.keys(db.videos).length ? '' : '<br><br>Оценки и список с компьютера — во вкладке «Данные».'
       }</div>`;
-    $('#n-later').textContent = queue.length + started.length || '';
   }
 
-  // ---------- Перетаскивание в «Позже+»: зажать карточку ~0,4 с и вести пальцем в другой блок важности ----------
-  const dnd = { timer: null, card: null, ghost: null, id: null, x0: 0, y0: 0, dx: 0, dy: 0, over: null, active: false, suppressClick: false, raf: 0, lastY: 0 };
-  const laterListEl = $('#later-list');
+  // ---------- Плейлисты ----------
+  const plCover = (items) => {
+    const th = items.slice(0, 4);
+    return th.length
+      ? `<span class="pl-cover n${th.length}" aria-hidden="true">${th.map((v) => `<img src="${TR.thumbUrl(v.id)}" alt="" loading="lazy">`).join('')}</span>`
+      : '<span class="pl-cover empty" aria-hidden="true">▶</span>';
+  };
+  const plMeta = (sum) =>
+    [`${sum.count} ${plural(sum.count, 'видео', 'видео', 'видео')}`, sum.duration ? TR.fmtSpent(sum.duration) : '', sum.count ? `просмотрено ${sum.watched} из ${sum.count}` : '', sum.avg != null ? `средняя ${sum.avg}` : '']
+      .filter(Boolean)
+      .join(' · ');
+
+  function renderPlaylists(lists) {
+    const box = $('#pl-view');
+    const open = lState.open && plStore().lists[lState.open] && !plStore().lists[lState.open].del ? lState.open : null;
+    if (!open) {
+      lState.open = null;
+      box.innerHTML = `
+        ${lists
+          .map((p) => {
+            const items = TR.playlistItems(db.videos, p.id);
+            const sum = TR.playlistSummary(items);
+            return `<button type="button" class="pl-card" data-plopen="${p.id}">
+              ${plCover(items)}
+              <span class="pl-card-b"><span class="pl-name">${esc(p.emoji || '')} ${esc(p.name)}</span><span class="vmeta">${plMeta(sum)}</span>
+              <span class="pl-bar"><span style="width:${sum.count ? Math.round((sum.watched / sum.count) * 100) : 0}%"></span></span></span>
+            </button>`;
+          })
+          .join('')}
+        <form class="pl-new" id="pl-new-form"><input id="pl-new-name" maxlength="60" placeholder="Новый плейлист" enterkeyhint="done" aria-label="Название нового плейлиста"><button type="submit" class="btn primary">Создать</button></form>
+        ${lists.length ? '' : '<p class="muted pl-hint">Собирайте видео в подборки: «На выходные», «Учёба», «Кофе». Добавлять можно из карточки любого видео — там появилась строка «Плейлисты».</p>'}`;
+      return;
+    }
+    const p = plStore().lists[open];
+    const items = TR.playlistItems(db.videos, open);
+    const sum = TR.playlistSummary(items);
+    const next = TR.playlistNext(db.videos, open, null);
+    const s = settings();
+    const keepFocus = document.activeElement?.id === 'pl-q';
+    box.innerHTML = `
+      <button type="button" class="link-btn pl-back" data-plback="1">← Все плейлисты</button>
+      <div class="pl-hero">
+        ${plCover(items)}
+        <div class="pl-title-row"><button type="button" class="pl-emoji" data-plemoji="1" aria-label="Сменить значок">${esc(p.emoji || '🎬')}</button><input id="pl-title" class="pl-title" value="${esc(p.name)}" maxlength="60" enterkeyhint="done" aria-label="Название плейлиста"></div>
+        <div class="pl-emoji-pick" id="pl-emoji-pick" hidden>${TR.PLAYLIST_EMOJI.map((e) => `<button type="button" data-emoji="${e}">${e}</button>`).join('')}</div>
+        <div class="vmeta">${plMeta(sum)}${next && sum.left > 60 ? ` · осталось ≈ ${TR.fmtSpent(sum.left)}` : ''}</div>
+        <div class="row">
+          ${next ? `<a class="btn primary" href="${TR.resumeUrl(next)}" target="_blank" rel="noopener">▶ ${sum.watched || TR.isStarted(next, s.autoWatchedPct) ? 'Продолжить' : 'Смотреть по порядку'}</a>` : sum.count ? '<span class="pl-done">✓ Всё просмотрено</span>' : ''}
+          <button type="button" class="btn" data-pldel="1">Удалить</button>
+        </div>
+      </div>
+      <input type="search" id="pl-q" class="pl-q" placeholder="＋ Добавить: поиск по своим видео" value="${esc(lState.q)}" autocomplete="off" enterkeyhint="search">
+      <div id="pl-res">${plResults(open)}</div>
+      ${items.length > 1 ? '<p class="muted drag-hint">Зажмите видео и перетащите, чтобы поменять порядок.</p>' : ''}
+      <div id="pl-items" data-pl="${open}">
+        ${items.map((v, i) => `<div class="pl-it${v.watchedAt ? ' done' : ''}"><span class="pl-num">${v.watchedAt ? '✓' : i + 1}</span>${card(v, TR.isStarted(v, s.autoWatchedPct) && !v.watchedAt)}</div>`).join('') || '<div class="empty">Пока пусто. Найдите видео поиском выше или откройте любое видео и отметьте этот плейлист.</div>'}
+      </div>`;
+    if (keepFocus) {
+      const q = $('#pl-q');
+      q.focus();
+      q.setSelectionRange(q.value.length, q.value.length);
+    }
+  }
+
+  // Поиск для добавления: все видео на телефоне (с компьютера тоже), новые сверху
+  function plResults(plId) {
+    const words = lState.q.toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean);
+    if (!words.length) return '';
+    const hay = (v) => `${v.title || ''} ${v.channel || ''}`.toLowerCase().replace(/ё/g, 'е');
+    const found = Object.values(db.videos)
+      .filter((v) => v.title && words.every((w) => hay(v).includes(w)))
+      .sort((a, b) => Math.max(b.watch?.lastAt || 0, b.later?.addedAt || 0, b.rating?.updatedAt || 0) - Math.max(a.watch?.lastAt || 0, a.later?.addedAt || 0, a.rating?.updatedAt || 0))
+      .slice(0, 8);
+    if (!found.length) return '<p class="muted pl-hint">Ничего не нашлось. Видео можно добавить и из его карточки.</p>';
+    return `<div class="pl-res">${found
+      .map((v) => {
+        const inPl = !!v.pl && plId in v.pl;
+        return `<button type="button" class="pl-res-i${inPl ? ' in' : ''}" data-pladd="${v.id}" ${inPl ? 'disabled' : ''}>${thumb(v)}<span class="vinfo"><span class="vtitle">${esc(v.title)}</span><span class="vmeta">${esc(v.channel || '')}</span></span><span class="pl-res-go">${inPl ? '✓' : '＋'}</span></button>`;
+      })
+      .join('')}</div>`;
+  }
+
+  const plView = $('#pl-view');
+  $('#later-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-lmode]');
+    if (!b) return;
+    lState.mode = b.dataset.lmode;
+    try {
+      localStorage.setItem('smotribelno:lmode', lState.mode);
+    } catch {
+      // не критично
+    }
+    renderLater();
+  });
+  plView.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = $('#pl-new-name')?.value.trim();
+    if (!name) return $('#pl-new-name')?.focus();
+    lState.open = plCreate(name);
+    lState.q = '';
+    renderLater();
+    toast(`Плейлист «${name}» создан`);
+  });
+  plView.addEventListener('click', (e) => {
+    if (dnd.suppressClick) return;
+    const t = e.target;
+    const openB = t.closest('[data-plopen]');
+    if (openB) {
+      lState.open = openB.dataset.plopen;
+      lState.q = '';
+      renderLater();
+      return window.scrollTo(0, 0);
+    }
+    if (t.closest('[data-plback]')) {
+      lState.open = null;
+      return renderLater();
+    }
+    if (t.closest('[data-plemoji]')) return ($('#pl-emoji-pick').hidden = !$('#pl-emoji-pick').hidden);
+    const em = t.closest('[data-emoji]');
+    if (em) {
+      plUpdate(lState.open, { emoji: em.dataset.emoji });
+      return renderLater();
+    }
+    if (t.closest('[data-pldel]')) {
+      const p = plStore().lists[lState.open];
+      if (!confirm(`Удалить плейлист «${p.name}»? Видео и их оценки останутся.`)) return;
+      plDelete(lState.open);
+      lState.open = null;
+      toast('Плейлист удалён');
+      return renderLater();
+    }
+    const add = t.closest('[data-pladd]');
+    if (add) {
+      plToggle(add.dataset.pladd, lState.open, true);
+      navigator.vibrate?.(8);
+      toast('Добавлено в плейлист');
+      return renderLater();
+    }
+  });
+  plView.addEventListener('input', (e) => {
+    if (e.target.id !== 'pl-q') return;
+    lState.q = e.target.value;
+    $('#pl-res').innerHTML = plResults(lState.open);
+  });
+  // Переименование: «Готово» на клавиатуре или уход из поля
+  plView.addEventListener('keydown', (e) => e.target.id === 'pl-title' && e.key === 'Enter' && e.target.blur());
+  plView.addEventListener('focusout', (e) => {
+    if (e.target.id !== 'pl-title') return;
+    const name = e.target.value.trim();
+    if (name && name !== plStore().lists[lState.open]?.name) {
+      plUpdate(lState.open, { name });
+      toast('Переименовано');
+    }
+  });
+
+  // ---------- Перетаскивание: зажать карточку ~0,4 с и вести пальцем ----------
+  // Очередь — в любой блок важности и на любое место в нём (mode 'prio'); открытый плейлист — на новое место (mode 'order').
+  // Куда встанет видео, показывает «прорезь»: соседи пружинисто расступаются, блок под пальцем покачивается, как желе,
+  // а карточка в руке тянется за пальцем с небольшим отставанием и наклоняется по ходу движения.
+  const laterListEl = $('#view-later');
+  const SPRING = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const isItem = (x) => (dnd.mode === 'order' ? x.classList.contains('pl-it') : x.matches('.vcard[data-open]'));
+  const dndBoxes = () => (dnd.mode === 'order' ? $$('#pl-items') : $$('#later-list .prio-group'));
+  const dndItems = (box) => [...box.children].filter((x) => x !== dnd.item && isItem(x));
+  const idOf = (x) => (x.matches('.vcard') ? x : $('.vcard[data-open]', x))?.dataset.open;
+
+  // FLIP: запомнить, где элементы видны сейчас, переставить разметку и с пружиной довести их до новых мест
+  function flip(mutate) {
+    const els = dndBoxes().flatMap((b) => [b, ...dndItems(b)]);
+    const rel = (e) => e.getBoundingClientRect().top - e.parentElement.getBoundingClientRect().top;
+    const before = new Map(els.map((e) => [e, rel(e)]));
+    for (const e of els) {
+      e.style.transition = 'none';
+      e.style.transform = '';
+    }
+    mutate();
+    if (reduceMotion) return;
+    for (const e of els) {
+      const d = before.get(e) - rel(e);
+      if (Math.abs(d) < 1) continue;
+      e.style.transform = `translateY(${d}px)`;
+      e.getBoundingClientRect(); // зафиксировать начальное положение
+      e.style.transition = `transform 0.45s ${SPRING}`;
+      e.style.transform = '';
+    }
+  }
+  // Блок «желе»: короткое пружинистое покачивание
+  function jelly(box) {
+    if (!box || reduceMotion) return;
+    box.classList.remove('jelly');
+    void box.offsetWidth;
+    box.classList.add('jelly');
+  }
 
   function dndCancel() {
     clearTimeout(dnd.timer);
@@ -215,69 +498,163 @@
   }
   function dndStart() {
     dnd.timer = null;
+    dnd.item = dnd.mode === 'order' ? dnd.card.closest('.pl-it') : dnd.card;
+    if (!dnd.item) return;
     const r = dnd.card.getBoundingClientRect();
     dnd.dx = dnd.x0 - r.left;
     dnd.dy = dnd.y0 - r.top;
+    dnd.gx = r.left;
+    dnd.gy = r.top;
+    dnd.fx = dnd.x0;
+    dnd.fy = dnd.y0;
+    dnd.rot = 0;
     const ghost = dnd.card.cloneNode(true);
     ghost.classList.add('drag-ghost');
     ghost.style.width = r.width + 'px';
-    ghost.style.transform = `translate(${r.left}px, ${r.top}px) scale(1.03)`;
+    ghost.style.transform = `translate(${r.left}px, ${r.top}px) scale(1.04)`;
     document.body.appendChild(ghost);
     dnd.ghost = ghost;
+    // на месте карточки — прорезь её высоты, сама карточка прячется до конца перетаскивания
+    const slot = document.createElement('div');
+    slot.className = 'drop-slot';
+    slot.style.height = dnd.item.offsetHeight + 'px';
+    dnd.item.before(slot);
+    dnd.item.classList.add('dnd-hidden');
+    dnd.slot = slot;
+    dnd.box = slot.parentElement;
+    dnd.box.classList.add('drop-over');
     dnd.active = true;
-    dnd.card.classList.add('dragging');
     laterListEl.classList.add('drag-active');
+    jelly(dnd.box);
     navigator.vibrate?.(12);
+    dnd.raf = requestAnimationFrame(ghostLoop);
+  }
+
+  // Куда встанет: блок под пальцем (или ближайший, если палец между блоками) и видео, перед которым
+  function dndTarget(x, y) {
+    let box = document.elementFromPoint(x, y)?.closest?.(dnd.mode === 'order' ? '#pl-items' : '#later-list .prio-group');
+    if (!box) {
+      let best = null;
+      let bd = Infinity;
+      for (const b of dndBoxes()) {
+        const r = b.getBoundingClientRect();
+        const d = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+        if (d < bd) {
+          bd = d;
+          best = b;
+        }
+      }
+      box = bd < 90 ? best : null;
+    }
+    if (!box) return null;
+    const items = dndItems(box);
+    const i = items.findIndex((el) => y < el.getBoundingClientRect().top + el.offsetHeight / 2);
+    return { box, before: i < 0 ? null : items[i] };
+  }
+  function nextItemAfterSlot() {
+    let n = dnd.slot.nextElementSibling;
+    while (n && (n === dnd.item || !isItem(n))) n = n.nextElementSibling;
+    return n;
+  }
+  function dndUpdateTarget(x, y) {
+    const t = dndTarget(x, y);
+    if (!t || (t.box === dnd.slot.parentElement && t.before === nextItemAfterSlot())) return;
+    flip(() => {
+      if (t.before) t.box.insertBefore(dnd.slot, t.before);
+      else {
+        const items = dndItems(t.box);
+        if (items.length) items[items.length - 1].after(dnd.slot);
+        else t.box.appendChild(dnd.slot);
+      }
+    });
+    dnd.slot.classList.remove('pop');
+    void dnd.slot.offsetWidth;
+    dnd.slot.classList.add('pop');
+    if (t.box !== dnd.box) {
+      dnd.box?.classList.remove('drop-over');
+      t.box.classList.add('drop-over');
+      jelly(t.box);
+      dnd.box = t.box;
+      navigator.vibrate?.(6);
+    }
+  }
+
+  // Карточка в руке догоняет палец (лёгкое отставание), наклоняется и чуть вытягивается по ходу — как слайм.
+  // У краёв экрана список сам прокручивается.
+  function ghostLoop() {
+    dnd.raf = 0;
+    if (!dnd.active || !dnd.ghost) return;
+    const tx = dnd.fx - dnd.dx;
+    const ty = dnd.fy - dnd.dy;
+    const vx = tx - dnd.gx;
+    const vy = ty - dnd.gy;
+    const k = reduceMotion ? 1 : 0.38;
+    dnd.gx += vx * k;
+    dnd.gy += vy * k;
+    dnd.rot += (Math.max(-8, Math.min(8, vx * 0.35)) - dnd.rot) * 0.25;
+    const s = reduceMotion ? 0 : Math.min(0.05, Math.abs(vy) / 500);
+    dnd.ghost.style.transform = `translate(${dnd.gx}px, ${dnd.gy}px) rotate(${reduceMotion ? 0 : dnd.rot}deg) scale(${1.04 - s}, ${1.04 + s})`;
+    const h = innerHeight;
+    const v = dnd.fy < 120 ? -Math.ceil((120 - dnd.fy) / 8) : dnd.fy > h - 140 ? Math.ceil((dnd.fy - (h - 140)) / 8) : 0;
+    if (v) {
+      window.scrollBy(0, v);
+      dndUpdateTarget(dnd.fx, dnd.fy);
+    }
+    dnd.raf = requestAnimationFrame(ghostLoop);
   }
   function dndMove(x, y) {
-    dnd.ghost.style.transform = `translate(${x - dnd.dx}px, ${y - dnd.dy}px) scale(1.03)`;
-    const under = document.elementFromPoint(x, y)?.closest?.('.prio-group');
-    if (under !== dnd.over) {
-      dnd.over?.classList.remove('drop-over');
-      under?.classList.add('drop-over');
-      dnd.over = under || null;
-    }
-    dnd.lastY = y;
-    // у верхнего и нижнего края — прокручиваем список
-    if (!dnd.raf) {
-      const step = () => {
-        dnd.raf = 0;
-        if (!dnd.active) return;
-        const h = innerHeight;
-        const v = dnd.lastY < 120 ? -Math.ceil((120 - dnd.lastY) / 8) : dnd.lastY > h - 140 ? Math.ceil((dnd.lastY - (h - 140)) / 8) : 0;
-        if (v) {
-          window.scrollBy(0, v);
-          dnd.raf = requestAnimationFrame(step);
-        }
-      };
-      dnd.raf = requestAnimationFrame(step);
-    }
+    dnd.fx = x;
+    dnd.fy = y;
+    dndUpdateTarget(x, y);
   }
-  function dndEnd() {
-    const id = dnd.id;
-    const g = dnd.over;
-    dnd.over?.classList.remove('drop-over');
-    dnd.ghost?.remove();
-    dnd.card?.classList.remove('dragging');
+
+  function dndEnd(abort = false) {
+    cancelAnimationFrame(dnd.raf);
+    dnd.raf = 0;
+    const { id, slot, item, ghost, mode } = dnd;
+    const box = slot?.parentElement;
+    let ids = null;
+    if (!abort && box) ids = [...box.children].filter((x) => x === slot || (x !== item && isItem(x))).map((x) => (x === slot ? id : idOf(x)));
+    const prio = mode === 'prio' && box ? Number(box.dataset.prio) : null;
+    const plId = mode === 'order' && box ? box.dataset.pl : null;
+    // карточка «прилипает» на своё новое место
+    const r = (abort ? item : slot)?.getBoundingClientRect();
+    if (ghost && r && !reduceMotion) {
+      ghost.style.transition = `transform 0.26s ${SPRING}`;
+      ghost.style.transform = `translate(${r.left}px, ${r.top}px) rotate(0deg) scale(1)`;
+    }
+    dnd.box?.classList.remove('drop-over');
     laterListEl.classList.remove('drag-active');
     dnd.active = false;
-    dnd.ghost = dnd.card = dnd.over = null;
+    dnd.ghost = dnd.card = dnd.item = dnd.slot = dnd.box = null;
     dnd.suppressClick = true; // отпускание пальца после перетаскивания — не «нажатие» на карточку
-    setTimeout(() => (dnd.suppressClick = false), 400);
-    if (!g || !id) return;
-    const p = Number(g.dataset.prio);
-    if (video(id).later?.priority === p) return;
-    setLater(id, p);
-    toast(`Важность: ${TR.PRIORITIES[p].label.toLowerCase()}`);
-    renderLater();
-    const moved = $(`#later-list [data-open="${id}"]`);
-    moved?.classList.add('just-moved');
+    setTimeout(() => (dnd.suppressClick = false), 500);
+    setTimeout(
+      () => {
+        ghost?.remove();
+        const oldP = video(id).later?.priority;
+        if (ids && mode === 'order' && plId) plOrder(plId, ids);
+        if (ids && mode === 'prio' && prio) {
+          setLaterOrder(prio, ids);
+          if (oldP !== prio) toast(`Важность: ${TR.PRIORITIES[prio].label.toLowerCase()}`);
+        }
+        if (!ids) {
+          slot?.remove();
+          item?.classList.remove('dnd-hidden');
+          return;
+        }
+        renderLater();
+        $(`#view-later .vcard[data-open="${id}"]`)?.classList.add('just-moved');
+      },
+      reduceMotion ? 0 : 240
+    );
   }
   laterListEl.addEventListener(
     'touchstart',
     (e) => {
-      const c = e.target.closest('.vcard[data-open]');
-      if (!c || e.touches.length > 1) return;
+      const c = e.target.closest('#later-list .prio-group .vcard[data-open], #pl-items .vcard[data-open]');
+      if (!c || e.touches.length > 1 || dnd.active) return;
+      dnd.mode = c.closest('#pl-items') ? 'order' : 'prio';
       dnd.card = c;
       dnd.id = c.dataset.open;
       dnd.x0 = e.touches[0].clientX;
@@ -299,14 +676,14 @@
     { passive: false }
   );
   laterListEl.addEventListener('touchend', () => (dnd.active ? dndEnd() : dndCancel()));
-  laterListEl.addEventListener('touchcancel', () => (dnd.active ? dndEnd() : dndCancel()));
+  laterListEl.addEventListener('touchcancel', () => (dnd.active ? dndEnd(true) : dndCancel()));
   // Долгое нажатие на iPhone открывает меню ссылки/картинки — у карточек его нет
   laterListEl.addEventListener('contextmenu', (e) => e.target.closest('.vcard') && e.preventDefault());
   // После перетаскивания «клик» по карточке не открывает её
   document.addEventListener(
     'click',
     (e) => {
-      if (dnd.suppressClick && e.target.closest('#later-list .vcard')) {
+      if (dnd.suppressClick && e.target.closest('#view-later .vcard')) {
         e.stopPropagation();
         e.preventDefault();
       }
@@ -448,7 +825,7 @@
       const url = started ? TR.resumeUrl(hero) : TR.watchUrl(hero.id);
       const meta = [hero.channel ? esc(hero.channel) : '', started && hero.duration ? `осталось ${TR.fmtSpent(hero.duration * (1 - pos))}` : hero.duration ? TR.fmtClock(hero.duration) : ''].filter(Boolean).join(' · ');
       heroHtml = `<div class="home-hero">
-        <button type="button" class="hh-shot" data-open="${hero.id}"><img src="${TR.thumbUrl(hero.id).replace('mqdefault', 'hqdefault')}" alt="">${started ? '<span class="hh-badge">▶ Продолжить</span>' : hero.later ? `<span class="hh-badge">${prioChip(hero.later.priority)}</span>` : ''}${started ? `<span class="bar" style="width:${Math.round(pos * 100)}%"></span>` : ''}</button>
+        <button type="button" class="hh-shot" data-open="${hero.id}"><img src="${TR.thumbHQ(hero.id)}" alt="">${started ? '<span class="hh-badge">▶ Продолжить</span>' : hero.later ? `<span class="hh-badge">${prioChip(hero.later.priority)}</span>` : ''}${started ? `<span class="bar" style="width:${Math.round(pos * 100)}%"></span>` : ''}</button>
         <div class="hh-body">
           <span class="sh-label">${started ? 'Продолжить' : 'Смотреть дальше'}</span>
           <button type="button" class="hh-title" data-open="${hero.id}">${esc(hero.title || 'Видео ' + hero.id)}</button>
@@ -462,16 +839,38 @@
       }</p></div>`;
     }
 
-    // Оцените просмотренное — или последняя оценка
-    // Начатое и недосмотренное — в «Продолжить», а не в «Оцените»
-    const awaiting = V.filter((v) => TR.awaitingRating(v) && !TR.isStarted(v, s.autoWatchedPct)).sort((a, b) => (b.watchedAt || b.watch?.lastAt || 0) - (a.watchedAt || a.watch?.lastAt || 0));
+    // Тоже начато: остальные недосмотренные — лентой поменьше под большой карточкой (как на компьютере)
+    const isStarted = (v) => TR.isStarted(v, s.autoWatchedPct);
+    const moreStarted = next.filter((v) => v.id !== hero?.id && isStarted(v)).slice(0, 8);
+    const startedHtml = moreStarted.length
+      ? `<h2 class="list-head">Тоже начато <span>· ${moreStarted.length}</span></h2>
+        <div class="hc-strip">${moreStarted
+          .map((v) => {
+            const pos = Math.min(v.watch?.position || 0, 1);
+            const left = v.duration ? `осталось ${TR.fmtSpent(v.duration * (1 - pos))}` : `просмотрено ${Math.round(pos * 100)}%`;
+            return `<button type="button" class="hc-card" data-open="${v.id}">
+              <span class="hc-shot"><img src="${TR.thumbUrl(v.id)}" alt="" loading="lazy"><span class="hc-play" aria-hidden="true">▶</span><span class="bar" style="width:${Math.round(pos * 100)}%"></span></span>
+              <span class="hc-t">${esc(v.title || 'Видео ' + v.id)}</span>
+              <span class="vmeta">${left}</span>
+            </button>`;
+          })
+          .join('')}</div>`
+      : '';
+
+    // Оценка — отдельным блоком с крупным превью: ждущее оценки (после «Сохранить» здесь сразу следующее), иначе последняя.
+    // Начатое и недосмотренное — в «Продолжить», а не здесь.
+    const awaiting = V.filter((v) => TR.awaitingRating(v) && !isStarted(v)).sort((a, b) => (b.watchedAt || b.watch?.lastAt || 0) - (a.watchedAt || a.watch?.lastAt || 0));
     let ticketHtml = '';
+    const tkShot = (v) =>
+      `<button type="button" class="tk-shot" data-open="${v.id}" aria-label="Открыть видео"><img src="${TR.thumbHQ(v.id)}" alt="">${v.duration ? `<span class="dur">${TR.fmtClock(v.duration)}</span>` : ''}</button>`;
     if (awaiting.length) {
       const v = awaiting[0];
-      ticketHtml = `<div class="card ticket">
-        <span class="sh-label">Оцените просмотренное${awaiting.length > 1 ? ` · ещё ${awaiting.length - 1}` : ''}</span>
-        <button type="button" class="tk-row" data-open="${v.id}">${thumb(v, 0)}<span class="vinfo"><span class="vtitle">${esc(v.title || 'Видео ' + v.id)}</span><span class="vmeta">${esc(v.channel || '')}</span></span></button>
-        <button type="button" class="btn primary wide" data-open="${v.id}">Оценить</button>
+      ticketHtml = `<div class="card ticket tk-wide">
+        <span class="sh-label">Оцените просмотренное${awaiting.length > 1 ? ` · ещё ${awaiting.length - 1} ${plural(awaiting.length - 1, 'ждёт', 'ждут', 'ждут')}` : ''}</span>
+        ${tkShot(v)}
+        <div class="tk-head">${ringSvg(null, 64)}<span class="vinfo"><span class="vtitle">${esc(v.title || 'Видео ' + v.id)}</span><span class="vmeta">${esc(v.channel || '')}</span></span></div>
+        <div class="row"><button type="button" class="btn primary" data-open="${v.id}">Оценить</button><button type="button" class="btn" data-norate="${v.id}">Не оценивать</button></div>
+        ${awaiting.length > 1 ? '<p class="muted tk-hint">После оценки здесь появится следующее.</p>' : ''}
       </div>`;
     } else {
       const last = V.filter((v) => v.rating).sort((a, b) => (b.rating.updatedAt || 0) - (a.rating.updatedAt || 0))[0];
@@ -482,9 +881,10 @@
           .filter((id) => typeof last.rating.scores[id] === 'number')
           .map((id) => critBar(TR.critName(id, s), last.rating.scores[id]))
           .join('');
-        ticketHtml = `<div class="card ticket">
-          <span class="sh-label">Последняя оценка</span>
-          <button type="button" class="tk-last" data-open="${last.id}">${ringSvg(last.rating.total, 76)}<span class="vinfo"><span class="vtitle">${esc(last.title || 'Видео ' + last.id)}</span><span class="vmeta">${esc(last.channel || '')}</span>${g ? `<span class="grade" style="background:${g.color};--g:${g.color};align-self:flex-start">${g.perfect ? '★ ' : ''}${g.label}</span>` : ''}</span></button>
+        ticketHtml = `<div class="card ticket tk-wide">
+          <span class="sh-label">Последняя оценка · всё оценено</span>
+          ${tkShot(last)}
+          <button type="button" class="tk-last" data-open="${last.id}">${ringSvg(last.rating.total, 64)}<span class="vinfo"><span class="vtitle">${esc(last.title || 'Видео ' + last.id)}</span><span class="vmeta">${esc(last.channel || '')}</span>${g ? `<span class="grade" style="background:${g.color};--g:${g.color};align-self:flex-start">${g.perfect ? '★ ' : ''}${g.label}</span>` : ''}</span></button>
           <div class="crit-bars">${bars}</div>
         </div>`;
       }
@@ -521,11 +921,11 @@
     </div>`;
 
     // Дальше в списке и сводка
-    const rest = next.slice(1, 4);
+    const rest = next.filter((v) => v.id !== hero?.id && !isStarted(v)).slice(0, 3);
     const rated = V.filter((v) => v.rating);
     const avg = rated.length ? Math.round(rated.reduce((a, v) => a + v.rating.total, 0) / rated.length) : null;
     const restHtml = rest.length
-      ? `<h2 class="list-head">Дальше в списке <button type="button" class="link-btn" data-view="later">весь список →</button></h2>${rest.map((v) => card(v, TR.isStarted(v, s.autoWatchedPct))).join('')}`
+      ? `<h2 class="list-head">Дальше в списке <button type="button" class="link-btn" data-view="later">весь список →</button></h2>${rest.map((v) => card(v, false)).join('')}`
       : '';
     const statsHtml = `<div class="card"><div class="stats">
       <div><b>${TR.laterQueue(db.videos).length}</b><span>в «Позже+»</span></div>
@@ -533,8 +933,18 @@
       <div><b>${avg ?? '—'}</b><span>в среднем</span></div>
     </div></div>`;
 
-    $('#home').innerHTML = heroHtml + ticketHtml + weekHtml + restHtml + statsHtml;
+    // Сверху — что смотреть (большое «Продолжить», лента начатых), потом оценка с превью, очередь, неделя и сводка
+    $('#home').innerHTML = heroHtml + startedHtml + ticketHtml + restHtml + weekHtml + statsHtml;
   }
+  // «Не оценивать» прямо с главной — и сразу следующее ждущее оценки
+  $('#home').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-norate]');
+    if (!b) return;
+    video(b.dataset.norate).noRate = Date.now(); // уйдёт и на компьютер
+    save();
+    toast('Убрано из «Ждут оценки»');
+    render();
+  });
 
   // ---------- Каналы ----------
   // Полный список — со сводки с компьютера (stats.channels: адрес, аватарка, видео в истории YouTube,
@@ -992,6 +1402,7 @@
     if (view === 'data') renderData();
     for (const name of ['home', 'later', 'ratings', 'channels', 'stats', 'data']) $('#view-' + name).hidden = view !== name;
     $$('.tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+    renderRelogin();
   }
 
   // ---------- Лист видео ----------
@@ -1096,6 +1507,7 @@
         <button type="button" class="btn${v.watchedAt ? ' on' : ''}" data-sh="watched">${v.watchedAt ? '✓ Просмотрено' : 'Отметить просмотренным'}</button>
       </div>
       <div class="sh-sec"><span class="sh-label">Смотреть позже+</span><div class="seg">${prioBtns}</div></div>
+      ${sheetPlaylists(v)}
 
       <div class="sh-sec">
         <span class="sh-label">Оценка</span>
@@ -1131,6 +1543,26 @@
           : ''
       }`;
     paintRate();
+  }
+
+  // Плейлисты в листе видео: одно нажатие — добавить или убрать; «＋ Новый» — создать и сразу добавить
+  function sheetPlaylists(v) {
+    const lists = TR.playlistList(plStore());
+    const chips = lists
+      .map((p) => {
+        const on = !!v.pl && p.id in v.pl;
+        return `<button type="button" class="chip${on ? ' on' : ''}" data-pltog="${p.id}" aria-pressed="${on}">${on ? '✓' : '＋'} ${esc(p.emoji || '')} ${esc(p.name)}</button>`;
+      })
+      .join('');
+    const next = Object.keys(v.pl || {})
+      .map((k) => ({ p: plStore().lists[k], n: TR.playlistNext(db.videos, k, v.id) }))
+      .find((x) => x.p && !x.p.del && x.n);
+    return `<div class="sh-sec">
+      <span class="sh-label">Плейлисты</span>
+      <div class="chips">${chips}<button type="button" class="chip ghost" data-sh="plnew">＋ Новый</button></div>
+      <form id="sh-pl-form" class="pl-new" hidden><input id="sh-pl-name" maxlength="60" placeholder="Название плейлиста" enterkeyhint="done" aria-label="Название нового плейлиста"><button type="submit" class="btn primary">Создать</button></form>
+      ${next ? `<button type="button" class="pl-next" data-plnext="${next.n.id}">Дальше в ${esc(next.p.emoji || '')} «${esc(next.p.name)}»: <b>${esc(next.n.title || 'видео')}</b> →</button>` : ''}
+    </div>`;
   }
 
   function typeHint(v) {
@@ -1206,6 +1638,18 @@
       sheet.type = sheet.picked = b.dataset.type;
       return renderSheet();
     }
+    if (b.dataset.pltog) {
+      const p = plStore().lists[b.dataset.pltog];
+      const on = plToggle(id, b.dataset.pltog);
+      navigator.vibrate?.(8);
+      toast(on ? `Добавлено в «${p.name}»` : `Убрано из «${p.name}»`);
+      renderSheet();
+      return render();
+    }
+    if (b.dataset.plnext) {
+      saveNoteIfChanged();
+      return openSheet(b.dataset.plnext);
+    }
     if (b.dataset.skip) {
       const c = b.dataset.skip;
       if (sheet.skip.has(c)) sheet.skip.delete(c);
@@ -1227,6 +1671,13 @@
       case 'close':
         closeSheet();
         break;
+      case 'plnew': {
+        const f = $('#sh-pl-form');
+        f.hidden = false;
+        b.hidden = true;
+        $('#sh-pl-name').focus();
+        break;
+      }
       case 'watched':
         setWatched(id, !video(id).watchedAt);
         renderSheet();
@@ -1267,6 +1718,16 @@
         break;
     }
   });
+  sheetEl.addEventListener('submit', (e) => {
+    if (e.target.id !== 'sh-pl-form') return;
+    e.preventDefault();
+    const name = $('#sh-pl-name').value.trim();
+    if (!name || !sheet.id) return $('#sh-pl-name').focus();
+    plCreate(name, sheet.id);
+    toast(`Добавлено в новый плейлист «${name}»`);
+    renderSheet();
+    render();
+  });
   sheetEl.addEventListener('close', () => {
     saveNoteIfChanged();
     sheet.id = null;
@@ -1275,7 +1736,7 @@
 
   // ---------- Обмен файлами с компьютером ----------
   // Храним только то, что нужно на телефоне: оценки, список, отзывы, «бросили», начатое — без статистики по дням.
-  const KEEP = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden'];
+  const KEEP = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden', 'pl', 'plAt'];
   function slim(v) {
     const o = {};
     for (const k of KEEP) if (v[k] != null) o[k] = v[k];
@@ -1416,18 +1877,20 @@
       drive.needLogin = true;
       saveDrive();
       if (view === 'data') renderData();
+      renderRelogin();
       return;
     }
     driveBusy = true;
     try {
-      const r = await TR.driveSync(drive.token, db.videos, { settings: db.settings });
+      const r = await TR.driveSync(drive.token, db.videos, { settings: db.settings, playlists: plStore() });
       for (const [id, v] of Object.entries(r.changes)) db.videos[id] = TR.slimVideo(v);
+      if (r.playlists) db.playlists = r.playlists; // плейлисты с компьютера (или их переименование, удаление)
       if (r.remoteCriteria) db.settings.criteria = r.remoteCriteria;
       if (r.remoteStats) db.stats = r.remoteStats; // время по дням и каналам — с компьютера
       save(false);
       drive = { ...drive, needLogin: false, error: '', at: Date.now(), received: Object.keys(r.changes).length, total: r.total };
       sessionStorage.removeItem('smotribelno:silent');
-      if (Object.keys(r.changes).length) render();
+      if (Object.keys(r.changes).length || r.playlists) render();
     } catch (e) {
       drive = { ...drive, error: e.message, at: Date.now(), needLogin: !!e.auth };
       if (e.auth) drive.token = null;
@@ -1435,8 +1898,30 @@
       driveBusy = false;
       saveDrive();
       if (view === 'data') renderData();
+      renderRelogin();
     }
   }
+
+  // Google Диск отключился — уведомление на весь экран. «Позже» прячет до следующего сбоя (время именно этой ошибки).
+  function renderRelogin() {
+    let later = null;
+    try {
+      later = sessionStorage.getItem('smotribelno:relogin-later');
+    } catch {
+      later = null;
+    }
+    const show = !!drive.on && !!drive.needLogin && !!TR.GOOGLE_CLIENT_ID && later !== String(drive.at || '');
+    $('#relogin').hidden = !show;
+  }
+  $('#relogin-go').addEventListener('click', () => driveLogin(true));
+  $('#relogin-later').addEventListener('click', () => {
+    try {
+      sessionStorage.setItem('smotribelno:relogin-later', String(drive.at || ''));
+    } catch {
+      // не критично
+    }
+    $('#relogin').hidden = true;
+  });
 
   function driveCardHtml() {
     if (!TR.GOOGLE_CLIENT_ID) return '<div class="card"><h2>Google Drive</h2><p class="muted">Синхронизация с компьютером через Google Drive скоро появится. Пока — обмен файлами ниже.</p></div>';
