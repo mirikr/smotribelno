@@ -530,6 +530,62 @@ const TR = (() => {
     return out;
   }
 
+  // ---- Аллея славы: звезда любимым каналам ----
+  // chrome.storage.local['fame'] = { stars: { ключ: { name, url, at } } }, ключ — название канала в нижнем регистре.
+  // Снятая звезда остаётся «надгробием» { del }, чтобы снятие доехало до других устройств.
+  const FAME_KEY = 'fame';
+  const fameKey = (name) =>
+    String(name || '')
+      .trim()
+      .toLowerCase();
+  function fameStar(store, name) {
+    const s = store?.stars?.[fameKey(name)];
+    return s && !s.del && s.name ? s : null;
+  }
+  function fameList(store) {
+    return Object.values(store?.stars || {})
+      .filter((s) => s && !s.del && s.name)
+      .sort((a, b) => (a.at || 0) - (b.at || 0));
+  }
+  function mergeFame(a, b) {
+    const out = { stars: {} };
+    const sa = a?.stars || {};
+    const sb = b?.stars || {};
+    const t = (s) => Math.max(s?.at || 0, s?.del || 0);
+    for (const k of new Set([...Object.keys(sa), ...Object.keys(sb)])) {
+      if (!k || k.length > 200) continue;
+      const x = sa[k];
+      const y = sb[k];
+      const w = !x ? y : !y ? x : t(y) > t(x) ? y : x;
+      if (w) out.stars[k] = JSON.parse(JSON.stringify(w));
+    }
+    return out;
+  }
+  // Значок жанра на звезде, как эмблемы на голливудской аллее: маски, книга, пластинка, микрофон, геймпад, кинокамера
+  const FAME_EMBLEMS = {
+    fun: '<path d="M3 5.5c2.6 1 5.4 1 8 0V11a4 4 0 0 1-8 0z"/><path d="M13 8.5c2.6 1 5.4 1 8 0V14a4 4 0 0 1-8 0z"/><path d="M5.2 10.6c.8.9 2.8.9 3.6 0M15.2 15.9c.8-.9 2.8-.9 3.6 0"/>',
+    learn: '<path d="M3.5 5.5c2.7-1 5.6-.8 8.5 1 2.9-1.8 5.8-2 8.5-1v13c-2.7-1-5.6-.8-8.5 1-2.9-1.8-5.8-2-8.5-1z"/><path d="M12 6.5v13"/>',
+    music: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.6"/><path d="M12 5.8a6.2 6.2 0 0 1 6.2 6.2" opacity=".6"/>',
+    news: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>',
+    stream: '<path d="M7 8h10a4 4 0 0 1 4 4.5l-.5 3a2.5 2.5 0 0 1-4.3 1.3L15 15H9l-1.2 1.8a2.5 2.5 0 0 1-4.3-1.3l-.5-3A4 4 0 0 1 7 8z"/><path d="M8 10.8v3M6.5 12.3h3M15.5 11.8h.01M17.5 13.3h.01"/>',
+    custom: '<rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3z"/><circle cx="7" cy="5" r="1.6"/><circle cx="11.5" cy="5" r="1.6"/>',
+  };
+  function fameEmblem(type, size = 22) {
+    const p = FAME_EMBLEMS[type] || FAME_EMBLEMS.custom;
+    return `<svg class="fame-emblem" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+  }
+  // Размер букв имени на звезде (в долях ширины звезды) — по длине самого длинного слова и всего имени, чтобы слова не рвались
+  function fameNameSize(name) {
+    const longest = Math.max(...String(name).split(/\s+/).map((w) => w.length), 1);
+    const total = String(name).length;
+    return Math.min(7.2, 46 / Math.max(longest, 6), total > 20 ? 4.4 : total > 11 ? 5.4 : 7.2).toFixed(2) + 'cqw';
+  }  // Жанр канала для значка — самый частый тип его оценок
+  function fameType(videos, name) {
+    const n = {};
+    for (const v of Object.values(videos || {})) if (v.channel === name && v.rating) n[ratingType(v.rating)] = (n[ratingType(v.rating)] || 0) + 1;
+    return Object.entries(n).sort((a, b) => b[1] - a[1])[0]?.[0] || 'custom';
+  }
+
   // ---- Синхронизация через Google Drive (расширение ↔ телефон) ----
   // Один файл smotribelno.json в скрытой папке приложения на Диске пользователя (appDataFolder):
   // приложению виден только он. Вход — OAuth 2.0 (токен на час), клиент «Веб-приложение» из Google Cloud
@@ -603,7 +659,7 @@ const TR = (() => {
   // local — { id: видео }. Возвращает { changes: { id: видео }, uploaded, total }.
   // stats — сводка статистики с компьютера (время по дням и каналам, иконки каналов): телефон её только читает
   // и при записи файла сохраняет как есть.
-  async function driveSync(token, local, { settings, stats, playlists, fetchFn = fetch } = {}) {
+  async function driveSync(token, local, { settings, stats, playlists, fame, fetchFn = fetch } = {}) {
     const api = 'https://www.googleapis.com/drive/v3/files';
     const list = await (await driveFetch(token, `${api}?spaces=appDataFolder&fields=files(id,modifiedTime)&q=${encodeURIComponent(`name='${DRIVE_FILE}'`)}`, {}, fetchFn)).json();
     const fileId = list.files?.[0]?.id || null;
@@ -631,11 +687,15 @@ const TR = (() => {
     const outPlaylists = playlists || remote.playlists ? mergePlaylists(playlists, remote.playlists) : null;
     if (outPlaylists && stableJson(outPlaylists) !== stableJson(remote.playlists || null)) remoteChanged = true;
     const playlistsChanged = !!(outPlaylists && playlists !== undefined && stableJson(outPlaylists) !== stableJson(playlists || { lists: {} }));
+    // Аллея славы — так же, по каждому каналу
+    const outFame = fame || remote.fame ? mergeFame(fame, remote.fame) : null;
+    if (outFame && stableJson(outFame) !== stableJson(remote.fame || null)) remoteChanged = true;
+    const fameChanged = !!(outFame && fame !== undefined && stableJson(outFame) !== stableJson(fame || { stars: {} }));
     // Свой набор критериев с другого устройства — подписи для старых оценок
     const remoteCriteria = remote.settings?.criteria || null;
     const outStats = stats || remote.stats || null;
     if (remoteChanged) {
-      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA }, stats: outStats, playlists: outPlaylists, videos: next });
+      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA }, stats: outStats, playlists: outPlaylists, fame: outFame, videos: next });
       if (fileId) {
         await driveFetch(token, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }, fetchFn);
       } else {
@@ -645,7 +705,7 @@ const TR = (() => {
         await driveFetch(token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart }, fetchFn);
       }
     }
-    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria, remoteStats: outStats, playlists: playlistsChanged ? outPlaylists : null };
+    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria, remoteStats: outStats, playlists: playlistsChanged ? outPlaylists : null, fame: fameChanged ? outFame : null };
   }
 
   // Отправка операции в background (он сериализует все записи)
@@ -720,6 +780,14 @@ const TR = (() => {
     parseAuthFragment,
     driveSync,
     laterCmp,
+    FAME_KEY,
+    fameKey,
+    fameStar,
+    fameList,
+    mergeFame,
+    fameEmblem,
+    fameType,
+    fameNameSize,
     thumbHQ,
     thumbFallback,
     watchThumbFallback,

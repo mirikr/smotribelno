@@ -166,6 +166,22 @@
     save();
   }
 
+  // Аллея славы (как в расширении: TR.fameList) — звезда любимому каналу
+  const fameStore = () => (db.fame ||= { stars: {} });
+  function setFame(name, url, on) {
+    const k = TR.fameKey(name);
+    if (!k) return false;
+    const st = fameStore();
+    const cur = st.stars[k];
+    const has = !!(cur && !cur.del);
+    const want = on == null ? !has : !!on;
+    if (want !== has) {
+      st.stars[k] = want ? { name: String(name).trim().slice(0, 120), url: url || cur?.url || '', at: Date.now() } : { del: Date.now() };
+      save();
+    }
+    return want;
+  }
+
   function setDropped(id, reason) {
     const v = video(id);
     if (reason) {
@@ -491,6 +507,15 @@
     box.classList.add('jelly');
   }
 
+  // Долгое нажатие на iPhone начинает выделять текст — во время перетаскивания выделение сбрасываем
+  function clearSelection() {
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch {
+      // не критично
+    }
+  }
+
   function dndCancel() {
     clearTimeout(dnd.timer);
     dnd.timer = null;
@@ -525,6 +550,8 @@
     dnd.box.classList.add('drop-over');
     dnd.active = true;
     laterListEl.classList.add('drag-active');
+    document.body.classList.add('dnd-on'); // iOS не выделяет текст, пока видео в руке
+    clearSelection();
     jelly(dnd.box);
     navigator.vibrate?.(12);
     dnd.raf = requestAnimationFrame(ghostLoop);
@@ -603,6 +630,7 @@
     dnd.raf = requestAnimationFrame(ghostLoop);
   }
   function dndMove(x, y) {
+    clearSelection();
     dnd.fx = x;
     dnd.fy = y;
     dndUpdateTarget(x, y);
@@ -625,6 +653,8 @@
     }
     dnd.box?.classList.remove('drop-over');
     laterListEl.classList.remove('drag-active');
+    document.body.classList.remove('dnd-on');
+    clearSelection();
     dnd.active = false;
     dnd.ghost = dnd.card = dnd.item = dnd.slot = dnd.box = null;
     dnd.suppressClick = true; // отпускание пальца после перетаскивания — не «нажатие» на карточку
@@ -677,6 +707,8 @@
   );
   laterListEl.addEventListener('touchend', () => (dnd.active ? dndEnd() : dndCancel()));
   laterListEl.addEventListener('touchcancel', () => (dnd.active ? dndEnd(true) : dndCancel()));
+  // Пока ждём долгое нажатие или тащим — выделение текста не начинается
+  laterListEl.addEventListener('selectstart', (e) => (dnd.timer || dnd.active) && e.preventDefault());
   // Долгое нажатие на iPhone открывает меню ссылки/картинки — у карточек его нет
   laterListEl.addEventListener('contextmenu', (e) => e.target.closest('.vcard') && e.preventDefault());
   // После перетаскивания «клик» по карточке не открывает её
@@ -949,7 +981,7 @@
   // ---------- Каналы ----------
   // Полный список — со сводки с компьютера (stats.channels: адрес, аватарка, видео в истории YouTube,
   // минуты за 7/30/90/365 дней и за всё время), плюс каналы видео, которые есть здесь.
-  const chState = { sort: 'score', q: '' };
+  const chState = { sort: 'score', q: '', view: 'all' };
   const fmtMin = (m) => TR.fmtSpent((m || 0) * 60);
   const WIN = { 7: 0, 30: 1, 90: 2, 365: 3, 0: 4 }; // индексы окон в stats.channels и stats.topVideos
 
@@ -1000,10 +1032,31 @@
   function renderChannels() {
     const box = $('#channels-box');
     if (!box.firstChild) {
-      box.innerHTML = `<input id="ch-search" class="search" type="search" placeholder="Поиск канала" aria-label="Поиск канала">
+      box.innerHTML = `<div class="seg" id="ch-view" style="margin-bottom:12px"><button type="button" data-chview="all">Все каналы</button><button type="button" data-chview="fame">★ Аллея славы</button></div>
+        <div id="ch-fame" class="fame" hidden></div>
+        <div id="ch-all">
+        <input id="ch-search" class="search" type="search" placeholder="Поиск канала" aria-label="Поиск канала">
         <div class="seg" id="ch-sort" style="margin-bottom:8px"><button type="button" data-chsort="score">По оценке</button><button type="button" data-chsort="time">По времени</button><button type="button" data-chsort="views">По просмотрам</button></div>
         <p class="muted" id="ch-summary" style="margin:0 0 10px"></p>
-        <div id="ch-list"></div>`;
+        <div id="ch-list"></div>
+        </div>`;
+      $('#ch-view').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-chview]');
+        if (!b) return;
+        chState.view = b.dataset.chview;
+        renderChannels();
+        window.scrollTo(0, 0);
+      });
+      $('#ch-fame').addEventListener('click', (e) => {
+        const give = e.target.closest('[data-fame-give]');
+        if (give) {
+          e.stopPropagation();
+          setFame(give.dataset.fameGive, give.dataset.url || '', true);
+          navigator.vibrate?.(14);
+          toast(`★ «${give.dataset.fameGive}» — на аллее славы`);
+          return renderChannels(); // звёзды и кандидатов открывает общий обработчик [data-channel]
+        }
+      });
       $('#ch-search').addEventListener('input', (e) => {
         chState.q = e.target.value;
         renderChannels();
@@ -1016,6 +1069,12 @@
         window.scrollTo(0, 0);
       });
     }
+    const nFame = TR.fameList(fameStore()).length;
+    $$('#ch-view button').forEach((b) => b.classList.toggle('on', b.dataset.chview === chState.view));
+    $('#ch-view [data-chview="fame"]').textContent = `★ Аллея славы${nFame ? ' · ' + nFame : ''}`;
+    $('#ch-all').hidden = chState.view === 'fame';
+    $('#ch-fame').hidden = chState.view !== 'fame';
+    if (chState.view === 'fame') return renderFame();
     $$('#ch-sort button').forEach((b) => b.classList.toggle('on', b.dataset.chsort === chState.sort));
     const all = channelList();
     const q = chState.q.toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean);
@@ -1043,10 +1102,45 @@
               .slice(-24)
               .map((v) => `<i style="background:${TR.grade(v.rating.total).mark}"></i>`)
               .join('');
-            return `<button type="button" class="ch-item" data-channel="${esc(c.name)}" style="--i:${Math.min(i, 10)}"><span class="ch-rank">${i + 1}</span>${chAvatar(c, 44)}<span class="vinfo"><span class="vtitle">${esc(c.name)}</span><span class="vmeta">${meta.join(' · ') || '&nbsp;'}</span>${strip ? `<span class="ch-strip">${strip}</span>` : ''}</span>${c.avg != null ? scoreBadge(c.avg) : ''}</button>`;
+            return `<button type="button" class="ch-item" data-channel="${esc(c.name)}" style="--i:${Math.min(i, 10)}"><span class="ch-rank">${i + 1}</span>${chAvatar(c, 44)}<span class="vinfo"><span class="vtitle">${esc(c.name)}${TR.fameStar(fameStore(), c.name) ? '<span class="fame-mark" aria-label="На аллее славы">★</span>' : ''}</span><span class="vmeta">${meta.join(' · ') || '&nbsp;'}</span>${strip ? `<span class="ch-strip">${strip}</span>` : ''}</span>${c.avg != null ? scoreBadge(c.avg) : ''}</button>`;
           })
           .join('')
       : `<div class="empty">${all.length ? 'Ничего не нашлось.' : 'Каналы появятся, когда будут оценки или видео в «Позже+».'}</div>`;
+  }
+
+  // Аллея славы: звёзды любимых каналов на «мостовой», ниже — достойные звезды (высокие оценки, звезды нет)
+  function fameStarHtml(name, type, cls = '') {
+    return `<span class="fame-star ${cls}" aria-hidden="true"><span class="fs-brass"></span><span class="fs-pink"></span><span class="fs-name" style="--n:${TR.fameNameSize(name)}">${esc(name)}</span><span class="fs-medal">${TR.fameEmblem(type, 16)}</span></span>`;
+  }
+  function renderFame() {
+    const list = channelList();
+    const byKey = new Map(list.map((c) => [TR.fameKey(c.name), c]));
+    const stars = TR.fameList(fameStore());
+    const cands = list
+      .filter((c) => c.avg != null && c.avg >= 75 && c.rated.length >= 3 && !TR.fameStar(fameStore(), c.name))
+      .sort((a, b) => b.avg - a.avg || b.rated.length - a.rated.length)
+      .slice(0, 6);
+    const month = (t) => new Date(t).toLocaleDateString('ru-RU', { month: 'short', year: 'numeric' });
+    $('#ch-fame').innerHTML = `
+      <p class="muted" style="margin:0">Любимые каналы — по звезде каждому, как на голливудской аллее. Значок на звезде — жанр, который вы чаще ставили каналу. Звезду дают в карточке канала.</p>
+      <div class="fame-walk">${
+        stars
+          .map((s) => {
+            const c = byKey.get(TR.fameKey(s.name));
+            return `<button type="button" class="fame-tile" data-channel="${esc(s.name)}" aria-label="${esc(s.name)}, на аллее славы">${fameStarHtml(s.name, TR.fameType(db.videos, s.name))}<span class="fame-cap">${c?.avg != null ? `<b style="color:${TR.grade(c.avg).mark}">${c.avg}</b> · ` : ''}с ${month(s.at)}</span></button>`;
+          })
+          .join('') || `<div class="fame-tile empty">${fameStarHtml('Ваш любимый канал', 'custom', 'ghost')}<span class="fame-cap">Здесь будет первая звезда</span></div>`
+      }</div>
+      ${
+        cands.length
+          ? `<h3 class="fame-sub">Достойны звезды?</h3><p class="muted" style="font-size:13px">Высокие оценки, но звезды пока нет.</p>
+        <div class="fame-cands">${cands
+          .map(
+            (c) => `<div class="fame-cand" data-channel="${esc(c.name)}">${chAvatar(c, 40)}<span class="fc-info"><span class="fc-name">${esc(c.name)}</span><span class="muted">средняя <b style="color:${TR.grade(c.avg).mark}">${c.avg}</b> · ${c.rated.length} ${plural(c.rated.length, 'оценка', 'оценки', 'оценок')}</span></span><button type="button" class="btn fame-btn" data-fame-give="${esc(c.name)}" data-url="${esc(c.url || '')}">★ Дать</button></div>`
+          )
+          .join('')}</div>`
+          : ''
+      }`;
   }
 
   // Радар по критериям: фигура канала поверх ваших средних по всем видео (пунктир) — как в расширении
@@ -1148,6 +1242,10 @@
     $('#sheet-body').innerHTML = `
       <button type="button" class="sh-close" data-sh="close" aria-label="Закрыть">✕</button>
       <div class="ch-head">${chAvatar(c, 64)}<div><h2 id="sh-title">${esc(c.name)}</h2><div class="muted">${meta.join(' · ')}</div></div></div>
+      ${(() => {
+        const star = TR.fameStar(fameStore(), c.name);
+        return `<div class="sh-sec"><button type="button" class="btn fame-btn wide${star ? ' on' : ''}" data-fame-ch="${esc(c.name)}" data-url="${esc(c.url || '')}">${star ? `★ На аллее славы с ${new Date(star.at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}` : '☆ Звезда на аллее славы'}</button></div>`;
+      })()}
       ${g ? `<div class="sh-sec rate-top">${ringSvg(c.avg, 84)}<div><span class="grade${g.perfect ? ' perfect' : ''}" style="background:${g.color};--g:${g.color}">${g.perfect ? '★ ' : ''}${g.label}</span><div class="muted" style="margin-top:6px">средняя оценка канала</div></div></div>` : ''}
       ${
         chart
@@ -1638,6 +1736,16 @@
       sheet.type = sheet.picked = b.dataset.type;
       return renderSheet();
     }
+    if (b.dataset.fameCh) {
+      const name = b.dataset.fameCh;
+      const has = !!TR.fameStar(fameStore(), name);
+      if (has && !confirm(`Убрать звезду канала «${name}» с аллеи славы?`)) return;
+      setFame(name, b.dataset.url || '', !has);
+      navigator.vibrate?.(has ? 8 : 16);
+      toast(has ? 'Звезда снята' : `★ «${name}» — на аллее славы`);
+      openChannel(name); // перерисовать карточку канала
+      return render();
+    }
     if (b.dataset.pltog) {
       const p = plStore().lists[b.dataset.pltog];
       const on = plToggle(id, b.dataset.pltog);
@@ -1882,15 +1990,16 @@
     }
     driveBusy = true;
     try {
-      const r = await TR.driveSync(drive.token, db.videos, { settings: db.settings, playlists: plStore() });
+      const r = await TR.driveSync(drive.token, db.videos, { settings: db.settings, playlists: plStore(), fame: fameStore() });
       for (const [id, v] of Object.entries(r.changes)) db.videos[id] = TR.slimVideo(v);
       if (r.playlists) db.playlists = r.playlists; // плейлисты с компьютера (или их переименование, удаление)
+      if (r.fame) db.fame = r.fame; // аллея славы с компьютера
       if (r.remoteCriteria) db.settings.criteria = r.remoteCriteria;
       if (r.remoteStats) db.stats = r.remoteStats; // время по дням и каналам — с компьютера
       save(false);
       drive = { ...drive, needLogin: false, error: '', at: Date.now(), received: Object.keys(r.changes).length, total: r.total };
       sessionStorage.removeItem('smotribelno:silent');
-      if (Object.keys(r.changes).length || r.playlists) render();
+      if (Object.keys(r.changes).length || r.playlists || r.fame) render();
     } catch (e) {
       drive = { ...drive, error: e.message, at: Date.now(), needLogin: !!e.auth };
       if (e.auth) drive.token = null;
