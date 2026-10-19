@@ -4365,14 +4365,7 @@ a.fame-tile:focus-visible {
   font-weight: 700;
   line-height: 1.25;
 }
-/* Задник в конце улицы: тёмный силуэт дальнего города стоит поперёк и растворяется вверх —
-   улица на любом шаге упирается в город, а город переходит в гору */
-.w3-end {
-  left: -2400px;
-  width: 5900px;
-  height: 1600px;
-  background: linear-gradient(to top, #251a31 0%, rgba(37, 26, 49, 0.92) 30%, rgba(37, 26, 49, 0.5) 60%, rgba(37, 26, 49, 0) 100%);
-}/* лупа — только пока нажато */
+/* лупа — только пока нажато */
 .fz-stage {
   cursor: zoom-in;
   touch-action: none;
@@ -4493,10 +4486,6 @@ a.fame-tile:focus-visible {
 .w3-off *::before,
 .w3-off *::after {
   animation-play-state: paused !important;
-}
-/* задник в конце улицы: высоту задаёт прогулка (до горизонта), сверху он прозрачный */
-.w3-end {
-  background: linear-gradient(to top, #251a31 0%, rgba(37, 26, 49, 0.85) 35%, rgba(37, 26, 49, 0) 100%);
 }
 /* указатели бульваров — поменьше */
 .w3-post {
@@ -4685,4 +4674,273 @@ a.fame-tile:focus-visible {
   width: 100%;
   height: 0;
   transform-style: preserve-3d;
+}
+
+/* ---- Вид сверху: камера поднимается, тротуар наклонён меньше ---- */
+/* стоящие предметы повёрнуты на тот же угол, что и тротуар (его задаёт прогулка) — при любом виде стоят ровно */
+.w3-bb {
+  transform: rotateX(calc(var(--tilt, 62) * -1deg));
+}
+/* сверху улица начинается прямо под городом и не заслоняет гору; дальний край тонет в дымке цвета города */
+.w3-view {
+  transition: top 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.w3.top .w3-view {
+  top: calc(var(--bar) + (100% - var(--bar)) * 0.36);
+}
+.w3-fog::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(#251a31 0%, rgba(37, 26, 49, 0.75) 7%, rgba(37, 26, 49, 0) 28%);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.w3.top .w3-fog::before {
+  opacity: 1;
+}
+.w3-cam {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.w3-cam svg {
+  flex: none;
+}
+.w3-cam[aria-pressed='true'] {
+  border-color: rgba(233, 196, 106, 0.55);
+  color: #f2d68a;
+}
+@media (max-width: 620px) {
+  .w3-cam-t {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .w3-view,
+  .w3-fog::before {
+    transition: none;
+  }
+}
+
+/* ---- Киноэкран, весь экран, телефон, туман для машин ---- */
+/* Аллея — как экран в кинозале: чёрная окантовка, тонкая золотая линия, свет проектора вокруг */
+.w3 {
+  border: 0;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 8px #07060a,
+    0 0 0 10px rgba(233, 196, 106, 0.45),
+    0 0 0 11px #07060a,
+    0 0 70px 16px rgba(255, 232, 190, 0.08),
+    0 34px 70px rgba(0, 0, 0, 0.65);
+}
+.w3-host {
+  position: relative;
+  padding: 14px;
+}
+/* на компьютере — почти во всю высоту окна, по бокам бархатные шторы */
+@media (min-width: 621px) {
+  .w3 {
+    height: max(560px, calc(100vh - 130px));
+  }
+}
+@media (min-width: 900px) {
+  .w3-host {
+    padding: 16px 44px 22px;
+  }
+  .w3-host::before,
+  .w3-host::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    bottom: 4px;
+    z-index: 2;
+    width: 58px;
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0) 18%, rgba(0, 0, 0, 0) 80%, rgba(0, 0, 0, 0.45)),
+      repeating-linear-gradient(90deg, #4a0c17 0 5px, #8a1a2e 5px 12px, #5e1121 12px 18px);
+    pointer-events: none;
+  }
+  .w3-host::before {
+    left: 0;
+    border-radius: 0 0 26px 6px;
+    box-shadow: 8px 0 18px rgba(0, 0, 0, 0.55);
+  }
+  .w3-host::after {
+    right: 0;
+    border-radius: 0 0 6px 26px;
+    box-shadow: -8px 0 18px rgba(0, 0, 0, 0.55);
+  }
+}
+.w3:fullscreen {
+  border-radius: 0;
+  box-shadow: none;
+}
+.w3-full {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 9px;
+}
+/* лупы нет — курсор обычный */
+.fz-stage.no-lens {
+  cursor: default;
+}
+/* машина растворяется в тумане в конце дороги (встречная — выезжает из него); прозрачность — у самой картинки,
+   тени и света фар, а не у всей машины, иначе браузер сплющит объём */
+.w3-car .w3-bb.w3-rc,
+.w3-car::before {
+  animation: w3-fade-away var(--t, 10s) linear var(--d, 0s) infinite;
+}
+.w3-car.come .w3-bb.w3-rc,
+.w3-car.come::before,
+.w3-car.come::after {
+  animation: w3-fade-come var(--t, 10s) linear var(--d, 0s) infinite;
+}
+@keyframes w3-fade-away {
+  0%,
+  70% {
+    opacity: 0.92;
+  }
+  88%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes w3-fade-come {
+  0%,
+  12% {
+    opacity: 0;
+  }
+  30%,
+  100% {
+    opacity: 0.92;
+  }
+}
+/* Телефон: только вид сверху, над улицей — полоса с горой СМОТРИБЕЛЬНО такой высоты, чтобы слово помещалось целиком */
+.w3.phone .w3-sky {
+  height: min(40vw, 160px);
+}
+.w3.phone .w3-view,
+.w3.phone.top .w3-view {
+  top: calc(var(--bar) + min(40vw, 160px));
+  transition: none;
+}
+@media (max-width: 620px) {
+  .w3 {
+    border-radius: 8px;
+    box-shadow:
+      0 0 0 5px #07060a,
+      0 0 0 6px rgba(233, 196, 106, 0.45),
+      0 18px 40px rgba(0, 0, 0, 0.6);
+  }
+  .w3-host {
+    padding: 8px 6px;
+  }
+}
+/* свайп внутри рамки — шаги по аллее, страница при этом не листается */
+.w3 {
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+/* ---- Вид сверху без горы: сверху горизонта не видно, поэтому небо с горой уезжает вверх и гаснет ---- */
+.w3-sky {
+  transition:
+    transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.5s ease,
+    visibility 0s;
+}
+.w3.top .w3-sky {
+  transform: translateY(-100%);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.5s ease,
+    visibility 0s 0.6s;
+}
+.w3.top .w3-view,
+.w3.phone .w3-view,
+.w3.phone.top .w3-view {
+  top: var(--bar);
+}
+/* дальний край улицы сверху тонет в темноте, цвет — как у полосы с кнопками */
+.w3-fog::before {
+  background: linear-gradient(#120e18 0%, rgba(18, 14, 24, 0.8) 8%, rgba(18, 14, 24, 0) 30%);
+}
+/* телефон: баннер с горой СМОТРИБЕЛЬНО — отдельной карточкой над экраном, как раньше */
+.w3-banner {
+  margin-bottom: 14px;
+}
+.w3-banner .fame-scene {
+  height: min(40vw, 160px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .w3-sky,
+  .w3.top .w3-sky {
+    transition: none;
+  }
+}
+/* масштаб и наклон — вокруг середины тротуара (480px), а не всей улицы: иначе при уменьшении
+   (телефон, вид сверху) тротуар со звёздами уезжал вправо от центра */
+.w3-floor {
+  transform-origin: 480px 100%;
+}
+
+/* ---- Симметричная улица: тротуар 340–760 (середина 550) ровно посередине между домами 0 и 1100 ---- */
+.w3-floor {
+  margin-left: 0;
+  transform-origin: 50% 100%;
+}
+.w3-side.l {
+  left: 0;
+  width: 50px;
+  background: linear-gradient(90deg, #26222c, #1f1c24);
+}
+.w3-side {
+  left: 1050px;
+  width: 50px;
+}
+.w3-road.left {
+  left: 50px;
+  width: 250px;
+}
+.w3-road {
+  left: 800px;
+  width: 250px;
+}
+.w3-grass {
+  left: 300px;
+  width: 40px;
+}
+.w3-grass.right {
+  left: 760px;
+  background: linear-gradient(90deg, #1a1720, #0e0c12);
+}
+/* бордюры по обеим сторонам тротуара */
+.w3-walkway {
+  left: 340px;
+  width: 420px;
+  box-shadow: inset 7px 0 0 #4a4550, inset -7px 0 0 #4a4550;
+}
+.w3-star,
+.w3-mold {
+  left: 550px;
+}
+/* машины — по размеру полос (дорога 250px, две полосы) */
+.w3-car {
+  width: 120px;
+  height: 110px;
+  margin-left: -60px;
+}
+.w3-car .w3-bb.w3-rc {
+  bottom: 30px;
+  width: 120px;
+  height: 88px;
+}
+.w3-car.come::after {
+  left: -25px;
+  width: 170px;
 }

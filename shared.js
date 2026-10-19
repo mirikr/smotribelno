@@ -637,6 +637,8 @@ const TR = (() => {
     const prev = document.querySelector('.fame-zoom');
     if (prev?._close) prev._close();
     else prev?.remove();
+    // лупа — только с мышью; на сенсорном экране звезда просто крупно
+    const lensOn = matchMedia('(hover: hover) and (pointer: fine)').matches;
     const box = document.createElement('div');
     box.className = 'fame-zoom';
     box.setAttribute('role', 'dialog');
@@ -650,7 +652,7 @@ const TR = (() => {
       ${sub ? `<div class="fz-sub">${sub}</div>` : ''}
       ${extra ? `<div class="fz-extra">${extra}</div>` : ''}
       <div class="fz-actions"></div>
-      <div class="fz-hint">Нажмите на звезду и ведите — лупа покажет детали</div>
+      ${lensOn ? '<div class="fz-hint">Нажмите на звезду и ведите — лупа покажет детали</div>' : ''}
     </div>`;
     const acts = box.querySelector('.fz-actions');
     for (const a of actions.filter((x) => x && x.label)) {
@@ -673,8 +675,9 @@ const TR = (() => {
       });
       acts.appendChild(el);
     }
-    document.body.appendChild(box);
+    (document.fullscreenElement || document.body).appendChild(box); // аллея на весь экран — карточка поверх неё
     const stage = box.querySelector('.fz-stage');
+    if (!lensOn) stage.classList.add('no-lens');
     const lens = box.querySelector('.fz-lens');
     const starEl = stage.querySelector('.fame-star');
     const zoomed = starEl.cloneNode(true);
@@ -697,11 +700,11 @@ const TR = (() => {
       zoomed.style.width = r.width + 'px';
       zoomed.style.transform = `translate(${L / 2 - x * K}px, ${L / 2 - y * K}px) scale(${K})`;
     };
-    // лупа — только пока нажато (мышью или пальцем); просто наведение её не показывает
+    // лупа — только пока нажата кнопка мыши; просто наведение её не показывает
     let pressed = false;
     stage.addEventListener('pointermove', (e) => pressed && show(e.clientX, e.clientY, e.pointerType === 'touch'));
     stage.addEventListener('pointerdown', (e) => {
-      if (e.button > 0) return;
+      if (!lensOn || e.button > 0) return;
       e.preventDefault();
       pressed = true;
       try {
@@ -784,7 +787,8 @@ const TR = (() => {
   // ---- Прогулка по аллее: звёзды лежат на тротуаре и уходят вдаль, листание — шаги вперёд ----
   // items по порядку: { star, title, sub } — звезда; { sign } — табличка-перекрёсток на обочине.
   // onOpen(item) — нажали на звезду или «Рассмотреть». Состояние (где стоим) переживает перерисовку.
-  const W3_TILT = 62; // наклон тротуара, градусов
+  const W3_TILT = 62; // наклон тротуара, градусов (вид с аллеи)
+  const W3_TILT_TOP = 30; // вид сверху: камера поднята, на звёзды смотрим почти сверху
   function fameWalk(host, { items, onOpen, lite = false }) {
     if (!host) return;
     const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -798,6 +802,9 @@ const TR = (() => {
     const lowfx = lite || cores <= 4 || mem <= 4;
     const firstShow = !host._shown; // заставка «Аллея готовится» — только при первом показе
     host._shown = true;
+    // телефон (узкий экран): только вид сверху, а над улицей — полоса с горой СМОТРИБЕЛЬНО целиком
+    const hostW = host.clientWidth || innerWidth;
+    const phone = hostW > 0 && hostW < 620;
     const D = 300; // шаг между звёздами
     const START = 240;
     const rows = [];
@@ -808,18 +815,23 @@ const TR = (() => {
     }
     // Конец аллеи — ремонт: пустые места под будущие звёзды, заграждения и табличка. Дороги свободны — машины едут дальше.
     const zb = z + 480; // линия заграждений
-    const LEN = zb + 1500;
     const maxPos = Math.max(0, zb - START - 300);
-    // Улица (поперёк, px): дома слева 0 | дорога 10–230 | газон с пальмами и фонарями 230–270 | тротуар 270–690 |
-    // бордюр | дорога в две полосы 706–1000 | узкий тротуар | дома справа 1100. Раскладка — по постоянному «зерну»: улица не меняется.
+    // FAR — сколько улицы впереди показываем (дальше — скрыто, там же едут машины). Дорога всегда длиннее
+    // этого отрезка, даже у конца аллеи: машины уходят в туман над асфальтом, а не едут по воздуху.
+    const FAR = 4400;
+    const LEN = Math.max(zb + 1500, maxPos + FAR + 900);
+    // Улица (поперёк, px) — зеркальная относительно тротуара: дома 0 | обочина 0–50 | дорога 50–300 | газон с фонарями
+    // и пальмами 300–340 | тротуар 340–760 (середина 550) | газон 760–800 | дорога 800–1050 | обочина | дома 1100.
+    // Раскладка — по постоянному «зерну»: улица не меняется.
     let seed = 20261019;
     const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
     let side = '';
     for (let y = 120; y < LEN - 300; y += 520) {
-      side += `<div class="w3-pool" style="bottom:${y - 60}px;left:250px"></div><div class="w3-pool" style="bottom:${y - 60}px;left:700px"></div>`;
-      side += `<div class="w3-bb w3-lamp" style="bottom:${y}px;left:250px">${FAME_LAMP}</div><div class="w3-bb w3-lamp" style="bottom:${y}px;left:700px">${FAME_LAMP}</div>`;
+      side += `<div class="w3-pool" style="bottom:${y - 60}px;left:320px"></div><div class="w3-pool" style="bottom:${y - 60}px;left:780px"></div>`;
+      side += `<div class="w3-bb w3-lamp" style="bottom:${y}px;left:320px">${FAME_LAMP}</div><div class="w3-bb w3-lamp" style="bottom:${y}px;left:780px">${FAME_LAMP}</div>`;
     }
-    for (let y = 380, i = 0; y < LEN - 300; y += 640, i++) side += `<div class="w3-bb w3-palm${i % 2 ? ' small' : ''}" style="bottom:${y}px;left:252px"></div>`;
+    // пальмы — на обоих газонах, вперемежку
+    for (let y = 380, i = 0; y < LEN - 300; y += 640, i++) side += `<div class="w3-bb w3-palm${i % 2 ? ' small' : ''}" style="bottom:${y}px;left:${i % 2 ? 782 : 318}px"></div>`;
     // Дома Лас-Вегаса: яркие стены с окнами (часть горит), на фасадах — вывески с неоновой рамкой и лампочками.
     // Вывеска — часть стены, поэтому уходит в перспективу вместе с домом.
     const WALLS = ['#4a1f4f', '#1f3f5a', '#5a3a1f', '#3a2a5f', '#5a1f35', '#1f4a45'];
@@ -889,15 +901,15 @@ const TR = (() => {
     // полосы: на правой дороге — от нас (780) и навстречу (925), на левой — навстречу; две машины в одной полосе
     // едут с одной скоростью через полцикла — не наезжают друг на друга
     const lanes = [
-      [780, false, 9.4, 0],
-      [925, true, 7.4, -2.5],
-      [120, true, 10.5, -5.8],
-      [780, false, 9.4, -4.7],
+      [862, false, 9.4, 0],
+      [988, true, 7.4, -2.5],
+      [112, true, 10.5, -5.8],
+      [862, false, 9.4, -4.7],
     ];
     // Машин всегда четыре, они ездят по кругу. Едут не по всей улице, а по отрезку перед зрителем (FAR),
     // и этот отрезок идёт вместе с ним: иначе машина позади проезжала бы у самой «камеры» —
     // браузер растягивал её в огромную картинку, и аллея начинала подтормаживать.
-    const FAR = 4400;
+    // В конце отрезка машина растворяется в тумане (встречные — выезжают из него).
     const cars = lite
       ? ''
       : `<div class="w3-traffic" style="--len:${FAR}px">${lanes
@@ -927,33 +939,33 @@ const TR = (() => {
       const cone = `url('data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 56"><polygon points="16,2 24,2 34,50 6,50" fill="#ff7a1a"/><polygon points="13,18 27,18 29,28 11,28" fill="#f4efe6"/><rect x="1" y="49" width="38" height="7" fill="#2a2630"/></svg>')}')`;
       let s = `<div class="w3-mold" style="bottom:${z}px;transform:translateX(-34px);background-image:${mold}"></div>`;
       s += `<div class="w3-mold" style="bottom:${z + 300}px;transform:translateX(34px);background-image:${mold}"></div>`;
-      for (const x of [300, 420, 545, 665]) s += `<div class="w3-bb w3-cone" style="bottom:${zb - 70}px;left:${x}px;background-image:${cone}"></div>`;
-      for (const x of [340, 480, 620]) s += `<div class="w3-bb w3-barrier" style="bottom:${zb}px;left:${x}px;background-image:${barrier}"><i></i></div>`;
-      s += `<div class="w3-bb w3-works" style="bottom:${zb + 70}px;left:480px"><div><b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды</span></div></div>`;
+      for (const x of [370, 490, 610, 730]) s += `<div class="w3-bb w3-cone" style="bottom:${zb - 70}px;left:${x}px;background-image:${cone}"></div>`;
+      for (const x of [410, 550, 690]) s += `<div class="w3-bb w3-barrier" style="bottom:${zb}px;left:${x}px;background-image:${barrier}"><i></i></div>`;
+      s += `<div class="w3-bb w3-works" style="bottom:${zb + 70}px;left:550px"><div><b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды</span></div></div>`;
       return s;
     }
-    host.innerHTML = `<div class="w3${lite ? ' lite' : ''}${lowfx ? ' lowfx' : ''}${firstShow ? ' loading' : ''}" style="--len:${LEN}px">
+    // на телефоне баннер с горой — отдельной карточкой над экраном (в самом экране только вид сверху)
+    host.innerHTML = `${phone ? `<div class="w3-banner">${fameSceneHtml('')}</div>` : ''}<div class="w3${lite ? ' lite' : ''}${lowfx ? ' lowfx' : ''}${phone ? ' phone' : ''}${firstShow ? ' loading' : ''}" style="--len:${LEN}px">
       <div class="w3-sky">${fameSceneHtml('')}<div class="w3-city" style="background-image:${cityImg()}"></div></div>
       <div class="w3-view">
         <div class="w3-move">
           <div class="w3-floor" style="height:${LEN}px">
-            <div class="w3-road left"><span class="w3-dash"></span></div><div class="w3-grass"></div><div class="w3-walkway"></div><div class="w3-curb"></div><div class="w3-road"><span class="w3-dash"></span></div><div class="w3-side"></div>
+            <div class="w3-side l"></div><div class="w3-road left"><span class="w3-dash"></span></div><div class="w3-grass"></div><div class="w3-walkway"></div><div class="w3-grass right"></div><div class="w3-road"><span class="w3-dash"></span></div><div class="w3-side"></div>
             ${rows
               .map((r, i) =>
                 r.sign
                   ? // уличный указатель на перекрёстке: столб и две таблички крест-накрест — название бульвара к нам,
                     // «Аллея славы» — вдоль улицы (в перспективе)
-                    `<div class="w3-bb w3-post" style="bottom:${r.z}px;left:610px"><i class="w3-pole"></i><i class="w3-finial"></i><span class="w3-plate a"><small>${escH(r.sign.split(' ')[0])}</small> ${escH(r.sign.split(' ').slice(1).join(' '))}</span><span class="w3-plate b">★ Аллея славы</span></div>`
+                    `<div class="w3-bb w3-post" style="bottom:${r.z}px;left:690px"><i class="w3-pole"></i><i class="w3-finial"></i><span class="w3-plate a"><small>${escH(r.sign.split(' ')[0])}</small> ${escH(r.sign.split(' ').slice(1).join(' '))}</span><span class="w3-plate b">★ Аллея славы</span></div>`
                   : `<button type="button" class="w3-star${i % 2 ? ' alt' : ''}" style="bottom:${r.z}px" data-w3="${i}" aria-label="${escH(r.title)} — рассмотреть">${r.star}</button>`
               )
               .join('')}
             ${roadworks()}
-            <div class="w3-bb w3-end" style="bottom:${LEN - 4}px"></div>
           </div>
         </div>
         <div class="w3-fog"></div>
       </div>
-      <div class="w3-ctl"><span class="w3-hint">Листайте, чтобы идти по аллее</span>${rows.filter((r) => r.sign).map((r) => `<button type="button" class="btn small w3-jump" data-jump="${r.z}">${escH(r.sign).replace(/^(\S+\s)/, '<span class="w3-jpre">$1</span>')}</button>`).join('')}<button type="button" class="btn small w3-auto">▶ Прогуляться</button></div>
+      <div class="w3-ctl"><span class="w3-hint">Листайте, чтобы идти по аллее</span>${rows.filter((r) => r.sign).map((r) => `<button type="button" class="btn small w3-jump" data-jump="${r.z}">${escH(r.sign).replace(/^(\S+\s)/, '<span class="w3-jpre">$1</span>')}</button>`).join('')}${phone ? '' : '<button type="button" class="btn small w3-cam" aria-pressed="false" title="Посмотреть на аллею сверху"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 15l8 4 8-4M4 10l8 4 8-4-8-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="w3-cam-t">Вид сверху</span></button><button type="button" class="btn small w3-full" title="На весь экран" aria-label="На весь экран"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'}<button type="button" class="btn small w3-auto">▶ Прогуляться</button></div>
       <div class="w3-hud">
         <div class="w3-cap" aria-live="polite"></div>
         <div class="w3-prog"><span></span></div>
@@ -971,29 +983,39 @@ const TR = (() => {
     let pos = Math.min(host._pos || 0, maxPos);
     let target = pos;
     let raf = 0;
+    // Камера: вид с аллеи или сверху — угол плавно меняется; выбор переживает перерисовку
+    const camBtn = w3.querySelector('.w3-cam');
+    let topView = phone || !!host._top;
+    let tilt = topView ? W3_TILT_TOP : W3_TILT;
+    let tiltShown = null;
+    const setCam = (on) => {
+      topView = on;
+      if (!phone) host._top = on;
+      w3.classList.toggle('top', on);
+      if (!camBtn) return;
+      camBtn.setAttribute('aria-pressed', String(on));
+      camBtn.querySelector('.w3-cam-t').textContent = on ? 'Вид с аллеи' : 'Вид сверху';
+      camBtn.title = on ? 'Вернуться на аллею' : 'Посмотреть на аллею сверху';
+    };
+    setCam(topView);
     let auto = false;
     let shown = -2;
-    const end = floor.querySelector('.w3-end');
-    // Размеры меряем только при изменении окна, а не каждый кадр. Задник в конце улицы — высотой до горизонта
-    // (это высота «глаза» над тротуаром), поэтому вблизи он никогда не закрывает небо и гору.
+    // Размер меряем только при изменении окна, а не каждый кадр
     let sc = 1;
     const measure = () => {
       const w = w3.clientWidth || 760;
       sc = Math.min(1, w / (w < 620 ? 520 : 760)); // на телефоне — крупнее
-      const t = (W3_TILT * Math.PI) / 180;
-      const eye = ((view.clientHeight || 400) - 330) * Math.sin(t) + 620 * Math.cos(t);
-      end.style.height = `${Math.max(120, Math.round((eye / sc) * 0.8))}px`;
     };
     measure();
     // Показываем только ближнюю часть улицы: что позади или слишком далеко — скрыто и не рисуется.
-    // Задник едет вместе с границей видимости и прикрывает конец показанного.
+    // Сама дорога тянется до горизонта, а даль прячет дымка — никаких щитов-задников.
     const NEAR = 450;
     let cull = [];
     let traffic = null;
     let bucket = null;
     const collect = () => {
       cull = [...floor.children]
-        .filter((el) => el !== end && el.style.bottom)
+        .filter((el) => el.style.bottom)
         .map((el) => {
           const a = parseFloat(el.style.bottom);
           return { el, a, b: a + (parseFloat(el.style.height) || 260), on: true };
@@ -1012,12 +1034,15 @@ const TR = (() => {
           c.el.style.display = on ? '' : 'none';
         }
       }
-      end.style.bottom = `${Math.min(LEN - 4, pos + FAR - 300)}px`;
     };
     const apply = () => {
       host._pos = pos;
       cullNow();
-      floor.style.transform = `translateX(-50%) scale(${sc}) rotateX(${W3_TILT}deg) translateY(${pos}px)`;
+      // сверху камера ещё и отдаляется — видно несколько звёзд и дома по бокам
+      const zoom = 1 - 0.45 * ((W3_TILT - tilt) / (W3_TILT - W3_TILT_TOP));
+      floor.style.transform = `translateX(-50%) scale(${(sc * zoom).toFixed(4)}) rotateX(${tilt.toFixed(2)}deg) translateY(${pos}px)`;
+      // стоящие предметы (фонари, пальмы, указатели, машины) поворачиваются на тот же угол — стоят ровно
+      if (tilt !== tiltShown) w3.style.setProperty('--tilt', (tiltShown = tilt).toFixed(2));
       if (traffic) traffic.style.transform = `translateY(${-pos}px)`; // дорожный поток идёт вместе со зрителем
       move.style.transform = reduce ? '' : `translateY(${(Math.sin(pos / 85) * 1.8).toFixed(2)}px)`; // покачивание шага
       prog.style.width = maxPos ? `${((pos / maxPos) * 100).toFixed(1)}%` : '0%';
@@ -1026,7 +1051,8 @@ const TR = (() => {
       let bd = Infinity;
       rows.forEach((r, i) => {
         if (r.sign) return;
-        const d = r.z - pos - 170;
+        // сверху «зона взгляда» дальше по тротуару: камера смотрит вниз, ближняя часть внизу экрана
+        const d = r.z - pos - (170 + ((W3_TILT - tilt) / (W3_TILT - W3_TILT_TOP)) * 150);
         if (d > -140 && Math.abs(d) < bd) {
           bd = Math.abs(d);
           best = i;
@@ -1047,9 +1073,21 @@ const TR = (() => {
         if (target >= maxPos) setAuto(false);
       }
       pos += (target - pos) * (reduce ? 1 : 0.12);
+      const tiltTo = topView ? W3_TILT_TOP : W3_TILT;
+      tilt = reduce || Math.abs(tiltTo - tilt) < 0.05 ? tiltTo : tilt + (tiltTo - tilt) * 0.1;
       apply();
-      if (auto || Math.abs(target - pos) > 0.3) raf = requestAnimationFrame(tick);
+      if (auto || Math.abs(target - pos) > 0.3 || tilt !== tiltTo) raf = requestAnimationFrame(tick);
     };
+    // на весь экран (браузер может не разрешить — тогда просто ничего не происходит)
+    w3.querySelector('.w3-full')?.addEventListener('click', () => {
+      const p = document.fullscreenElement ? document.exitFullscreen?.() : w3.requestFullscreen?.();
+      p?.catch?.(() => {});
+    });
+    camBtn?.addEventListener('click', () => {
+      setCam(!topView);
+      bucket = null;
+      if (!raf) raf = requestAnimationFrame(tick);
+    });
     const go = (d) => {
       target = Math.max(0, Math.min(maxPos, target + d));
       if (!raf) raf = requestAnimationFrame(tick);
@@ -1069,7 +1107,9 @@ const TR = (() => {
       target = Math.max(0, Math.min(maxPos, Number(j.dataset.jump) - START + 30));
       if (!raf) raf = requestAnimationFrame(tick);
     });
-    view.addEventListener(
+    // Шаги — колесом и свайпом в любом месте рамки (небо, гора, подпись), а не только по тротуару:
+    // иначе на телефоне свайп мимо тротуара листал всю страницу. Свайп, начатый на кнопке, — это нажатие.
+    w3.addEventListener(
       'wheel',
       (e) => {
         e.preventDefault();
@@ -1080,12 +1120,13 @@ const TR = (() => {
     );
     let lastY = null;
     let moved = 0;
-    view.addEventListener('pointerdown', (e) => {
-      lastY = e.clientY;
+    w3.addEventListener('pointerdown', (e) => {
       moved = 0;
+      if (e.target.closest('.w3-ctl, .w3-cap .btn')) return;
+      lastY = e.clientY;
       setAuto(false);
     });
-    view.addEventListener('pointermove', (e) => {
+    w3.addEventListener('pointermove', (e) => {
       if (lastY == null || (e.pointerType === 'mouse' && !e.buttons)) return;
       const dy = lastY - e.clientY;
       lastY = e.clientY;
@@ -1093,9 +1134,9 @@ const TR = (() => {
       go(dy * 1.7);
     });
     const up = () => (lastY = null);
-    view.addEventListener('pointerup', up);
-    view.addEventListener('pointercancel', up);
-    view.addEventListener('pointerleave', up);
+    w3.addEventListener('pointerup', up);
+    w3.addEventListener('pointercancel', up);
+    w3.addEventListener('pointerleave', up);
     w3.addEventListener('click', (e) => {
       const b = e.target.closest('[data-w3]');
       if (!b || moved > 8) return; // это был шаг, а не нажатие
@@ -1113,7 +1154,7 @@ const TR = (() => {
     // чтобы даже слабое устройство не подвисало; заставка уходит, когда всё на месте
     collect();
     requestAnimationFrame(apply);
-    const strips = floor.querySelector('.w3-side');
+    const strips = floor.querySelector('.w3-side:not(.l)'); // последняя полоса улицы: всё остальное — поверх неё
     const stages = [houses + side, cars];
     const idle = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 160 }) : setTimeout(f, 40));
     const nextStage = () => {

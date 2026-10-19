@@ -1224,7 +1224,12 @@
     TR.fameWalk($('#fame-box .w3-host'), {
       items,
       lite: true, // на телефоне — без машин и лишнего света: легче и быстрее
-      onOpen: (it) => (it.kind === 'ch' ? zoomFameChannel(it.name) : it.kind === 'v' ? zoomFameVideo(it.id) : null),
+      onOpen: (it) =>
+        it.kind === 'ch'
+          ? zoomFameChannel(it.name)
+          : it.kind === 'v'
+            ? zoomFameVideo(it.id)
+            : TR.fameCloseup({ star: it.star, title: it.title, sub: 'Дайте звезду каналу или ролику — в карточке видео или канала. Звезда появится здесь, на аллее.' }),
     });
     requestAnimationFrame(() => TR.fitFameNames($('#fame-box'))); // длинные имена — мельче, чтобы не выходили за звезду
   }  // Ролики, достойные звезды: шедевры (от 85) без звезды — под прогулкой
