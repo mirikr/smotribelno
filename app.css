@@ -2707,3 +2707,1982 @@ a.fame-tile:focus-visible {
   top: 34%;
   max-height: 22%;
 }
+
+/* ---- Звезда ролика: круглый кадр из видео вместо значка жанра ---- */
+.fame-star.vstar .fs-name {
+  top: 32%;
+  max-height: 21%;
+}
+.fs-medal.fs-shot {
+  top: 54%;
+  width: 30%;
+  padding: 2.5%;
+}
+.fs-shot img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.fame-cand.vcand {
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+}
+.fc-thumb {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--surface-3);
+}
+.fc-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.vstar-btn {
+  color: #f2d68a;
+}
+.vstar-btn.on {
+  background: linear-gradient(135deg, #f7e2a3, #c9963f 55%, #e9c46a);
+  color: #3d2608;
+}
+.vstar-chip {
+  background: linear-gradient(135deg, #f7e2a3, #c9963f 55%, #e9c46a) !important;
+  color: #3d2608 !important;
+  box-shadow: 0 0 8px rgba(233, 196, 106, 0.55);
+}
+.fame-cand[data-open] {
+  cursor: pointer;
+}
+
+.fame-cap.vcap {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
+  line-height: 1.35;
+}
+
+/* ---- Звёзды: крупнее, надпись и кружок строго внутри розовой части ----
+   Розовая звезда — та же форма, ужатая на 6% к центру; её «плечи» (верх лучей) на 39% высоты,
+   вырез между нижними лучами — на 72%. Полоса имени: 40–53% (до 2 строк, буквы ужимаются, пока не влезут),
+   кружок: 54–70% по высоте — ниже имени и выше выреза. */
+.fs-name {
+  top: 40%;
+  left: 26%;
+  right: 26%;
+  height: 13%;
+  max-height: none;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fs-medal {
+  top: 54%;
+  width: 16%;
+}
+.fame-star.vstar .fs-name {
+  top: 39.5%;
+  height: 12%;
+}
+.fs-medal.fs-shot {
+  top: 52%;
+  width: 18%;
+  padding: 1.6%;
+}
+/* Звёзды на аллее крупнее; плитка — кнопка: нажмите, чтобы рассмотреть */
+.fame-star {
+  max-width: 206px;
+}
+.fame-tile {
+  border: 0;
+  font: inherit;
+  cursor: zoom-in;
+}
+.fame-loupe {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(17, 15, 22, 0.7) center / 16px no-repeat
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f2d68a' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5L21 21'/%3E%3C/svg%3E");
+  box-shadow: inset 0 0 0 1px rgba(233, 196, 106, 0.45);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.fame-tile:hover .fame-loupe,
+.fame-tile:focus-visible .fame-loupe {
+  opacity: 1;
+}
+@media (hover: none) {
+  .fame-loupe {
+    opacity: 0.85;
+  }
+}
+
+/* ---- Звезда вблизи и лупа ---- */
+.fame-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: grid;
+  place-items: center;
+  padding: 20px 16px;
+  overflow-y: auto;
+  background: radial-gradient(ellipse 60% 50% at 50% 40%, rgba(233, 196, 106, 0.14), rgba(10, 8, 16, 0) 70%), rgba(10, 8, 16, 0.88);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  animation: fz-in 0.3s ease;
+}
+.fame-zoom.closing {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.fz-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(520px, 100%);
+  text-align: center;
+}
+.fz-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: rgba(26, 23, 34, 0.9);
+  color: var(--text-2);
+  font-size: 16px;
+  cursor: pointer;
+}
+.fz-stage {
+  position: relative;
+  width: min(440px, 82vw, 62vh);
+  margin-top: 30px;
+  touch-action: none;
+  cursor: crosshair;
+  animation: fz-star 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fz-stage > .fame-star {
+  width: 100%;
+  max-width: none;
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 40px rgba(233, 196, 106, 0.25));
+}
+.fz-lens {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  width: 46%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #1f1c24;
+  box-shadow: 0 0 0 5px #c9963f, 0 0 0 7px #7a4d14, 0 14px 30px rgba(0, 0, 0, 0.6), inset 0 0 22px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.fz-lens.on {
+  opacity: 1;
+}
+.fz-lens::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 40%);
+}
+.fz-zoomed {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none !important;
+  transform-origin: 0 0;
+  filter: none !important;
+  transition: none !important;
+}
+.fz-zoomed .fs-pink::after {
+  animation: none;
+}
+.fz-title {
+  margin-top: 6px;
+  color: #f2d68a;
+  font: 600 22px/1.25 var(--font-display);
+  text-wrap: balance;
+}
+.fz-sub {
+  color: var(--text-2);
+  font-size: 14px;
+}
+.fz-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.fz-hint {
+  color: var(--text-2);
+  font-size: 12px;
+  opacity: 0.8;
+}
+@keyframes fz-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fz-star {
+  from {
+    opacity: 0;
+    transform: scale(0.6) rotate(-10deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fame-zoom,
+  .fz-stage {
+    animation: none;
+  }
+}
+.fame-tile:hover .fame-star,
+.fame-tile:focus-visible .fame-star {
+  transform: translateY(-3px) scale(1.04);
+  filter: drop-shadow(0 0 16px rgba(240, 190, 110, 0.45)) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+}
+.fame-tile:focus-visible {
+  outline: 2px solid #e9c46a;
+  outline-offset: -4px;
+}
+
+/* ---- Аллея славы: ночная сцена над бульваром ---- */
+.fame-scene {
+  position: relative;
+  height: 210px;
+  overflow: hidden;
+  border: 1px solid #2c2535;
+  border-radius: 22px;
+  background: radial-gradient(ellipse 80% 75% at 50% 100%, #3d2152 0%, #1c1528 46%, #0f0c15 100%);
+  isolation: isolate;
+}
+.fame-scene::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.3px 1.3px at 8% 18%, #fff, transparent),
+    radial-gradient(1px 1px at 17% 42%, #fff, transparent),
+    radial-gradient(1.3px 1.3px at 31% 12%, #fff, transparent),
+    radial-gradient(1px 1px at 44% 30%, #fff, transparent),
+    radial-gradient(1.4px 1.4px at 58% 9%, #fff, transparent),
+    radial-gradient(1px 1px at 69% 36%, #fff, transparent),
+    radial-gradient(1.3px 1.3px at 83% 16%, #fff, transparent),
+    radial-gradient(1px 1px at 93% 40%, #fff, transparent);
+  opacity: 0.7;
+}
+/* Прожекторы, как на премьере: лучи медленно качаются из-за холма */
+.fs-beam {
+  position: absolute;
+  bottom: 14%;
+  left: 50%;
+  z-index: 0;
+  width: 170px;
+  height: 360px;
+  margin-left: -85px;
+  background: linear-gradient(to top, rgba(255, 238, 200, 0.42), rgba(255, 238, 200, 0) 85%);
+  clip-path: polygon(46% 100%, 54% 100%, 100% 0, 0 0);
+  filter: blur(2px);
+  mix-blend-mode: screen;
+  transform-origin: 50% 100%;
+  animation: fs-sweep 7s ease-in-out infinite alternate;
+}
+.fs-beam.b1 {
+  left: 20%;
+  animation-duration: 8.5s;
+}
+.fs-beam.b2 {
+  animation-delay: -3s;
+  opacity: 0.8;
+}
+.fs-beam.b3 {
+  left: 80%;
+  animation-duration: 9.5s;
+  animation-delay: -5s;
+}
+@keyframes fs-sweep {
+  from {
+    transform: rotate(-26deg);
+  }
+  to {
+    transform: rotate(26deg);
+  }
+}
+.fs-svg {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+}
+.fs-hill2 {
+  fill: #1e1727;
+}
+.fs-hill {
+  fill: #120e18;
+}
+.fs-sign text {
+  fill: #f6f1e8;
+  font: 700 30px var(--font-display);
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.35));
+}
+.fs-legs {
+  fill: none;
+  stroke: #6b6175;
+  stroke-width: 1.5;
+}
+.fs-palm path {
+  fill: none;
+  stroke: #0a0810;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.fs-palm .trunk {
+  stroke-width: 6;
+}
+.fs-title {
+  position: absolute;
+  left: 22px;
+  top: 18px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+.fs-t {
+  color: #f2d68a;
+  font: 600 26px/1.1 var(--font-display);
+  text-shadow: 0 0 18px rgba(233, 196, 106, 0.5);
+}
+.fs-s {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.fame-howto {
+  margin: 0;
+  max-width: 76ch;
+}
+/* Табличка улицы — зелёная, с белой рамкой и столбиком */
+.street-sign {
+  position: relative;
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 6px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: #1d6b46;
+  color: #fff;
+  box-shadow: inset 0 0 0 2px #e8f3ec, inset 0 0 0 4px #1d6b46, 0 6px 14px rgba(0, 0, 0, 0.35);
+  font: 700 14px var(--font-display);
+  letter-spacing: 0.02em;
+}
+.street-sign::after {
+  content: '';
+  position: absolute;
+  left: 20px;
+  top: 100%;
+  width: 4px;
+  height: 10px;
+  background: linear-gradient(90deg, #9aa3a0, #6c7472);
+}
+.street-sign b {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font: 700 12px var(--font);
+}
+/* Бульвар: тротуар со звёздами, бордюр, ниже асфальт с жёлтой разметкой; по краям — фонари */
+.boulevard {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  width: fit-content;
+  max-width: 100%;
+  padding-bottom: 36px;
+}
+.boulevard .fame-walk {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  border-radius: 14px 14px 4px 4px;
+  box-shadow: 0 8px 0 #4a4550, 0 12px 0 #2a2630, 0 22px 30px rgba(0, 0, 0, 0.45);
+}
+.boulevard::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22px;
+  border-radius: 0 0 14px 14px;
+  background: repeating-linear-gradient(90deg, #e9c46a 0 26px, transparent 26px 54px) center / 100% 2px no-repeat, linear-gradient(#19171e, #141218);
+}
+.fame-lamp {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  align-self: flex-end;
+  width: 34px;
+  height: 160px;
+  margin: 0 8px 4px;
+  pointer-events: none;
+}
+.fame-lamp svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.lp-post,
+.lp-arm {
+  fill: none;
+  stroke: #3b3540;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.lp-head {
+  fill: #2a2530;
+  stroke: #4a4352;
+  stroke-width: 1.5;
+}
+.lp-bulb {
+  fill: #ffe9a8;
+}
+.lp-glow {
+  position: absolute;
+  left: 50%;
+  top: 6%;
+  width: 130px;
+  height: 130px;
+  margin-left: -65px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 214, 140, 0.4), rgba(255, 214, 140, 0) 70%);
+  animation: lamp-breathe 4s ease-in-out infinite;
+}
+/* световое пятно от фонаря на тротуаре */
+.fame-lamp::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 200px;
+  height: 46px;
+  margin-left: -100px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 214, 140, 0.22), rgba(255, 214, 140, 0) 70%);
+  mix-blend-mode: screen;
+}
+.fame-lamp + .fame-walk ~ .fame-lamp .lp-glow {
+  animation-delay: -2s;
+}
+@keyframes lamp-breathe {
+  50% {
+    opacity: 0.7;
+    transform: scale(0.94);
+  }
+}
+.fame-tile.slot {
+  cursor: default;
+}
+.fame-tile.slot .fame-star {
+  opacity: 0.2;
+}
+.fame-tile.slot:hover .fame-star {
+  transform: none;
+  filter: grayscale(0.6);
+}
+@media (max-width: 620px) {
+  .fame-scene {
+    height: 150px;
+  }
+  .fs-title {
+    left: 16px;
+    top: 14px;
+  }
+  .fs-t {
+    font-size: 20px;
+  }
+  .fs-s {
+    font-size: 12px;
+  }
+  .fame-lamp {
+    display: none;
+  }
+  .boulevard {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fs-beam,
+  .lp-glow {
+    animation: none;
+  }
+}
+/* ---- Дорога у бульвара: асфальт, разметка, изредка проезжающие машины с фарами ---- */
+.boulevard {
+  padding-bottom: 44px;
+}
+.boulevard::after {
+  content: none;
+}
+.fame-road {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 0 0 14px 14px;
+  background: repeating-linear-gradient(90deg, #e9c46a 0 26px, transparent 26px 54px) 0 50% / 100% 2px no-repeat, linear-gradient(#1a181f, #121016);
+  pointer-events: none;
+}
+/* Полоса — во всю ширину дороги; её сдвиг в процентах = ширина дороги, машина стоит у края полосы */
+.lane {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 16px;
+  animation: drive-r 15s linear infinite;
+}
+.lane .car {
+  position: absolute;
+  bottom: 0;
+  width: 46px;
+  height: 17px;
+  overflow: visible;
+}
+.lane.r .car {
+  right: 100%;
+}
+.lane.l .car {
+  left: 100%;
+  transform: scaleX(-1);
+}
+.lane.l1 {
+  top: 1px;
+  animation-duration: 14s;
+  animation-delay: -3s;
+}
+.lane.l2 {
+  bottom: 0;
+  animation-name: drive-l;
+  animation-duration: 19s;
+  animation-delay: -12s;
+}
+.lane.l3 {
+  top: 1px;
+  animation-duration: 23s;
+  animation-delay: -16s;
+}
+@keyframes drive-r {
+  0% {
+    transform: translateX(0);
+  }
+  55%,
+  100% {
+    transform: translateX(calc(100% + 140px));
+  }
+}
+@keyframes drive-l {
+  0% {
+    transform: translateX(0);
+  }
+  55%,
+  100% {
+    transform: translateX(calc(-100% - 140px));
+  }
+}
+.car-body {
+  fill: #0c0a11;
+  stroke: #2e2836;
+  stroke-width: 0.8;
+}
+.car-win {
+  fill: rgba(255, 220, 160, 0.16);
+}
+.car-wheel {
+  fill: #050407;
+  stroke: #3a3442;
+  stroke-width: 1.2;
+}
+.car-head {
+  fill: #fff3c4;
+  filter: drop-shadow(0 0 3px #ffe7a0);
+}
+.car-tail {
+  fill: #ff4d4d;
+  filter: drop-shadow(0 0 3px #ff4d4d);
+}
+/* луч фар перед машиной */
+.lane .car + .car,
+.lane::after {
+  content: none;
+}
+.lane.r::before,
+.lane.l::before {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  width: 80px;
+  height: 12px;
+  background: linear-gradient(90deg, rgba(255, 240, 190, 0.45), rgba(255, 240, 190, 0));
+  clip-path: polygon(0 40%, 100% 0, 100% 100%, 0 60%);
+}
+.lane.r::before {
+  right: calc(100% - 80px);
+}
+.lane.l::before {
+  left: calc(100% - 80px);
+  transform: scaleX(-1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lane {
+    display: none;
+  }
+}
+.fs-title {
+  top: auto;
+  bottom: 12px;
+}
+.boulevard .fame-walk {
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* ---- Прогулка по аллее: тротуар в перспективе, звёзды уходят вдаль ---- */
+.w3 {
+  position: relative;
+  height: min(72vh, 640px);
+  min-height: 440px;
+  overflow: hidden;
+  border: 1px solid #2c2535;
+  border-radius: 22px;
+  background: radial-gradient(ellipse 90% 60% at 50% 18%, #3d2152 0%, #1a1426 50%, #0d0a12 100%);
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.w3:focus-visible {
+  box-shadow: 0 0 0 2px #e9c46a;
+}
+.w3-sky {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+}
+.w3-sky .fame-scene {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.w3-sky .fs-title {
+  display: none;
+}
+.w3-view {
+  position: absolute;
+  inset: 28% 0 0 0;
+  perspective: 620px;
+  perspective-origin: 50% 0%;
+  touch-action: none;
+  cursor: grab;
+}
+.w3-view:active {
+  cursor: grabbing;
+}
+.w3-move {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+.w3-floor {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 900px;
+  margin-left: -70px; /* тротуар (его середина на 380px) — по центру взгляда */
+  transform-origin: 50% 100%;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+/* обочина слева, тротуар-терраццо с плитками, бордюр и дорога справа */
+.w3-grass,
+.w3-walkway,
+.w3-curb,
+.w3-road {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.w3-grass {
+  left: 0;
+  width: 170px;
+  background: linear-gradient(90deg, #0b0a0f, #15131b);
+}
+.w3-walkway {
+  left: 170px;
+  width: 420px;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.55) 0 2px, transparent 2px 300px),
+    radial-gradient(circle at 18% 24%, rgba(255, 255, 255, 0.1) 0 1px, transparent 1.6px) 0 0 / 23px 19px,
+    radial-gradient(circle at 70% 62%, rgba(255, 255, 255, 0.07) 0 1.2px, transparent 1.8px) 0 0 / 31px 27px,
+    linear-gradient(90deg, #26222c, #2d2933 50%, #26222c);
+}
+.w3-curb {
+  left: 590px;
+  width: 16px;
+  background: linear-gradient(90deg, #5a5560, #3a3540);
+}
+.w3-road {
+  left: 606px;
+  width: 294px;
+  background: linear-gradient(90deg, #17151b, #121016);
+}
+.w3-dash {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  margin-left: -2px;
+  background: repeating-linear-gradient(0deg, #e9c46a 0 46px, transparent 46px 110px);
+  opacity: 0.85;
+}
+/* звезда лежит на тротуаре */
+.w3-star {
+  position: absolute;
+  left: 380px;
+  width: 260px;
+  margin: 0 0 20px -130px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+  transform: translateX(-34px);
+}
+.w3-star.alt {
+  transform: translateX(34px);
+}
+.w3-star .fame-star {
+  max-width: none;
+  width: 100%;
+  filter: drop-shadow(0 6px 4px rgba(0, 0, 0, 0.5));
+  transition: filter 0.4s;
+}
+.w3-star.near .fame-star {
+  filter: drop-shadow(0 0 22px rgba(240, 190, 110, 0.55)) drop-shadow(0 6px 4px rgba(0, 0, 0, 0.5));
+}
+/* стоящие предметы: фонари, пальмы, таблички, машины — «встают» с тротуара */
+.w3-bb {
+  position: absolute;
+  transform-origin: 50% 100%;
+  transform: rotateX(-62deg);
+}
+.w3-lamp {
+  width: 50px;
+  height: 230px;
+  margin-left: -25px;
+}
+.w3-lamp .fame-lamp {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.w3-lamp .fame-lamp::after {
+  content: none;
+}
+.w3-pool {
+  position: absolute;
+  width: 380px;
+  height: 260px;
+  margin-left: -190px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 214, 140, 0.24), rgba(255, 214, 140, 0) 65%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+.w3-palm {
+  width: 200px;
+  height: 360px;
+  margin-left: -100px;
+  background: center bottom / contain no-repeat
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 180'%3E%3Cg fill='none' stroke='%23060509' stroke-linecap='round'%3E%3Cpath d='M50 180 C 52 130 56 80 62 40' stroke-width='6'/%3E%3Cg stroke-width='5' transform='translate(62 40)'%3E%3Cpath d='M0 0 q -24 -10 -48 6'/%3E%3Cpath d='M0 0 q -18 -22 -40 -22'/%3E%3Cpath d='M0 0 q 2 -26 -8 -40'/%3E%3Cpath d='M0 0 q 20 -20 40 -16'/%3E%3Cpath d='M0 0 q 26 -4 38 14'/%3E%3Cpath d='M0 0 q 12 10 18 30'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+.w3-palm.small {
+  height: 270px;
+}
+.w3-signpost {
+  margin-left: -60px;
+}
+.w3-signpost .street-sign {
+  margin: 0;
+  font-size: 22px;
+  padding: 10px 20px;
+}
+.w3-signpost .street-sign::after {
+  height: 90px;
+  width: 6px;
+}
+/* машины: одни едут от нас (красные огни), другие навстречу (фары) — по дороге, с паузами */
+.w3-car {
+  position: absolute;
+  bottom: 0;
+  width: 70px;
+  margin-left: -35px;
+  transform-style: preserve-3d;
+  animation: w3-away var(--t, 10s) linear var(--d, 0s) infinite;
+}
+.w3-car.come {
+  animation-name: w3-come;
+}
+.w3-car .w3-bb {
+  position: relative;
+}
+.w3-carbody {
+  position: relative;
+  display: block;
+  width: 70px;
+  height: 34px;
+  border-radius: 12px 12px 6px 6px;
+  background: linear-gradient(#1d1a24, #0a090d);
+  box-shadow: inset 0 6px 0 rgba(255, 255, 255, 0.05);
+}
+.w3-carbody i {
+  position: absolute;
+  bottom: 9px;
+  width: 12px;
+  height: 7px;
+  border-radius: 3px;
+  background: #ff3b3b;
+  box-shadow: 0 0 12px 3px rgba(255, 59, 59, 0.7);
+}
+.w3-carbody i:first-child {
+  left: 6px;
+}
+.w3-carbody i:last-child {
+  right: 6px;
+}
+.w3-car.come .w3-carbody i {
+  background: #fff4cc;
+  box-shadow: 0 0 16px 6px rgba(255, 236, 170, 0.75);
+}
+/* свет фар встречной машины ложится на дорогу */
+.w3-car.come::after {
+  content: '';
+  position: absolute;
+  left: -40px;
+  bottom: -180px;
+  width: 150px;
+  height: 200px;
+  background: radial-gradient(ellipse at 50% 10%, rgba(255, 236, 170, 0.35), rgba(255, 236, 170, 0) 70%);
+  mix-blend-mode: screen;
+}
+@keyframes w3-away {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  70%,
+  100% {
+    transform: translateY(calc(-1 * var(--len, 3000px)));
+    opacity: 0;
+  }
+}
+@keyframes w3-come {
+  0% {
+    transform: translateY(calc(-1 * var(--len, 3000px)));
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  66% {
+    opacity: 1;
+  }
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+}
+.w3-car.come {
+  bottom: 0;
+}
+/* вдали — дымка, ближние предметы не обрезаются резко */
+.w3-fog {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, #120e19 0%, rgba(18, 14, 25, 0.85) 12%, rgba(18, 14, 25, 0) 48%);
+  pointer-events: none;
+}
+/* пятно прожектора гуляет по аллее и подсвечивает звёзды */
+.w3-view::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  width: 46%;
+  height: 46%;
+  margin-left: -23%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 238, 200, 0.22), rgba(255, 238, 200, 0) 68%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: w3-spot 11s ease-in-out infinite alternate;
+}
+@keyframes w3-spot {
+  0% {
+    transform: translate(-70%, 6%) scale(0.9, 0.8);
+  }
+  50% {
+    transform: translate(10%, -10%) scale(1.15, 1);
+  }
+  100% {
+    transform: translate(70%, 4%) scale(0.95, 0.85);
+  }
+}
+/* прожекторы ярче: ядро луча и ореол, качаются в разном темпе */
+.w3-sky .fs-beam {
+  bottom: 18%;
+  width: 230px;
+  height: 520px;
+  margin-left: -115px;
+  background: linear-gradient(to top, rgba(255, 240, 205, 0.7), rgba(255, 240, 205, 0.12) 60%, rgba(255, 240, 205, 0) 92%);
+  filter: blur(3px);
+}
+.w3-sky .fs-beam.b1 {
+  animation-duration: 6.5s;
+}
+.w3-sky .fs-beam.b2 {
+  animation-duration: 9s;
+}
+.w3-sky .fs-beam.b3 {
+  animation-duration: 7.7s;
+}
+/* подпись внизу: у какой звезды стоим */
+.w3-hud {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.w3-cap,
+.w3-ctl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(233, 196, 106, 0.3);
+  border-radius: 16px;
+  background: rgba(17, 15, 22, 0.82);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+.w3-cap b {
+  color: #f2d68a;
+  font: 600 16px var(--font-display);
+}
+.w3-cap span {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.w3-cap .btn {
+  margin-left: auto;
+}
+.w3-ctl {
+  padding: 6px 8px 6px 14px;
+  background: rgba(17, 15, 22, 0.6);
+}
+.w3-hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.w3-prog {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.w3-prog span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #c9963f, #f7e2a3);
+}
+@media (max-width: 620px) {
+  .w3 {
+    height: 66vh;
+    min-height: 400px;
+  }
+  .w3-cap b {
+    font-size: 14px;
+  }
+  .w3-hint {
+    font-size: 11px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .w3-car,
+  .w3-view::after {
+    animation: none;
+    display: none;
+  }
+}
+/* ---- Ссылка на аллею славы с главной ---- */
+.fame-teaser {
+  flex-direction: row;
+  align-items: center;
+  gap: 22px;
+  border-color: rgba(233, 196, 106, 0.3);
+  background:
+    radial-gradient(1.2px 1.2px at 12% 30%, #fff, transparent),
+    radial-gradient(1px 1px at 38% 18%, #fff, transparent),
+    radial-gradient(1.2px 1.2px at 72% 26%, #fff, transparent),
+    radial-gradient(1px 1px at 90% 60%, #fff, transparent),
+    radial-gradient(ellipse 70% 120% at 85% 120%, rgba(233, 196, 106, 0.16), rgba(233, 196, 106, 0) 60%),
+    linear-gradient(120deg, #1c1528, #120e19);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.2s, box-shadow 0.25s, transform 0.25s;
+}
+.fame-teaser:hover,
+.fame-teaser:focus-visible {
+  border-color: rgba(233, 196, 106, 0.6);
+  box-shadow: 0 0 30px rgba(233, 196, 106, 0.18);
+  transform: translateY(-2px);
+  outline: none;
+}
+.ft-stars {
+  display: flex;
+  flex: none;
+  padding-right: 12px;
+}
+.ft-stars .fame-star {
+  width: 78px;
+  max-width: 78px;
+  margin-right: -14px;
+}
+.ft-stars .fame-star:nth-child(2) {
+  transform: translateY(-6px) rotate(6deg);
+}
+.ft-stars .fame-star:nth-child(3) {
+  transform: rotate(-5deg);
+}
+.ft-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ft-info b {
+  color: #f2d68a;
+  font: 600 18px var(--font-display);
+}
+.fame-teaser .btn {
+  flex: none;
+}
+@media (max-width: 620px) {
+  .fame-teaser {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .ft-stars .fame-star {
+    width: 60px;
+    max-width: 60px;
+  }
+}
+/* Горизонт тротуара — ровно у подножия холма: при наклоне 62° и перспективе 620px точка схода лежит
+   на 620·ctg 62° ≈ 330px выше «глаза», поэтому глаз опускаем на столько же, а всё, что дальше горизонта, обрезаем */
+.w3-view {
+  inset: 30% 0 0 0;
+  overflow: hidden;
+  perspective-origin: 50% 330px;
+}
+.w3-sky {
+  height: 32%;
+}
+/* Кнопки — наверху, на небе; внизу только подпись, чтобы не закрывать тротуар под ногами */
+.w3-ctl {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  left: auto;
+  max-width: calc(100% - 24px);
+  background: rgba(17, 15, 22, 0.55);
+  pointer-events: auto;
+}
+.w3-hud {
+  gap: 6px;
+}
+
+/* тротуар начинается от подножия холма — без тёмной полосы между ними */
+.w3-sky {
+  height: 30%;
+}
+.w3-view {
+  inset: 21% 0 0 0;
+}
+/* столбы фонарей заметнее на тёмном фоне */
+.w3-lamp .lp-post,
+.w3-lamp .lp-arm {
+  stroke: #6a6272;
+}
+.w3-lamp .lp-head {
+  fill: #3a3442;
+}
+.w3-lamp .lp-glow {
+  width: 170px;
+  height: 170px;
+  margin-left: -85px;
+}
+/* тротуар выходит из-за холма: передний холм — поверх дальнего конца, звёзды вдали скрываются за ним */
+.w3-sky {
+  z-index: 3;
+  pointer-events: none;
+}
+.w3-view {
+  inset: 16% 0 0 0;
+}
+.w3-ctl {
+  z-index: 6;
+}
+.w3-hud {
+  z-index: 6;
+}
+
+/* ---- Улица: две дороги, дома вдоль улицы, неоновые вывески, крупные ретро-машины ---- */
+.w3-floor {
+  width: 1100px;
+  margin-left: 70px; /* середина тротуара (480px) — по центру взгляда */
+}
+.w3-road.left {
+  left: 10px;
+  width: 220px;
+  background: linear-gradient(90deg, #121016, #17151b);
+}
+.w3-grass {
+  left: 230px;
+  width: 40px;
+  background: linear-gradient(90deg, #0e0c12, #1a1720);
+}
+.w3-walkway {
+  left: 270px;
+}
+.w3-curb {
+  left: 690px;
+}
+.w3-road {
+  left: 706px;
+}
+.w3-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1000px;
+  width: 100px;
+  background: linear-gradient(90deg, #1f1c24, #26222c);
+}
+.w3-star {
+  left: 480px;
+}
+/* Стена дома: лежит на земле вдоль улицы и «встаёт» поворотом вокруг своего края — получается коридор фасадов */
+.w3-wall {
+  position: absolute;
+  transform-origin: 0 50%;
+  transform: rotateY(-90deg);
+  background-color: var(--wall, #241d2c);
+  background-repeat: no-repeat;
+  box-shadow: inset -40px 0 60px rgba(0, 0, 0, 0.55), inset 6px 0 0 rgba(255, 214, 140, 0.08);
+  backface-visibility: visible;
+}
+/* крыша-карниз — светлая кромка по верху */
+.w3-wall::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 6px;
+  background: linear-gradient(180deg, #3a3342, #2a2431);
+}
+/* Вертикальная неоновая вывеска: торчит из стены поперёк тротуара, светится */
+.w3-neon {
+  width: 34px;
+  margin-left: -17px;
+}
+.w3-neon span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 2px solid var(--neon);
+  border-radius: 8px;
+  background: rgba(10, 8, 14, 0.85);
+  box-shadow: 0 0 14px var(--neon), inset 0 0 10px color-mix(in srgb, var(--neon) 40%, transparent);
+  animation: w3-neon 5s ease-in-out infinite;
+}
+.w3-neon i {
+  color: #fff;
+  font: 700 15px/1 var(--font-display);
+  font-style: normal;
+  text-shadow: 0 0 6px var(--neon), 0 0 14px var(--neon);
+}
+@keyframes w3-neon {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  47% {
+    opacity: 1;
+  }
+  48% {
+    opacity: 0.55;
+  }
+  49% {
+    opacity: 1;
+  }
+  51% {
+    opacity: 0.7;
+  }
+  52% {
+    opacity: 1;
+  }
+}
+.w3-neon:nth-of-type(3n) span {
+  animation-delay: -1.7s;
+}
+.w3-neon:nth-of-type(3n + 1) span {
+  animation-delay: -3.4s;
+}
+/* крупные ретро-машины */
+.w3-car {
+  width: 150px;
+  margin-left: -75px;
+}
+.w3-retro {
+  display: block;
+  width: 150px;
+  height: 92px;
+  overflow: visible;
+}
+.w3-car.come .w3-retro circle {
+  filter: drop-shadow(0 0 8px #ffe7a0) drop-shadow(0 0 18px rgba(255, 231, 160, 0.6));
+}
+.w3-car.away .w3-retro circle {
+  filter: drop-shadow(0 0 6px #ff3b3b) drop-shadow(0 0 14px rgba(255, 59, 59, 0.55));
+}
+.w3-car.come::after {
+  left: -20px;
+  width: 190px;
+  bottom: -230px;
+  height: 260px;
+}
+.w3-lamp {
+  margin-left: -25px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .w3-neon span {
+    animation: none;
+  }
+}
+/* Внутри объёмной улицы — без режимов наложения: они заставляют браузер сплющить всю 3D-сцену в плоскость
+   (дома, фонари, машины и таблички «ложились» на асфальт). Свет — просто полупрозрачный. */
+.w3-floor *,
+.w3-floor *::before,
+.w3-floor *::after {
+  mix-blend-mode: normal !important;
+}
+.w3-pool {
+  opacity: 0.8;
+}
+.card.fame-teaser {
+  display: flex;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 14px;
+  text-align: left;
+}
+
+/* шесть разделов в нижней панели помещаются в одну строку */
+.tabbar {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  padding-inline: 8px;
+}
+/* прогулка на телефоне: кнопки в одну строку, без подсказки и слова «бульвар» */
+@media (max-width: 620px) {
+  .w3-ctl {
+    top: 8px;
+    right: 8px;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 4px;
+  }
+  .w3-hint,
+  .w3-jpre {
+    display: none;
+  }
+  .w3-ctl .btn {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .w3-cap {
+    padding: 8px 10px;
+  }
+  .w3-cap span {
+    font-size: 12px;
+  }
+}
+/* подпись у звезды: название и подробности слева, «Рассмотреть» — справа, без лишних строк */
+.w3-cap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 10px;
+}
+.w3-cap b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w3-cap span {
+  grid-column: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w3-cap .btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin: 0;
+}
+.w3-cap > span:only-child {
+  grid-column: 1 / -1;
+  white-space: normal;
+}
+/* холм с надписью — на заднем плане, за домами; вдали — лёгкая дымка, а не стена */
+.w3-sky {
+  z-index: 0;
+  height: 36%;
+}
+.w3-view {
+  inset: 20% 0 0 0;
+}
+.w3-fog {
+  background: linear-gradient(to bottom, rgba(18, 14, 25, 0.7) 0%, rgba(18, 14, 25, 0.35) 14%, rgba(18, 14, 25, 0) 40%);
+}
+/* облегчённая аллея на телефоне: без машин, света фар и гуляющего пятна прожектора */
+.w3.lite .w3-view::after {
+  content: none;
+}
+.w3.lite .w3-neon span {
+  animation: none;
+}
+
+/* ---- Аллея 1.0: панель над сценой, город у горы, машины-картинки, вывески на фасадах, ремонт в конце ---- */
+/* Кнопки — в своей полосе над сценой: гора СМОТРИБЕЛЬНО под ней видна целиком */
+.w3 {
+  --bar: 52px;
+  height: calc(min(72vh, 640px) + var(--bar));
+}
+.w3-sky {
+  top: var(--bar);
+  height: calc((100% - var(--bar)) * 0.36);
+}
+.w3-view {
+  inset: calc(var(--bar) + (100% - var(--bar)) * 0.2) 0 0 0;
+}
+.w3-ctl {
+  top: 0;
+  left: 0;
+  right: 0;
+  max-width: none;
+  height: var(--bar);
+  box-sizing: border-box;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 0 10px 0 16px;
+  border: 0;
+  border-bottom: 1px solid rgba(233, 196, 106, 0.18);
+  border-radius: 0;
+  background: #120e18;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.w3-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w3-ctl .btn {
+  white-space: nowrap;
+}
+@media (max-width: 620px) {
+  .w3 {
+    --bar: 46px;
+    height: calc(66vh + var(--bar));
+  }
+  .w3-ctl {
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 0 8px;
+  }
+}
+/* город у подножия горы: силуэты с огнями и тёплая дымка — переход от улицы к холму без резкой границы */
+.w3-city {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30%;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+.w3-city::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 240%;
+  background: linear-gradient(to top, rgba(255, 110, 170, 0.2), rgba(255, 110, 170, 0.07) 45%, rgba(255, 110, 170, 0));
+  pointer-events: none;
+}
+/* под силуэтом города его цвет плавно уходит вниз — без ступеньки между небом и фоном улицы */
+.w3-city::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 90px;
+  background: linear-gradient(#251a31, rgba(37, 26, 49, 0));
+  pointer-events: none;
+}
+/* дымка у горизонта — мягкая полоса: сверху полностью прозрачная, иначе её край виден линией под горой */
+.w3-fog {
+  background: linear-gradient(to bottom, rgba(37, 26, 49, 0) 0%, rgba(37, 26, 49, 0.6) 10%, rgba(37, 26, 49, 0.35) 20%, rgba(18, 14, 25, 0) 42%);
+}
+/* Ретро-машины: одна стоячая картинка, объём нарисован прямыми линиями. Едут без остановок —
+   выезжают из-за нижнего края и уходят в дымку (или наоборот) */
+.w3-car {
+  bottom: -320px;
+  width: 150px;
+  height: 130px;
+  margin-left: -75px;
+  animation: w3-away var(--t, 10s) linear var(--d, 0s) infinite;
+}
+.w3-car.come {
+  bottom: -320px;
+  animation-name: w3-come;
+}
+.w3-car::before {
+  content: '';
+  position: absolute;
+  inset: 12px 10px;
+  border-radius: 30px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.w3-car .w3-bb.w3-rc {
+  position: absolute;
+  left: 0;
+  bottom: 40px;
+  width: 150px;
+  height: 110px;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  opacity: 0.92;
+}
+.w3-car.come::after {
+  left: -20px;
+  width: 190px;
+  bottom: -250px;
+  height: 280px;
+  background: radial-gradient(ellipse at 50% 8%, rgba(255, 236, 170, 0.3), rgba(255, 236, 170, 0) 70%);
+}
+@keyframes w3-away {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(-1 * (var(--len, 3000px) + 640px)));
+  }
+}
+@keyframes w3-come {
+  from {
+    transform: translateY(calc(-1 * (var(--len, 3000px) + 640px)));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+/* Дома: тёмный карниз вместо неоновой полосы; вывеска — на самом фасаде, в его перспективе
+   (в координатах стены x — высота над землёй, y — вдоль улицы, поэтому надпись повёрнута) */
+.w3-wall {
+  border-right: 6px solid #2a2431;
+  box-shadow: inset -40px 0 60px rgba(0, 0, 0, 0.45);
+}
+.w3-wall::after {
+  content: none;
+}
+.w3-fsign {
+  position: absolute;
+  padding: 6px 16px;
+  border: 3px solid var(--trim);
+  border-radius: 10px;
+  outline: 3px dotted #ffe9a8;
+  outline-offset: 4px;
+  background: rgba(10, 8, 14, 0.88);
+  box-shadow: 0 0 18px var(--trim), inset 0 0 12px color-mix(in srgb, var(--trim) 35%, transparent);
+  white-space: nowrap;
+  transform: translate(-50%, -50%) rotate(90deg);
+  animation: w3-neon 6s ease-in-out infinite;
+}
+/* левая стена видна с обратной стороны — надпись отражаем, чтобы читалась */
+.w3-wall.l .w3-fsign {
+  transform: translate(-50%, -50%) rotate(90deg) scaleX(-1);
+}
+.w3-wall:nth-of-type(2n) .w3-fsign {
+  animation-delay: -2.4s;
+}
+.w3-fsign b {
+  display: block;
+  color: #fff;
+  font: 700 34px/1.1 var(--font-display);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 8px var(--trim), 0 0 20px var(--trim);
+}
+/* Конец аллеи — ремонт: пустые формы под звёзды, конусы, заграждения с мигалками, табличка на столбах */
+.w3-mold {
+  position: absolute;
+  left: 480px;
+  width: 260px;
+  height: 250px;
+  margin: 0 0 20px -130px;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+.w3-cone {
+  width: 40px;
+  height: 56px;
+  margin-left: -20px;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+.w3-barrier {
+  width: 130px;
+  height: 74px;
+  margin-left: -65px;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+.w3-barrier i {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  width: 14px;
+  height: 10px;
+  margin-left: -7px;
+  background: #ffae2e;
+  box-shadow: 0 0 14px 4px rgba(255, 174, 46, 0.7);
+  animation: w3-blink 1.2s steps(1, end) infinite;
+}
+.w3-barrier:nth-of-type(2n) i {
+  animation-delay: -0.6s;
+}
+@keyframes w3-blink {
+  50% {
+    opacity: 0.15;
+  }
+}
+.w3-works {
+  width: 300px;
+  margin-left: -150px;
+  padding-bottom: 70px;
+  background: linear-gradient(90deg, transparent 88px, #6a6272 88px 96px, transparent 96px 204px, #6a6272 204px 212px, transparent 212px) bottom / 100% 70px no-repeat;
+}
+.w3-works > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 8px solid transparent;
+  border-radius: 6px;
+  background:
+    linear-gradient(#f2c230, #f2c230) padding-box,
+    repeating-linear-gradient(45deg, #1a1720 0 12px, #f2c230 12px 24px) border-box;
+  color: #1a1720;
+  text-align: center;
+}
+.w3-works b {
+  font: 700 26px/1.1 var(--font-display);
+}
+.w3-works span {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+/* Задник в конце улицы: тёмный силуэт дальнего города стоит поперёк и растворяется вверх —
+   улица на любом шаге упирается в город, а город переходит в гору */
+.w3-end {
+  left: -2400px;
+  width: 5900px;
+  height: 1600px;
+  background: linear-gradient(to top, #251a31 0%, rgba(37, 26, 49, 0.92) 30%, rgba(37, 26, 49, 0.5) 60%, rgba(37, 26, 49, 0) 100%);
+}/* лупа — только пока нажато */
+.fz-stage {
+  cursor: zoom-in;
+  touch-action: none;
+}
+.w3.lite .w3-fsign,
+.w3.lite .w3-barrier i {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .w3-fsign,
+  .w3-barrier i {
+    animation: none;
+  }
+}
+
+/* Уличный указатель бульвара: столб с навершием и две зелёные таблички крест-накрест.
+   Указатель — объёмный (preserve-3d): табличка «Аллея славы» повёрнута вдоль улицы и уходит в перспективу */
+.w3-post {
+  width: 12px;
+  height: 270px;
+  margin-left: -6px;
+  transform-style: preserve-3d;
+}
+.w3-pole {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 12px;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #5c6461, #b9c1be 45%, #6c7472);
+}
+.w3-pole::after {
+  content: '';
+  position: absolute;
+  left: -8px;
+  bottom: 0;
+  width: 28px;
+  height: 10px;
+  border-radius: 3px 3px 0 0;
+  background: #4a504e;
+}
+.w3-finial {
+  position: absolute;
+  left: -3px;
+  top: -14px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #f7e2a3, #c9963f 60%, #7a5a22);
+}
+.w3-plate {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 6px;
+  background: #1d6b46;
+  box-shadow: inset 0 0 0 2px #e8f3ec, inset 0 0 0 5px #1d6b46;
+  color: #fff;
+  font: 700 26px/1.1 var(--font-display);
+  white-space: nowrap;
+}
+.w3-plate small {
+  font: 600 15px var(--font-display);
+  opacity: 0.85;
+}
+.w3-plate.a {
+  top: 18px;
+  transform: translateX(-50%);
+}
+.w3-plate.b {
+  top: 74px;
+  font-size: 22px;
+  transform: translateX(-50%) rotateY(90deg);
+}
+
+/* ---- Быстрая аллея: без дорогих фильтров, заставка загрузки, превью ролика в карточке ---- */
+.w3 {
+  contain: layout paint;
+}
+/* тень и бегущий блик — только у звезды, у которой стоим; у остальных они перерисовывались каждый кадр */
+.w3-star .fame-star {
+  filter: none;
+  transition: none;
+}
+.w3-star.near .fame-star {
+  filter: drop-shadow(0 0 18px rgba(240, 190, 110, 0.5));
+}
+.w3-star:not(.near) .fs-pink::after {
+  display: none;
+}
+.w3 .lp-glow {
+  animation: none;
+}
+.w3-sky .fs-beam {
+  filter: none;
+  mix-blend-mode: normal;
+}
+.w3-view::after {
+  mix-blend-mode: normal;
+}
+.w3-cap {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(17, 15, 22, 0.92);
+}
+/* устройство послабее — без мерцания вывесок и мигалок */
+.w3.lowfx .w3-fsign,
+.w3.lowfx .w3-barrier i,
+.w3.lowfx .w3-view::after {
+  animation: none;
+}
+/* аллея не на экране — анимации стоят */
+.w3-off *,
+.w3-off *::before,
+.w3-off *::after {
+  animation-play-state: paused !important;
+}
+/* задник в конце улицы: высоту задаёт прогулка (до горизонта), сверху он прозрачный */
+.w3-end {
+  background: linear-gradient(to top, #251a31 0%, rgba(37, 26, 49, 0.85) 35%, rgba(37, 26, 49, 0) 100%);
+}
+/* указатели бульваров — поменьше */
+.w3-post {
+  height: 210px;
+}
+.w3-plate {
+  gap: 6px;
+  padding: 6px 13px;
+  box-shadow: inset 0 0 0 2px #e8f3ec, inset 0 0 0 4px #1d6b46;
+  font-size: 19px;
+}
+.w3-plate small {
+  font-size: 12px;
+}
+.w3-plate.a {
+  top: 14px;
+}
+.w3-plate.b {
+  top: 54px;
+  font-size: 16px;
+}
+.w3-finial {
+  left: -1px;
+  top: -11px;
+  width: 14px;
+  height: 14px;
+}
+/* заставка, пока аллея собирается */
+.w3-load {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: radial-gradient(ellipse 80% 60% at 50% 40%, #2a1838, #120e18 70%);
+  color: #f2d68a;
+  transition: opacity 0.4s ease;
+}
+.w3:not(.loading) .w3-load {
+  opacity: 0;
+  pointer-events: none;
+}
+.w3-load b {
+  font: 600 18px var(--font-display);
+}
+.w3-load-star {
+  font-size: 44px;
+  line-height: 1;
+  text-shadow: 0 0 24px rgba(233, 196, 106, 0.6);
+  animation: w3-load-star 1.6s ease-in-out infinite;
+}
+.w3-load-bar {
+  width: 160px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.w3-load-bar i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, #c9963f, #f7e2a3);
+  animation: w3-load-bar 1.1s ease-in-out infinite;
+}
+@keyframes w3-load-star {
+  50% {
+    transform: scale(1.15) rotate(18deg);
+  }
+}
+@keyframes w3-load-bar {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+/* карточка ролика: крупное превью и цифры с YouTube */
+.fz-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(420px, 100%);
+  margin: 4px auto 0;
+}
+.fz-shot {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid rgba(233, 196, 106, 0.3);
+  border-radius: 14px;
+  background: #1a1622;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+.fz-shot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.fz-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  border-radius: 50%;
+  background: rgba(10, 8, 14, 0.72);
+  color: #fff;
+  font-size: 20px;
+  transition: background 0.2s;
+}
+.fz-shot:hover .fz-play,
+.fz-shot:focus-visible .fz-play {
+  background: #c9963f;
+}
+.fz-yt {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 8px;
+}
+.fz-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.fz-tile b {
+  color: #f2d68a;
+  font: 600 18px var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+.fz-tile small {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.fz-ytnote {
+  grid-column: 1 / -1;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}
+.fz-wait {
+  display: inline-block;
+  width: 48px;
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
+  background-size: 250% 100%;
+  animation: fz-wait 1.4s linear infinite;
+}
+@keyframes fz-wait {
+  from {
+    background-position: 133.333% 0;
+  }
+  to {
+    background-position: -33.333% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .w3-load-star,
+  .w3-load-bar i,
+  .fz-wait {
+    animation: none;
+  }
+}
+/* дорожный поток: отрезок перед зрителем, двигается вместе с ним */
+.w3-traffic {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 0;
+  transform-style: preserve-3d;
+}

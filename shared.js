@@ -236,8 +236,43 @@ const TR = (() => {
   // Крупное превью (большая карточка «Продолжить», билет оценки): 1280×720, если у видео его нет — на ступень ниже.
   // Лестница: maxresdefault → hq720 → sddefault → hqdefault; следующую ступень даёт thumbFallback (YouTube отвечает 404).
   const THUMB_STEPS = ['maxresdefault', 'hq720', 'sddefault', 'hqdefault'];
+  // Какая ступень у ролика есть, запоминаем (в окне расширения и на телефоне): иначе при каждой перерисовке
+  // браузер снова просит отсутствующее 720p, получает ошибку и превью моргает, перескакивая на запасное
+  const HQ_KEY = 'tr-thumb-hq';
+  let hqBest = null;
+  function hqMap() {
+    if (hqBest) return hqBest;
+    try {
+      hqBest = JSON.parse(localStorage.getItem(HQ_KEY) || '{}') || {};
+    } catch {
+      hqBest = {};
+    }
+    return hqBest;
+  }
+  let hqSaveTimer = 0;
+  function hqRemember(id, step) {
+    const m = hqMap();
+    if (m[id] === step) return;
+    m[id] = step;
+    clearTimeout(hqSaveTimer);
+    hqSaveTimer = setTimeout(() => {
+      try {
+        const keys = Object.keys(m);
+        if (keys.length > 3000) for (const k of keys.slice(0, keys.length - 3000)) delete m[k];
+        localStorage.setItem(HQ_KEY, JSON.stringify(m));
+      } catch {
+        // не критично: просто снова переберём ступени
+      }
+    }, 500);
+  }
   function thumbHQ(id) {
-    return `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
+    let step = 'maxresdefault';
+    try {
+      if (typeof localStorage !== 'undefined') step = hqMap()[id] || step;
+    } catch {
+      // нет доступа к памяти страницы — начинаем с лучшего
+    }
+    return `https://i.ytimg.com/vi/${id}/${step}.jpg`;
   }
   function thumbFallback(src) {
     const m = String(src || '').match(/^(https:\/\/i\.ytimg\.com\/vi\/[\w-]{11}\/)(\w+)\.jpg/);
@@ -252,7 +287,10 @@ const TR = (() => {
         const img = e.target;
         if (img?.tagName !== 'IMG') return;
         const next = thumbFallback(img.currentSrc || img.src);
-        if (next) img.src = next;
+        if (!next) return;
+        const m = next.match(/\/vi\/([\w-]{11})\/(\w+)\.jpg/);
+        if (m) hqRemember(m[1], m[2]);
+        img.src = next;
       },
       true
     );
@@ -263,6 +301,8 @@ const TR = (() => {
         const img = e.target;
         if (img?.tagName === 'IMG' && img.naturalWidth && img.naturalWidth <= 120 && /\/(maxresdefault|hq720)\.jpg/.test(img.src)) {
           const next = thumbFallback(img.src);
+          const m = next?.match(/\/vi\/([\w-]{11})\/(\w+)\.jpg/);
+          if (m) hqRemember(m[1], m[2]);
           if (next) img.src = next;
         }
       },
@@ -444,6 +484,7 @@ const TR = (() => {
     part('rating', (x) => x.rating?.updatedAt || 0, 'ratingDel');
     part('later', (x) => x.later?.updatedAt || x.later?.addedAt || 0, 'laterDel');
     part('dropped', (x) => x.dropped?.at || 0, 'droppedDel');
+    part('star', (x) => x.star?.at || 0, 'starDel'); // звезда ролику на аллее славы
     if ((inc.noteAt || 0) > (cur.noteAt || 0)) {
       v.noteAt = inc.noteAt;
       if (inc.note) v.note = inc.note;
@@ -574,6 +615,568 @@ const TR = (() => {
     const p = FAME_EMBLEMS[type] || FAME_EMBLEMS.custom;
     return `<svg class="fame-emblem" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
   }
+  // Имя на звезде уменьшается, пока целиком не влезет в свою полосу (и по ширине, и по строкам) — не выходит за звезду.
+  // Вызывать, когда звёзды уже видны (нужны размеры).
+  function fitFameNames(root) {
+    for (const el of root?.querySelectorAll?.('.fs-name') || []) {
+      const w = el.closest('.fame-star')?.clientWidth;
+      if (!w || !el.clientHeight) continue;
+      let n = (parseFloat(getComputedStyle(el).fontSize) / w) * 100;
+      for (let i = 0; i < 14 && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) && n > 2.2; i++) {
+        n *= 0.9;
+        el.style.setProperty('--n', n.toFixed(2) + 'cqw');
+      }
+    }
+  }
+
+  // Звезда вблизи: крупно на весь экран, по звезде можно водить лупой (мышкой или пальцем — лупа над пальцем).
+  // star — разметка звезды (.fame-star), actions — кнопки и ссылки: { label, href, target, onClick, primary }.
+  // extra — дополнительный блок под подписью (у ролика: превью и цифры с YouTube); его можно дозаполнить позже через .fz-extra
+  function fameCloseup({ star, title, sub = '', extra = '', actions = [] }) {
+    // прошлую карточку закрываем как положено — вместе с её обработчиком клавиш
+    const prev = document.querySelector('.fame-zoom');
+    if (prev?._close) prev._close();
+    else prev?.remove();
+    const box = document.createElement('div');
+    box.className = 'fame-zoom';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', title);
+    const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    box.innerHTML = `<div class="fz-inner">
+      <button type="button" class="fz-close" aria-label="Закрыть">✕</button>
+      <div class="fz-stage">${star}<div class="fz-lens" aria-hidden="true"></div></div>
+      <div class="fz-title">${escH(title)}</div>
+      ${sub ? `<div class="fz-sub">${sub}</div>` : ''}
+      ${extra ? `<div class="fz-extra">${extra}</div>` : ''}
+      <div class="fz-actions"></div>
+      <div class="fz-hint">Нажмите на звезду и ведите — лупа покажет детали</div>
+    </div>`;
+    const acts = box.querySelector('.fz-actions');
+    for (const a of actions.filter((x) => x && x.label)) {
+      const el = document.createElement(a.href ? 'a' : 'button');
+      el.className = 'btn' + (a.primary ? ' primary' : '');
+      el.textContent = a.label;
+      if (a.href) {
+        el.href = a.href;
+        if (a.target) {
+          el.target = a.target;
+          el.rel = 'noopener';
+        }
+      } else el.type = 'button';
+      el.addEventListener('click', (e) => {
+        if (a.onClick) {
+          e.preventDefault();
+          close();
+          a.onClick();
+        } else if (!a.target) close();
+      });
+      acts.appendChild(el);
+    }
+    document.body.appendChild(box);
+    const stage = box.querySelector('.fz-stage');
+    const lens = box.querySelector('.fz-lens');
+    const starEl = stage.querySelector('.fame-star');
+    const zoomed = starEl.cloneNode(true);
+    zoomed.classList.add('fz-zoomed');
+    lens.appendChild(zoomed);
+    requestAnimationFrame(() => {
+      fitFameNames(stage);
+      zoomed.querySelectorAll('.fs-name').forEach((n, i) => n.style.setProperty('--n', stage.querySelectorAll('.fs-name')[i]?.style.getPropertyValue('--n') || ''));
+    });
+    const K = 2.6;
+    const show = (cx, cy, touch) => {
+      const r = starEl.getBoundingClientRect();
+      const x = cx - r.left;
+      const y = cy - r.top;
+      if (x < 0 || y < 0 || x > r.width || y > r.height) return lens.classList.remove('on');
+      lens.classList.add('on');
+      const L = lens.offsetWidth;
+      // над пальцем, чтобы он не закрывал то, что увеличено
+      lens.style.transform = `translate(${x - L / 2}px, ${y - L / 2 - (touch ? L * 0.85 : 0)}px)`;
+      zoomed.style.width = r.width + 'px';
+      zoomed.style.transform = `translate(${L / 2 - x * K}px, ${L / 2 - y * K}px) scale(${K})`;
+    };
+    // лупа — только пока нажато (мышью или пальцем); просто наведение её не показывает
+    let pressed = false;
+    stage.addEventListener('pointermove', (e) => pressed && show(e.clientX, e.clientY, e.pointerType === 'touch'));
+    stage.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      pressed = true;
+      try {
+        stage.setPointerCapture?.(e.pointerId); // палец или мышь уехали за звезду — лупа всё равно ведёт
+      } catch {
+        // захват не удался — не страшно
+      }
+      show(e.clientX, e.clientY, e.pointerType === 'touch');
+    });
+    const hide = () => {
+      pressed = false;
+      lens.classList.remove('on');
+    };
+    stage.addEventListener('pointerup', hide);
+    stage.addEventListener('pointercancel', hide);
+    stage.addEventListener('lostpointercapture', hide);
+    function close() {
+      document.removeEventListener('keydown', onKey);
+      box.classList.add('closing');
+      setTimeout(() => box.remove(), 200);
+    }
+    const onKey = (e) => e.key === 'Escape' && close();
+    document.addEventListener('keydown', onKey);
+    box._close = () => {
+      document.removeEventListener('keydown', onKey);
+      box.remove();
+    };
+    box.addEventListener('click', (e) => (e.target === box || e.target.closest('.fz-close')) && close());
+    box.querySelector('.fz-close').focus();
+    return box;
+  }
+
+  // ---- Оформление аллеи: ночная сцена над бульваром и фонари ----
+  // Холм с белыми буквами на опорах (как знаменитая надпись на холмах Голливуда), лучи прожекторов, пальмы
+  function fameSceneHtml(sub = '') {
+    const word = 'СМОТРИБЕЛЬНО';
+    const x0 = 196;
+    const step = 34;
+    const letters = [...word]
+      .map((ch, i) => {
+        const x = x0 + i * step;
+        const y = 108 + [0, -3, 1, -2, 2, -1, 3, -2, 0, 2, -3, 1][i]; // буквы стоят чуть вразнобой, как на настоящем холме
+        const r = [-2, 1, -1, 2, 0, -2, 1, 2, -1, 0, 2, -1][i];
+        return `<g transform="rotate(${r} ${x + 14} ${y})"><path class="fs-legs" d="M${x + 6} ${y + 2}v14M${x + 22} ${y + 2}v14M${x + 6} ${y + 9}l16 6"/><text x="${x}" y="${y}">${ch}</text></g>`;
+      })
+      .join('');
+    const palm = (x, s, flip) =>
+      `<g class="fs-palm" transform="translate(${x} 200) scale(${flip ? -s : s} ${s})"><path d="M0 0 C 4 -40 10 -80 22 -118" class="trunk"/><g transform="translate(22 -118)"><path d="M0 0 q -24 -10 -48 6"/><path d="M0 0 q -18 -22 -40 -22"/><path d="M0 0 q 2 -26 -8 -40"/><path d="M0 0 q 20 -20 40 -16"/><path d="M0 0 q 26 -4 44 14"/><path d="M0 0 q 14 10 22 32"/></g></g>`;
+    return `<div class="fame-scene" aria-hidden="true">
+      <span class="fs-beam b1"></span><span class="fs-beam b2"></span><span class="fs-beam b3"></span>
+      <svg class="fs-svg" viewBox="0 0 800 200" preserveAspectRatio="xMidYMax slice">
+        <path class="fs-hill2" d="M0 200 L0 140 Q 90 104 190 118 T 380 100 T 600 114 T 800 96 L800 200 Z"/>
+        <g class="fs-sign">${letters}</g>
+        <path class="fs-hill" d="M0 200 L0 162 Q 120 120 250 132 T 520 124 T 800 150 L800 200 Z"/>
+        ${palm(40, 0.9, false)}${palm(110, 0.62, true)}${palm(740, 0.95, true)}${palm(680, 0.6, false)}
+      </svg>
+      <div class="fs-title"><span class="fs-t">Аллея славы</span>${sub ? `<span class="fs-s">${sub}</span>` : ''}</div>
+    </div>`;
+  }
+  // Старинный уличный фонарь — по краям тротуара; свет мягко «дышит»
+  const FAME_LAMP = `<span class="fame-lamp" aria-hidden="true"><svg viewBox="0 0 40 160"><path class="lp-post" d="M20 160V46M14 160h12M16 150h8"/><path class="lp-arm" d="M20 52c0-10 9-12 12-8"/><path class="lp-head" d="M10 46h20l-3-18H13z"/><circle class="lp-bulb" cx="20" cy="38" r="5"/></svg><span class="lp-glow"></span></span>`;
+
+  // Дорога у бульвара: две полосы, изредка проезжают машины с фарами (верхняя полоса — вправо, нижняя — влево)
+  const FAME_CAR = `<svg class="car" viewBox="0 0 60 22" aria-hidden="true"><path class="car-body" d="M3 16c0-4 3-6 7-6.5l7-1c4-4.5 8-5.5 14-5.5h7c6 0 9 2.5 12 6l5 1.2c2.4.6 3.5 2.6 3.5 5.8v1H3z"/><path class="car-win" d="M20 8.6c3-3 6.4-3.8 11-3.8h5.5c3.6 0 6 1.6 8 3.8z"/><rect class="car-tail" x="2.4" y="10.6" width="2.6" height="2.4" rx="1"/><circle class="car-head" cx="58.6" cy="12" r="1.6"/><circle class="car-wheel" cx="15" cy="17.5" r="3.6"/><circle class="car-wheel" cx="46" cy="17.5" r="3.6"/></svg>`;
+  const FAME_ROAD = `<span class="fame-road" aria-hidden="true"><span class="lane r l1">${FAME_CAR}</span><span class="lane l l2">${FAME_CAR}</span><span class="lane r l3">${FAME_CAR}</span></span>`;
+  // Сколько звёзд в ряд: тротуар ровно по ширине звёзд (сколько помещается между фонарями), без пустого хвоста.
+  // CSS сам такое не умеет (ширина по содержимому + перенос строк), поэтому считаем; вызывать после показа и при смене размера окна.
+  function fitFameWalks(root, tileW = 230, lampsW = 100) {
+    for (const b of root?.querySelectorAll?.('.boulevard') || []) {
+      const walk = b.querySelector('.fame-walk');
+      const n = walk?.children.length || 0;
+      const avail = (b.parentElement?.clientWidth || 0) - lampsW;
+      if (!walk || !n || avail <= 0) continue;
+      walk.style.setProperty('--cols', String(Math.max(1, Math.min(n, Math.floor(avail / tileW)))));
+    }
+  }
+  // Бульвар целиком: фонарь, тротуар со звёздами, фонарь, ниже дорога
+  const fameBoulevard = (tiles) => `<div class="boulevard">${FAME_LAMP}<div class="fame-walk">${tiles}</div>${FAME_LAMP}${FAME_ROAD}</div>`;
+
+  // ---- Прогулка по аллее: звёзды лежат на тротуаре и уходят вдаль, листание — шаги вперёд ----
+  // items по порядку: { star, title, sub } — звезда; { sign } — табличка-перекрёсток на обочине.
+  // onOpen(item) — нажали на звезду или «Рассмотреть». Состояние (где стоим) переживает перерисовку.
+  const W3_TILT = 62; // наклон тротуара, градусов
+  function fameWalk(host, { items, onOpen, lite = false }) {
+    if (!host) return;
+    const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    const sig = items.map((it) => it.sign || it.title + '|' + (it.sub || '')).join('¦');
+    if (host._sig === sig && host.firstChild) return; // то же самое — не перестраиваем, прогулка продолжается с того же места
+    host._sig = sig;
+    // слабое устройство: совсем слабое — без машин, послабее — без мерцаний и «дышащего» света
+    const cores = navigator.hardwareConcurrency || 8;
+    const mem = navigator.deviceMemory || 8;
+    if (cores <= 2 || mem <= 2) lite = true;
+    const lowfx = lite || cores <= 4 || mem <= 4;
+    const firstShow = !host._shown; // заставка «Аллея готовится» — только при первом показе
+    host._shown = true;
+    const D = 300; // шаг между звёздами
+    const START = 240;
+    const rows = [];
+    let z = START;
+    for (const it of items) {
+      rows.push({ ...it, z });
+      z += it.sign ? 200 : D;
+    }
+    // Конец аллеи — ремонт: пустые места под будущие звёзды, заграждения и табличка. Дороги свободны — машины едут дальше.
+    const zb = z + 480; // линия заграждений
+    const LEN = zb + 1500;
+    const maxPos = Math.max(0, zb - START - 300);
+    // Улица (поперёк, px): дома слева 0 | дорога 10–230 | газон с пальмами и фонарями 230–270 | тротуар 270–690 |
+    // бордюр | дорога в две полосы 706–1000 | узкий тротуар | дома справа 1100. Раскладка — по постоянному «зерну»: улица не меняется.
+    let seed = 20261019;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    let side = '';
+    for (let y = 120; y < LEN - 300; y += 520) {
+      side += `<div class="w3-pool" style="bottom:${y - 60}px;left:250px"></div><div class="w3-pool" style="bottom:${y - 60}px;left:700px"></div>`;
+      side += `<div class="w3-bb w3-lamp" style="bottom:${y}px;left:250px">${FAME_LAMP}</div><div class="w3-bb w3-lamp" style="bottom:${y}px;left:700px">${FAME_LAMP}</div>`;
+    }
+    for (let y = 380, i = 0; y < LEN - 300; y += 640, i++) side += `<div class="w3-bb w3-palm${i % 2 ? ' small' : ''}" style="bottom:${y}px;left:252px"></div>`;
+    // Дома Лас-Вегаса: яркие стены с окнами (часть горит), на фасадах — вывески с неоновой рамкой и лампочками.
+    // Вывеска — часть стены, поэтому уходит в перспективу вместе с домом.
+    const WALLS = ['#4a1f4f', '#1f3f5a', '#5a3a1f', '#3a2a5f', '#5a1f35', '#1f4a45'];
+    const TRIMS = ['#ff5fa2', '#5fe1ff', '#ffc85f', '#b28bff', '#ff6b5f', '#5fffb0'];
+    const SIGNS = ['КАЗИНО', 'ШОУ', 'ДЖЕКПОТ', '777', 'БИНГО', 'РОЯЛЬ', 'КИНО', 'ТЕАТР', 'МОТЕЛЬ', 'БАР', 'РАДИО', 'ОТЕЛЬ', 'ДИСКО'];
+    const wallSvg = (H, L) => {
+      const floors = Math.max(2, Math.floor((H - 30) / 44));
+      const cols = Math.max(2, Math.floor((L - 20) / 38));
+      let r = '';
+      for (let f = 0; f < floors; f++)
+        for (let c = 0; c < cols; c++) {
+          const lit = rnd() < 0.38;
+          r += `<rect x="${30 + f * 44}" y="${14 + c * 38}" width="22" height="18" rx="2" fill="${lit ? (rnd() < 0.5 ? '#ffd27a' : '#ffb85c') : '#120f17'}" opacity="${lit ? 0.75 + rnd() * 0.25 : 1}"/>`;
+        }
+      // в атрибуте style — только одинарные кавычки, а в самой картинке — двойные (они кодируются)
+      return `url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${H}" height="${L}">${r}</svg>`)}')`;
+    };
+    let houses = '';
+    for (const [sideCls, x] of [['l', 0], ['r', 1100]])
+      for (let y = 40, n = 0; y < LEN - 200; n++) {
+        const L = 240 + Math.round(rnd() * 220);
+        const H = 170 + Math.round(rnd() * 190);
+        const trim = TRIMS[Math.floor(rnd() * TRIMS.length)];
+        // вывеска на фасаде: координаты стены — x это высота над землёй, y — вдоль улицы
+        const sign = rnd() < 0.62 ? `<span class="w3-fsign" style="left:${Math.round(H * (0.5 + rnd() * 0.18))}px;top:${Math.round(L * (0.35 + rnd() * 0.3))}px"><b>${SIGNS[Math.floor(rnd() * SIGNS.length)]}</b></span>` : '';
+        houses += `<div class="w3-wall ${sideCls}" style="left:${x}px;bottom:${y}px;width:${H}px;height:${L}px;--wall:${WALLS[n % WALLS.length]};--trim:${trim};background-image:${wallSvg(H, L)}">${sign}</div>`;
+        y += L + 18 + Math.round(rnd() * 40);
+      }
+    // Ретро-машины 50-х: одна стоячая картинка на машину, объём нарисован прямыми линиями — торец кузова,
+    // крышка багажника (или капот) и кабина сужаются вдаль. От нас — корма с плавниками и красными фонарями,
+    // навстречу — морда с решёткой и фарами. Лёгкие для браузера; на телефоне (lite) машин нет.
+    const CAR_COLORS = ['#b8323f', '#2a8a8f', '#d9c48f', '#5a7fbf', '#8c4a9c'];
+    const shade = (hex, k) => {
+      const n = parseInt(hex.slice(1), 16);
+      return '#' + [n >> 16, (n >> 8) & 255, n & 255].map((c) => Math.round(k < 0 ? c * (1 + k) : c + (255 - c) * k).toString(16).padStart(2, '0')).join('');
+    };
+    const retroCar = (come, c) => {
+      const p = (pts, fill) => `<polygon points="${pts}" fill="${fill}"/>`;
+      const r = (x, y, w, h, fill) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"/>`;
+      const chrome = '#dcd6ca';
+      const lamp = come ? '#fff4cc' : '#ff3d3d';
+      const glow = come ? 'rgba(255,236,170,.45)' : 'rgba(255,61,61,.42)';
+      let s = r(14, 86, 22, 22, '#0b0a0e') + r(114, 86, 22, 22, '#0b0a0e') + r(17, 98, 16, 3, '#cfc8bb') + r(117, 98, 16, 3, '#cfc8bb'); // колёса с белой боковиной
+      s += p('22,44 128,44 142,62 8,62', shade(c, 0.3)); // багажник / капот — видно сверху
+      s += p('6,62 144,62 146,90 4,90', shade(c, -0.2)); // торец кузова
+      s += r(6, 62, 138, 4, shade(c, 0.08)); // ребро
+      s += come
+        ? p('6,62 32,62 28,53 10,53', shade(c, 0.16)) + p('144,62 118,62 122,53 140,53', shade(c, 0.16)) // крылья над фарами
+        : p('6,62 22,62 13,36', shade(c, 0.12)) + p('144,62 128,62 137,36', shade(c, 0.12)); // плавники
+      s += p('30,44 120,44 106,18 44,18', shade(c, -0.06)); // кабина
+      s += p('38,42 112,42 101,22 49,22', 'rgba(150,190,255,.5)'); // стекло
+      s += p('44,18 106,18 100,10 50,10', shade(c, 0.42)); // крыша
+      s += r(2, 82, 146, 7, chrome); // бампер
+      if (come) {
+        s += r(6, 63, 34, 17, glow) + r(110, 63, 34, 17, glow);
+        s += r(10, 66, 12, 10, lamp) + r(25, 67, 9, 8, lamp) + r(128, 66, 12, 10, lamp) + r(116, 67, 9, 8, lamp);
+        s += r(44, 66, 62, 14, '#1a1720');
+        for (let x = 48; x < 104; x += 7) s += r(x, 67, 1.5, 12, chrome); // решётка
+        s += p('72,44 78,44 75,37', chrome); // фигурка на капоте
+      } else {
+        s += r(6, 63, 28, 17, glow) + r(116, 63, 28, 17, glow);
+        s += r(10, 67, 20, 9, lamp) + r(120, 67, 20, 9, lamp);
+        s += r(36, 72, 78, 1.5, chrome) + r(64, 70, 22, 10, '#e8dfc6'); // молдинг и номер
+      }
+      return `url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 110" width="150" height="110">${s}</svg>`)}')`;
+    };
+    // полосы: на правой дороге — от нас (780) и навстречу (925), на левой — навстречу; две машины в одной полосе
+    // едут с одной скоростью через полцикла — не наезжают друг на друга
+    const lanes = [
+      [780, false, 9.4, 0],
+      [925, true, 7.4, -2.5],
+      [120, true, 10.5, -5.8],
+      [780, false, 9.4, -4.7],
+    ];
+    // Машин всегда четыре, они ездят по кругу. Едут не по всей улице, а по отрезку перед зрителем (FAR),
+    // и этот отрезок идёт вместе с ним: иначе машина позади проезжала бы у самой «камеры» —
+    // браузер растягивал её в огромную картинку, и аллея начинала подтормаживать.
+    const FAR = 4400;
+    const cars = lite
+      ? ''
+      : `<div class="w3-traffic" style="--len:${FAR}px">${lanes
+          .map(([left, come, t, d], i) => `<div class="w3-car ${come ? 'come' : 'away'}" style="--d:${d}s;--t:${t}s;left:${left}px"><div class="w3-bb w3-rc" style="background-image:${retroCar(come, CAR_COLORS[i % CAR_COLORS.length])}"></div></div>`)
+          .join('')}</div>`;
+    // Дальний город у подножия холма: силуэты домов с редкими огнями — связывают улицу и гору
+    function cityImg() {
+      let r = '';
+      for (let x = 0; x < 800; ) {
+        const w = 18 + Math.round(rnd() * 30);
+        const h = 16 + Math.round(rnd() * 46);
+        r += `<rect x="${x}" y="${80 - h}" width="${w}" height="${h}" fill="#251a31"/>`;
+        for (let wy = 84 - h; wy < 76; wy += 7) for (let wx = x + 4; wx < x + w - 4; wx += 6) if (rnd() < 0.28) r += `<rect x="${wx}" y="${wy}" width="2" height="3" fill="#ffcf7a" opacity=".7"/>`;
+        x += w + 2;
+      }
+      return `url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 80" preserveAspectRatio="none">${r}</svg>`)}')`;
+    }
+    // Ремонт в конце тротуара: две пустые «формы» под звёзды (пунктир), конусы, полосатые заграждения и табличка
+    function roadworks() {
+      const pts = Array.from({ length: 10 }, (_, i) => {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const R = i % 2 ? 50 : 122;
+        return `${(130 + R * Math.cos(a)).toFixed(1)},${(132 + R * Math.sin(a)).toFixed(1)}`;
+      }).join(' ');
+      const mold = `url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 250"><polygon points="${pts}" fill="rgba(233,196,106,.06)" stroke="#e9c46a" stroke-opacity=".55" stroke-width="5" stroke-dasharray="16 11" stroke-linejoin="round"/><text x="130" y="142" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="20" fill="#e9c46a" fill-opacity=".6">СКОРО</text></svg>`)}')`;
+      const barrier = `url('data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 74"><rect x="12" y="24" width="7" height="50" fill="#9a958c"/><rect x="111" y="24" width="7" height="50" fill="#9a958c"/><rect x="2" y="12" width="126" height="22" fill="#f4efe6"/><polygon points="2,12 20,12 2,34" fill="#e0453a"/><polygon points="34,12 52,12 30,34 12,34" fill="#e0453a"/><polygon points="66,12 84,12 62,34 44,34" fill="#e0453a"/><polygon points="98,12 116,12 94,34 76,34" fill="#e0453a"/><polygon points="128,12 128,34 108,34" fill="#e0453a"/><rect x="2" y="44" width="126" height="10" fill="#f4efe6"/><rect x="58" y="2" width="14" height="10" fill="#ffae2e"/></svg>')}')`;
+      const cone = `url('data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 56"><polygon points="16,2 24,2 34,50 6,50" fill="#ff7a1a"/><polygon points="13,18 27,18 29,28 11,28" fill="#f4efe6"/><rect x="1" y="49" width="38" height="7" fill="#2a2630"/></svg>')}')`;
+      let s = `<div class="w3-mold" style="bottom:${z}px;transform:translateX(-34px);background-image:${mold}"></div>`;
+      s += `<div class="w3-mold" style="bottom:${z + 300}px;transform:translateX(34px);background-image:${mold}"></div>`;
+      for (const x of [300, 420, 545, 665]) s += `<div class="w3-bb w3-cone" style="bottom:${zb - 70}px;left:${x}px;background-image:${cone}"></div>`;
+      for (const x of [340, 480, 620]) s += `<div class="w3-bb w3-barrier" style="bottom:${zb}px;left:${x}px;background-image:${barrier}"><i></i></div>`;
+      s += `<div class="w3-bb w3-works" style="bottom:${zb + 70}px;left:480px"><div><b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды</span></div></div>`;
+      return s;
+    }
+    host.innerHTML = `<div class="w3${lite ? ' lite' : ''}${lowfx ? ' lowfx' : ''}${firstShow ? ' loading' : ''}" style="--len:${LEN}px">
+      <div class="w3-sky">${fameSceneHtml('')}<div class="w3-city" style="background-image:${cityImg()}"></div></div>
+      <div class="w3-view">
+        <div class="w3-move">
+          <div class="w3-floor" style="height:${LEN}px">
+            <div class="w3-road left"><span class="w3-dash"></span></div><div class="w3-grass"></div><div class="w3-walkway"></div><div class="w3-curb"></div><div class="w3-road"><span class="w3-dash"></span></div><div class="w3-side"></div>
+            ${rows
+              .map((r, i) =>
+                r.sign
+                  ? // уличный указатель на перекрёстке: столб и две таблички крест-накрест — название бульвара к нам,
+                    // «Аллея славы» — вдоль улицы (в перспективе)
+                    `<div class="w3-bb w3-post" style="bottom:${r.z}px;left:610px"><i class="w3-pole"></i><i class="w3-finial"></i><span class="w3-plate a"><small>${escH(r.sign.split(' ')[0])}</small> ${escH(r.sign.split(' ').slice(1).join(' '))}</span><span class="w3-plate b">★ Аллея славы</span></div>`
+                  : `<button type="button" class="w3-star${i % 2 ? ' alt' : ''}" style="bottom:${r.z}px" data-w3="${i}" aria-label="${escH(r.title)} — рассмотреть">${r.star}</button>`
+              )
+              .join('')}
+            ${roadworks()}
+            <div class="w3-bb w3-end" style="bottom:${LEN - 4}px"></div>
+          </div>
+        </div>
+        <div class="w3-fog"></div>
+      </div>
+      <div class="w3-ctl"><span class="w3-hint">Листайте, чтобы идти по аллее</span>${rows.filter((r) => r.sign).map((r) => `<button type="button" class="btn small w3-jump" data-jump="${r.z}">${escH(r.sign).replace(/^(\S+\s)/, '<span class="w3-jpre">$1</span>')}</button>`).join('')}<button type="button" class="btn small w3-auto">▶ Прогуляться</button></div>
+      <div class="w3-hud">
+        <div class="w3-cap" aria-live="polite"></div>
+        <div class="w3-prog"><span></span></div>
+      </div>
+      ${firstShow ? '<div class="w3-load" aria-hidden="true"><span class="w3-load-star">★</span><b>Аллея готовится…</b><i class="w3-load-bar"><i></i></i></div>' : ''}
+    </div>`;
+    const w3 = host.querySelector('.w3');
+    const view = w3.querySelector('.w3-view');
+    const move = w3.querySelector('.w3-move');
+    const floor = w3.querySelector('.w3-floor');
+    const cap = w3.querySelector('.w3-cap');
+    const prog = w3.querySelector('.w3-prog span');
+    const autoBtn = w3.querySelector('.w3-auto');
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let pos = Math.min(host._pos || 0, maxPos);
+    let target = pos;
+    let raf = 0;
+    let auto = false;
+    let shown = -2;
+    const end = floor.querySelector('.w3-end');
+    // Размеры меряем только при изменении окна, а не каждый кадр. Задник в конце улицы — высотой до горизонта
+    // (это высота «глаза» над тротуаром), поэтому вблизи он никогда не закрывает небо и гору.
+    let sc = 1;
+    const measure = () => {
+      const w = w3.clientWidth || 760;
+      sc = Math.min(1, w / (w < 620 ? 520 : 760)); // на телефоне — крупнее
+      const t = (W3_TILT * Math.PI) / 180;
+      const eye = ((view.clientHeight || 400) - 330) * Math.sin(t) + 620 * Math.cos(t);
+      end.style.height = `${Math.max(120, Math.round((eye / sc) * 0.8))}px`;
+    };
+    measure();
+    // Показываем только ближнюю часть улицы: что позади или слишком далеко — скрыто и не рисуется.
+    // Задник едет вместе с границей видимости и прикрывает конец показанного.
+    const NEAR = 450;
+    let cull = [];
+    let traffic = null;
+    let bucket = null;
+    const collect = () => {
+      cull = [...floor.children]
+        .filter((el) => el !== end && el.style.bottom)
+        .map((el) => {
+          const a = parseFloat(el.style.bottom);
+          return { el, a, b: a + (parseFloat(el.style.height) || 260), on: true };
+        });
+      traffic = floor.querySelector('.w3-traffic');
+      bucket = null;
+    };
+    const cullNow = () => {
+      const k = Math.round(pos / 120);
+      if (k === bucket) return;
+      bucket = k;
+      for (const c of cull) {
+        const on = c.b > pos - NEAR && c.a < pos + FAR;
+        if (on !== c.on) {
+          c.on = on;
+          c.el.style.display = on ? '' : 'none';
+        }
+      }
+      end.style.bottom = `${Math.min(LEN - 4, pos + FAR - 300)}px`;
+    };
+    const apply = () => {
+      host._pos = pos;
+      cullNow();
+      floor.style.transform = `translateX(-50%) scale(${sc}) rotateX(${W3_TILT}deg) translateY(${pos}px)`;
+      if (traffic) traffic.style.transform = `translateY(${-pos}px)`; // дорожный поток идёт вместе со зрителем
+      move.style.transform = reduce ? '' : `translateY(${(Math.sin(pos / 85) * 1.8).toFixed(2)}px)`; // покачивание шага
+      prog.style.width = maxPos ? `${((pos / maxPos) * 100).toFixed(1)}%` : '0%';
+      // у какой звезды стоим: ближайшая впереди, в «зоне взгляда»
+      let best = -1;
+      let bd = Infinity;
+      rows.forEach((r, i) => {
+        if (r.sign) return;
+        const d = r.z - pos - 170;
+        if (d > -140 && Math.abs(d) < bd) {
+          bd = Math.abs(d);
+          best = i;
+        }
+      });
+      if (best !== shown) {
+        shown = best;
+        const r = rows[best];
+        cap.innerHTML = r ? `<b>★ ${escH(r.title)}</b>${r.sub ? `<span>${r.sub}</span>` : ''}<button type="button" class="btn small w3-look" data-w3="${best}">Рассмотреть</button>` : '<b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды: ставьте их любимым каналам и роликам</span>';
+        floor.querySelectorAll('.w3-star.near').forEach((s) => s.classList.remove('near'));
+        floor.querySelector(`.w3-star[data-w3="${best}"]`)?.classList.add('near');
+      }
+    };
+    const tick = () => {
+      raf = 0;
+      if (auto) {
+        target = Math.min(maxPos, target + 1.6);
+        if (target >= maxPos) setAuto(false);
+      }
+      pos += (target - pos) * (reduce ? 1 : 0.12);
+      apply();
+      if (auto || Math.abs(target - pos) > 0.3) raf = requestAnimationFrame(tick);
+    };
+    const go = (d) => {
+      target = Math.max(0, Math.min(maxPos, target + d));
+      if (!raf) raf = requestAnimationFrame(tick);
+    };
+    function setAuto(on) {
+      auto = on;
+      autoBtn.textContent = on ? '❚❚ Стоп' : '▶ Прогуляться';
+      if (on && target >= maxPos) target = pos = 0; // дошли до конца — с начала
+      if (on && !raf) raf = requestAnimationFrame(tick);
+    }
+    autoBtn.addEventListener('click', () => setAuto(!auto));
+    // переход сразу на нужный бульвар
+    w3.addEventListener('click', (e) => {
+      const j = e.target.closest('[data-jump]');
+      if (!j) return;
+      setAuto(false);
+      target = Math.max(0, Math.min(maxPos, Number(j.dataset.jump) - START + 30));
+      if (!raf) raf = requestAnimationFrame(tick);
+    });
+    view.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        setAuto(false);
+        go(e.deltaY * (e.deltaMode === 1 ? 30 : 1) * 0.9);
+      },
+      { passive: false }
+    );
+    let lastY = null;
+    let moved = 0;
+    view.addEventListener('pointerdown', (e) => {
+      lastY = e.clientY;
+      moved = 0;
+      setAuto(false);
+    });
+    view.addEventListener('pointermove', (e) => {
+      if (lastY == null || (e.pointerType === 'mouse' && !e.buttons)) return;
+      const dy = lastY - e.clientY;
+      lastY = e.clientY;
+      moved += Math.abs(dy);
+      go(dy * 1.7);
+    });
+    const up = () => (lastY = null);
+    view.addEventListener('pointerup', up);
+    view.addEventListener('pointercancel', up);
+    view.addEventListener('pointerleave', up);
+    w3.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-w3]');
+      if (!b || moved > 8) return; // это был шаг, а не нажатие
+      onOpen?.(rows[Number(b.dataset.w3)]);
+    });
+    w3.tabIndex = 0;
+    w3.addEventListener('keydown', (e) => {
+      const k = { ArrowUp: 1, KeyW: 1, ArrowDown: -1, KeyS: -1, PageDown: 3, PageUp: -3 }[e.code];
+      if (!k) return;
+      e.preventDefault();
+      setAuto(false);
+      go(k * 220);
+    });
+    // Постепенная сборка: сначала тротуар и звёзды, потом дома с фонарями, потом машины — в паузах между кадрами,
+    // чтобы даже слабое устройство не подвисало; заставка уходит, когда всё на месте
+    collect();
+    requestAnimationFrame(apply);
+    const strips = floor.querySelector('.w3-side');
+    const stages = [houses + side, cars];
+    const idle = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 160 }) : setTimeout(f, 40));
+    const nextStage = () => {
+      if (!w3.isConnected) return;
+      const html = stages.shift();
+      if (html) strips.insertAdjacentHTML('afterend', html);
+      collect();
+      apply();
+      if (stages.length) return idle(nextStage);
+      const load = w3.querySelector('.w3-load');
+      if (!load) return;
+      let done = false;
+      const reveal = () => {
+        if (done) return;
+        done = true;
+        w3.classList.remove('loading');
+        setTimeout(() => load.remove(), 450);
+      };
+      requestAnimationFrame(() => requestAnimationFrame(reveal)); // после того как сцена нарисована
+      setTimeout(reveal, 1500); // страховка: кадры могут не идти (вкладка в фоне)
+    };
+    idle(nextStage);
+    // аллея не на экране (другая вкладка, прокрутили) — все анимации на паузе
+    host._io?.disconnect();
+    host._ro?.disconnect();
+    if (window.IntersectionObserver) {
+      host._io = new IntersectionObserver(([e]) => w3.classList.toggle('w3-off', !e.isIntersecting));
+      host._io.observe(w3);
+    }
+    if (window.ResizeObserver) {
+      host._ro = new ResizeObserver(() => {
+        measure();
+        bucket = null;
+        apply();
+      });
+      host._ro.observe(w3);
+    }
+    if (!host._resizeBound) {
+      host._resizeBound = true;
+      addEventListener('resize', () => host.isConnected && host.querySelector('.w3-floor') && (host._sig = '', 0));
+    }
+  }
+
+  // Блок ролика в карточке звезды: крупное превью (ведёт на YouTube) и плитки с цифрами.
+  // stats: { views, likes, date } или null — тогда плитки «загружаются»; note — строка вместо плиток.
+  const ytNum = (n) => (n == null ? '—' : new Intl.NumberFormat('ru', { notation: 'compact', maximumFractionDigits: 1 }).format(n));
+  const escAttr = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  function fameVideoTiles(stats = null, note = '') {
+    const tile = (label, val) => `<span class="fz-tile"><b>${val}</b><small>${label}</small></span>`;
+    if (note) return `<span class="fz-ytnote">${escAttr(note)}</span>`;
+    if (!stats) return tile('просмотры', '<i class="fz-wait"></i>') + tile('лайки', '<i class="fz-wait"></i>');
+    const date = stats.date ? new Date(stats.date).toLocaleDateString('ru', { day: 'numeric', month: 'short', year: 'numeric' }).replace(/\s*г\.$/, '') : '';
+    return tile('просмотры', ytNum(stats.views)) + tile('лайки', ytNum(stats.likes)) + (date ? tile('вышло', escAttr(date)) : '');
+  }
+  function fameVideoExtra(id, { img, stats = null, note = '' } = {}) {
+    return `<a class="fz-shot" href="${watchUrl(id)}" target="_blank" rel="noopener"><img src="${escAttr(img || thumbHQ(id))}" alt="Превью ролика"><span class="fz-play">▶</span></a><div class="fz-yt">${fameVideoTiles(stats, note)}</div>`;
+  }
+  // Ролики со звездой — по времени, когда дали звезду
+  function starredVideos(videos) {
+    return Object.values(videos || {})
+      .filter((v) => v?.star)
+      .sort((a, b) => (a.star.at || 0) - (b.star.at || 0));
+  }
   // Размер букв имени на звезде (в долях ширины звезды) — по длине самого длинного слова и всего имени, чтобы слова не рвались
   function fameNameSize(name) {
     const longest = Math.max(...String(name).split(/\s+/).map((w) => w.length), 1);
@@ -596,7 +1199,7 @@ const TR = (() => {
   const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
   const DRIVE_FILE = 'smotribelno.json';
   const DRIVE_APP = 'Smotribelno-drive';
-  const SYNC_FIELDS = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden', 'pl', 'plAt'];
+  const SYNC_FIELDS = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden', 'pl', 'plAt', 'star', 'starDel'];
 
   // В файл на Диске — только то, что нужно другому устройству; статистика по дням остаётся на месте
   function slimVideo(v) {
@@ -612,7 +1215,7 @@ const TR = (() => {
   // Ещё — просмотренное за 60 дней без оценки («Ждут оценки») и брошенное без причины: их тоже разбирают с телефона
   const recentlyWatched = (v) => Date.now() - Math.max(v.watchedAt || 0, v.watch?.lastAt || 0) < 60 * 86400000;
   const worthSyncing = (v) =>
-    !!(v && (v.rating || v.later || v.note || v.moments?.length || v.dropped || v.ratingDel || v.laterDel || v.droppedDel || isStarted(v) || ((awaitingRating(v) || isDropCandidate(v)) && recentlyWatched(v)) || (v.pl && Object.keys(v.pl).length) || Date.now() - (v.plAt || 0) < 60 * 86400000));
+    !!(v && (v.rating || v.later || v.note || v.moments?.length || v.dropped || v.ratingDel || v.laterDel || v.droppedDel || isStarted(v) || ((awaitingRating(v) || isDropCandidate(v)) && recentlyWatched(v)) || (v.pl && Object.keys(v.pl).length) || Date.now() - (v.plAt || 0) < 60 * 86400000 || v.star || v.starDel));
 
   // Сравнение без учёта порядка полей
   function stableJson(o) {
@@ -788,6 +1391,16 @@ const TR = (() => {
     fameEmblem,
     fameType,
     fameNameSize,
+    starredVideos,
+    fitFameNames,
+    fameCloseup,
+    fameVideoExtra,
+    fameVideoTiles,
+    fameSceneHtml,
+    FAME_LAMP,
+    fameBoulevard,
+    fitFameWalks,
+    fameWalk,
     thumbHQ,
     thumbFallback,
     watchThumbFallback,

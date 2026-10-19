@@ -10,13 +10,42 @@
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-  const plural = (n, a, b, c) => {
+  // Перерисовка без «мигания»: у основных списков присвоение innerHTML заменяет только изменившиеся верхние
+  // элементы, а одинаковую разметку не трогает — анимации не начинаются заново при каждой синхронизации
+  const protoHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  function keepUnchanged(el) {
+    if (!el || el._keep) return;
+    el._keep = true;
+    Object.defineProperty(el, 'innerHTML', {
+      configurable: true,
+      get() {
+        return protoHTML.get.call(el);
+      },
+      set(html) {
+        if (el._html === html) return;
+        el._html = html;
+        const tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        // сравниваем с прошлой разметкой каждого блока, а не с живым DOM: его могли подкрасить (ползунки, кольцо)
+        const next = [...tpl.content.childNodes];
+        const parts = next.map((n) => n.outerHTML ?? n.textContent);
+        const cur = [...el.childNodes];
+        const prev = el._parts;
+        el._parts = parts;
+        if (!prev || next.length !== cur.length || prev.length !== cur.length) return el.replaceChildren(...next);
+        next.forEach((n, i) => {
+          if (parts[i] !== prev[i]) cur[i].replaceWith(n);
+        });
+      },
+    });
+  }  const plural = (n, a, b, c) => {
     const m10 = n % 10;
     const m100 = n % 100;
     return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? b : c;
   };
 
   TR.watchThumbFallback(); // крупные превью: 720p, а нет — на ступень ниже
+  ['#home', '#later-list', '#ratings-list', '#pl-view'].forEach((x) => keepUnchanged(document.querySelector(x)));
 
   // ---------- Хранилище ----------
   let db = load();
@@ -166,6 +195,21 @@
     save();
   }
 
+  // Звезда ролику, который прям очень зашёл (как videoStar в расширении)
+  function setVideoStar(id, on) {
+    const v = video(id);
+    const want = on == null ? !v.star : !!on;
+    if (want === !!v.star) return want;
+    if (want) {
+      v.star = { at: Date.now() };
+      delete v.starDel;
+    } else {
+      delete v.star;
+      v.starDel = Date.now();
+    }
+    save();
+    return want;
+  }
   // Аллея славы (как в расширении: TR.fameList) — звезда любимому каналу
   const fameStore = () => (db.fame ||= { stars: {} });
   function setFame(name, url, on) {
@@ -257,7 +301,7 @@
     return `<button type="button" class="vcard${started ? ' started' : ''}" data-open="${v.id}">
       ${thumb(v, pct)}
       <span class="vinfo"><span class="vtitle">${esc(v.title || 'Видео ' + v.id)}</span><span class="vmeta">${meta || '&nbsp;'}</span>
-      <span class="chips">${started ? '<span class="prio" style="background:#2c2445;color:#e4dcff">▶ Продолжить</span>' : ''}${v.later ? prioChip(v.later.priority) : ''}${v.rating ? scoreBadge(v.rating.total) : ''}</span></span>
+      <span class="chips">${started ? '<span class="prio" style="background:#2c2445;color:#e4dcff">▶ Продолжить</span>' : ''}${v.star ? '<span class="prio vstar-chip" aria-label="На аллее славы">★</span>' : ''}${v.later ? prioChip(v.later.priority) : ''}${v.rating ? scoreBadge(v.rating.total) : ''}</span></span>
     </button>`;
   }
 
@@ -662,17 +706,16 @@
     setTimeout(
       () => {
         ghost?.remove();
+        // прорезь убираем всегда: если порядок не поменялся, список не перерисуется (разметка та же)
+        slot?.remove();
+        item?.classList.remove('dnd-hidden');
         const oldP = video(id).later?.priority;
         if (ids && mode === 'order' && plId) plOrder(plId, ids);
         if (ids && mode === 'prio' && prio) {
           setLaterOrder(prio, ids);
           if (oldP !== prio) toast(`Важность: ${TR.PRIORITIES[prio].label.toLowerCase()}`);
         }
-        if (!ids) {
-          slot?.remove();
-          item?.classList.remove('dnd-hidden');
-          return;
-        }
+        if (!ids) return;
         renderLater();
         $(`#view-later .vcard[data-open="${id}"]`)?.classList.add('just-moved');
       },
@@ -966,7 +1009,16 @@
     </div></div>`;
 
     // Сверху — что смотреть (большое «Продолжить», лента начатых), потом оценка с превью, очередь, неделя и сводка
-    $('#home').innerHTML = heroHtml + startedHtml + ticketHtml + restHtml + weekHtml + statsHtml;
+    // Ссылка на аллею славы: три последние звезды и сколько всего на аллее
+    const famed = [
+      ...TR.fameList(fameStore()).map((s) => ({ at: s.at, html: fameStarHtml(s.name, TR.fameType(db.videos, s.name)) })),
+      ...TR.starredVideos(db.videos).map((v) => ({ at: v.star.at, html: videoFameStar(v) })),
+    ].sort((a, b) => b.at - a.at);
+    const fameHtml = `<button type="button" class="card fame-teaser" data-view="fame">
+      <span class="ft-stars">${famed.length ? famed.slice(0, 3).map((x) => x.html).join('') : fameStarHtml('', 'custom', 'ghost')}</span>
+      <span class="ft-info"><span class="sh-label" style="margin:0">★ Аллея славы</span><b>${famed.length ? `${famed.length} ${plural(famed.length, 'звезда', 'звезды', 'звёзд')} на аллее` : 'Любимые каналы и ролики'}</b><span class="muted">${famed.length ? 'Прогуляйтесь по бульварам Каналов и Роликов →' : 'Дайте звезду каналу или ролику, который прям очень зашёл →'}</span></span>
+    </button>`;
+    $('#home').innerHTML = heroHtml + startedHtml + ticketHtml + restHtml + weekHtml + fameHtml + statsHtml;
   }
   // «Не оценивать» прямо с главной — и сразу следующее ждущее оценки
   $('#home').addEventListener('click', (e) => {
@@ -1032,31 +1084,11 @@
   function renderChannels() {
     const box = $('#channels-box');
     if (!box.firstChild) {
-      box.innerHTML = `<div class="seg" id="ch-view" style="margin-bottom:12px"><button type="button" data-chview="all">Все каналы</button><button type="button" data-chview="fame">★ Аллея славы</button></div>
-        <div id="ch-fame" class="fame" hidden></div>
-        <div id="ch-all">
-        <input id="ch-search" class="search" type="search" placeholder="Поиск канала" aria-label="Поиск канала">
+      box.innerHTML = `<input id="ch-search" class="search" type="search" placeholder="Поиск канала" aria-label="Поиск канала">
         <div class="seg" id="ch-sort" style="margin-bottom:8px"><button type="button" data-chsort="score">По оценке</button><button type="button" data-chsort="time">По времени</button><button type="button" data-chsort="views">По просмотрам</button></div>
         <p class="muted" id="ch-summary" style="margin:0 0 10px"></p>
-        <div id="ch-list"></div>
-        </div>`;
-      $('#ch-view').addEventListener('click', (e) => {
-        const b = e.target.closest('[data-chview]');
-        if (!b) return;
-        chState.view = b.dataset.chview;
-        renderChannels();
-        window.scrollTo(0, 0);
-      });
-      $('#ch-fame').addEventListener('click', (e) => {
-        const give = e.target.closest('[data-fame-give]');
-        if (give) {
-          e.stopPropagation();
-          setFame(give.dataset.fameGive, give.dataset.url || '', true);
-          navigator.vibrate?.(14);
-          toast(`★ «${give.dataset.fameGive}» — на аллее славы`);
-          return renderChannels(); // звёзды и кандидатов открывает общий обработчик [data-channel]
-        }
-      });
+        <div id="ch-list"></div>`;
+      keepUnchanged($('#ch-list'));
       $('#ch-search').addEventListener('input', (e) => {
         chState.q = e.target.value;
         renderChannels();
@@ -1069,12 +1101,7 @@
         window.scrollTo(0, 0);
       });
     }
-    const nFame = TR.fameList(fameStore()).length;
-    $$('#ch-view button').forEach((b) => b.classList.toggle('on', b.dataset.chview === chState.view));
-    $('#ch-view [data-chview="fame"]').textContent = `★ Аллея славы${nFame ? ' · ' + nFame : ''}`;
-    $('#ch-all').hidden = chState.view === 'fame';
-    $('#ch-fame').hidden = chState.view !== 'fame';
-    if (chState.view === 'fame') return renderFame();
+
     $$('#ch-sort button').forEach((b) => b.classList.toggle('on', b.dataset.chsort === chState.sort));
     const all = channelList();
     const q = chState.q.toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean);
@@ -1108,6 +1135,51 @@
       : `<div class="empty">${all.length ? 'Ничего не нашлось.' : 'Каналы появятся, когда будут оценки или видео в «Позже+».'}</div>`;
   }
 
+  // Аллея славы — отдельный раздел: нажатия на звёзды, «дать звезду»
+  keepUnchanged($('#fame-box'));
+  // Звезда крупно, с лупой: канал — в его карточку, ролик — открыть или на YouTube
+  const fmtD = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  function zoomFameChannel(name) {
+    const s = TR.fameStar(fameStore(), name);
+    const ch = channelList().find((x) => x.name === name);
+    TR.fameCloseup({
+      star: fameStarHtml(name, TR.fameType(db.videos, name)),
+      title: name,
+      sub: [s ? `на аллее славы с ${fmtD(s.at)}` : '', ch?.avg != null ? `средняя <b style="color:${TR.grade(ch.avg).mark}">${ch.avg}</b>` : ''].filter(Boolean).join(' · '),
+      actions: [{ label: 'Статистика канала →', onClick: () => openChannel(name), primary: true }, ch?.url ? { label: 'YouTube ↗', href: ch.url, target: '_blank' } : null],
+    });
+  }
+  function zoomFameVideo(id) {
+    const v = db.videos[id];
+    if (!v) return;
+    TR.fameCloseup({
+      star: videoFameStar(v),
+      title: v.title || 'Видео',
+      sub: [v.star ? `на аллее славы с ${fmtD(v.star.at)}` : '', v.rating ? `оценка <b style="color:${TR.grade(v.rating.total).mark}">${v.rating.total}</b>` : '', esc(v.channel || '')].filter(Boolean).join(' · '),
+      // сайт не может читать страницы YouTube (браузер не пускает), поэтому цифры — только в расширении
+      extra: TR.fameVideoExtra(v.id, { note: 'Просмотры и лайки с YouTube — в расширении на компьютере' }),
+      actions: [{ label: 'Открыть видео', onClick: () => openSheet(v.id), primary: true }, v.channel ? { label: 'Статистика канала →', onClick: () => openChannel(v.channel) } : null, { label: '▶ YouTube', href: TR.watchUrl(v.id), target: '_blank' }],
+    });
+  }
+  const videoFameStar = (v) =>
+    `<span class="fame-star vstar" aria-hidden="true"><span class="fs-brass"></span><span class="fs-pink"></span><span class="fs-name" style="--n:${TR.fameNameSize(v.title || 'Видео')}">${esc(v.title || 'Видео')}</span><span class="fs-medal fs-shot"><img src="${TR.thumbUrl(v.id)}" alt=""></span></span>`;
+  $('#fame-box').addEventListener('click', (e) => {    const vgive = e.target.closest('[data-vstar-give]');
+    if (vgive) {
+      e.stopPropagation();
+      setVideoStar(vgive.dataset.vstarGive, true);
+      navigator.vibrate?.(14);
+      toast('★ Ролик — на аллее славы');
+      return renderFame();
+    }
+    const give = e.target.closest('[data-fame-give]');
+    if (give) {
+      e.stopPropagation();
+      setFame(give.dataset.fameGive, give.dataset.url || '', true);
+      navigator.vibrate?.(14);
+      toast(`★ «${give.dataset.fameGive}» — на аллее славы`);
+      return renderFame(); // кандидатов открывает общий обработчик [data-channel]
+    }
+  });
   // Аллея славы: звёзды любимых каналов на «мостовой», ниже — достойные звезды (высокие оценки, звезды нет)
   function fameStarHtml(name, type, cls = '') {
     return `<span class="fame-star ${cls}" aria-hidden="true"><span class="fs-brass"></span><span class="fs-pink"></span><span class="fs-name" style="--n:${TR.fameNameSize(name)}">${esc(name)}</span><span class="fs-medal">${TR.fameEmblem(type, 16)}</span></span>`;
@@ -1116,21 +1188,14 @@
     const list = channelList();
     const byKey = new Map(list.map((c) => [TR.fameKey(c.name), c]));
     const stars = TR.fameList(fameStore());
+    const vstars = TR.starredVideos(db.videos);
     const cands = list
       .filter((c) => c.avg != null && c.avg >= 75 && c.rated.length >= 3 && !TR.fameStar(fameStore(), c.name))
       .sort((a, b) => b.avg - a.avg || b.rated.length - a.rated.length)
       .slice(0, 6);
-    const month = (t) => new Date(t).toLocaleDateString('ru-RU', { month: 'short', year: 'numeric' });
-    $('#ch-fame').innerHTML = `
-      <p class="muted" style="margin:0">Любимые каналы — по звезде каждому, как на голливудской аллее. Значок на звезде — жанр, который вы чаще ставили каналу. Звезду дают в карточке канала.</p>
-      <div class="fame-walk">${
-        stars
-          .map((s) => {
-            const c = byKey.get(TR.fameKey(s.name));
-            return `<button type="button" class="fame-tile" data-channel="${esc(s.name)}" aria-label="${esc(s.name)}, на аллее славы">${fameStarHtml(s.name, TR.fameType(db.videos, s.name))}<span class="fame-cap">${c?.avg != null ? `<b style="color:${TR.grade(c.avg).mark}">${c.avg}</b> · ` : ''}с ${month(s.at)}</span></button>`;
-          })
-          .join('') || `<div class="fame-tile empty">${fameStarHtml('Ваш любимый канал', 'custom', 'ghost')}<span class="fame-cap">Здесь будет первая звезда</span></div>`
-      }</div>
+    $('#fame-box').innerHTML = `
+      <div class="fame-intro"><h2>Аллея славы</h2><p class="muted" style="font-size:13px">Любимые каналы и ролики — по звезде каждому. Ведите пальцем вверх, чтобы идти по аллее; нажмите на звезду — рассмотреть под лупой.</p></div>
+      <div class="w3-host"></div>
       ${
         cands.length
           ? `<h3 class="fame-sub">Достойны звезды?</h3><p class="muted" style="font-size:13px">Высокие оценки, но звезды пока нет.</p>
@@ -1140,9 +1205,42 @@
           )
           .join('')}</div>`
           : ''
-      }`;
+      }
+      ${fameVideosHtml()}`;
+    // Прогулка: бульвар Каналов, перекрёсток, бульвар Роликов
+    const items = [
+      { sign: 'бульвар Каналов' },
+      ...(stars.length
+        ? stars.map((s) => {
+            const c = byKey.get(TR.fameKey(s.name));
+            return { kind: 'ch', name: s.name, star: fameStarHtml(s.name, TR.fameType(db.videos, s.name)), title: s.name, sub: [`на аллее с ${fmtD(s.at)}`, c?.avg != null ? `средняя <b style="color:${TR.grade(c.avg).mark}">${c.avg}</b>` : ''].filter(Boolean).join(' · ') };
+          })
+        : [{ kind: 'slot', star: fameStarHtml('Ваш любимый канал', 'custom', 'ghost'), title: 'Здесь будет первая звезда канала' }]),
+      { sign: 'бульвар Роликов' },
+      ...(vstars.length
+        ? vstars.map((v) => ({ kind: 'v', id: v.id, star: videoFameStar(v), title: v.title || 'Видео', sub: [v.rating ? `оценка <b style="color:${TR.grade(v.rating.total).mark}">${v.rating.total}</b>` : '', esc(v.channel || '')].filter(Boolean).join(' · ') }))
+        : [{ kind: 'slot', star: fameStarHtml('Любимый ролик', 'custom', 'ghost'), title: 'Здесь будет первый ролик' }]),
+    ];
+    TR.fameWalk($('#fame-box .w3-host'), {
+      items,
+      lite: true, // на телефоне — без машин и лишнего света: легче и быстрее
+      onOpen: (it) => (it.kind === 'ch' ? zoomFameChannel(it.name) : it.kind === 'v' ? zoomFameVideo(it.id) : null),
+    });
+    requestAnimationFrame(() => TR.fitFameNames($('#fame-box'))); // длинные имена — мельче, чтобы не выходили за звезду
+  }  // Ролики, достойные звезды: шедевры (от 85) без звезды — под прогулкой
+  function fameVideosHtml() {
+    const vcands = Object.values(db.videos)
+      .filter((v) => v.rating && v.rating.total >= 85 && !v.star)
+      .sort((a, b) => b.rating.total - a.rating.total || (b.rating.updatedAt || 0) - (a.rating.updatedAt || 0))
+      .slice(0, 6);
+    if (!vcands.length) return '';
+    return `<h3 class="fame-sub">Ролики, достойные звезды?</h3><p class="muted" style="font-size:13px">Шедевры от 85, у которых звезды пока нет. Звезду ролику дают и в его карточке.</p>
+      <div class="fame-cands">${vcands
+        .map(
+          (v) => `<div class="fame-cand vcand" data-open="${v.id}"><span class="fc-thumb"><img src="${TR.thumbUrl(v.id)}" alt="" loading="lazy"></span><span class="fc-info"><span class="fc-name">${esc(v.title || 'Видео ' + v.id)}</span><span class="muted"><b style="color:${TR.grade(v.rating.total).mark}">${v.rating.total}</b> · ${esc(v.channel || '')}</span></span><button type="button" class="btn fame-btn" data-vstar-give="${v.id}">★ Дать</button></div>`
+        )
+        .join('')}</div>`;
   }
-
   // Радар по критериям: фигура канала поверх ваших средних по всем видео (пунктир) — как в расширении
   function radarSvg(axes) {
     const n = axes.length;
@@ -1498,7 +1596,8 @@
     if (view === 'stats') renderStats();
     if (view === 'ratings') renderRatings();
     if (view === 'data') renderData();
-    for (const name of ['home', 'later', 'ratings', 'channels', 'stats', 'data']) $('#view-' + name).hidden = view !== name;
+    if (view === 'fame') renderFame();
+    for (const name of ['home', 'fame', 'later', 'ratings', 'channels', 'stats', 'data']) $('#view-' + name).hidden = view !== name;
     $$('.tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
     renderRelogin();
   }
@@ -1624,6 +1723,7 @@
           )
           .join('')}
         <div class="row" style="margin-top:14px"><button type="button" class="btn primary" data-sh="save">Сохранить оценку</button>${v.rating ? '<button type="button" class="btn" data-sh="unrate">Удалить</button>' : TR.awaitingRating(v) ? '<button type="button" class="btn" data-sh="norate" title="Убрать из «Ждут оценки»">Не оценивать</button>' : ''}</div>
+        <button type="button" class="btn fame-btn wide${v.star ? ' on' : ''}" data-sh="vstar" style="margin-top:10px">${v.star ? '★ Ролик на аллее славы' : '☆ Звезда ролику — если прям очень зашёл'}</button>
       </div>
 
       <div class="sh-sec">
@@ -1779,7 +1879,14 @@
       case 'close':
         closeSheet();
         break;
-      case 'plnew': {
+      case 'vstar': {
+        const on = setVideoStar(id);
+        navigator.vibrate?.(on ? 16 : 8);
+        toast(on ? '★ Ролик — на аллее славы' : 'Звезда ролика снята');
+        renderSheet();
+        render();
+        break;
+      }      case 'plnew': {
         const f = $('#sh-pl-form');
         f.hidden = false;
         b.hidden = true;
@@ -1844,7 +1951,7 @@
 
   // ---------- Обмен файлами с компьютером ----------
   // Храним только то, что нужно на телефоне: оценки, список, отзывы, «бросили», начатое — без статистики по дням.
-  const KEEP = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden', 'pl', 'plAt'];
+  const KEEP = ['id', 'title', 'channel', 'channelUrl', 'duration', 'short', 'live', 'rating', 'ratingDel', 'later', 'laterDel', 'note', 'noteAt', 'moments', 'watchedAt', 'watchedUpd', 'watchedBy', 'dropped', 'droppedDel', 'noRate', 'resumeHidden', 'pl', 'plAt', 'star', 'starDel'];
   function slim(v) {
     const o = {};
     for (const k of KEEP) if (v[k] != null) o[k] = v[k];
@@ -2209,7 +2316,7 @@
 
   // Разделы: нижнее меню, название сверху (→ главная), «весь список» на главной
   // Переход: новый раздел въезжает с той стороны, куда перешли по нижнему меню, и проявляется
-  const ORDER = ['home', 'later', 'ratings', 'channels', 'stats', 'data'];
+  const ORDER = ['home', 'fame', 'later', 'ratings', 'channels', 'stats', 'data'];
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-view]');
     if (!b) return;
