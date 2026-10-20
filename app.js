@@ -1231,8 +1231,20 @@
             ? zoomFameVideo(it.id)
             : TR.fameCloseup({ star: it.star, title: it.title, sub: 'Дайте звезду каналу или ролику — в карточке видео или канала. Звезда появится здесь, на аллее.' }),
     });
-    requestAnimationFrame(() => TR.fitFameNames($('#fame-box'))); // длинные имена — мельче, чтобы не выходили за звезду
-  }  // Ролики, достойные звезды: шедевры (от 85) без звезды — под прогулкой
+    requestAnimationFrame(() => {
+      TR.fitFameNames($('#fame-box')); // длинные имена — мельче, чтобы не выходили за звезду
+      fitFame();
+    });
+  }
+  // Аллея — ровно на экран между шапкой и нижним меню: страница на этой вкладке не листается
+  function fitFame() {
+    const w = $('#fame-box .w3');
+    if (!w || $('#view-fame').hidden) return;
+    scrollTo(0, 0);
+    const bottom = document.querySelector('.tabbar')?.getBoundingClientRect().top || innerHeight;
+    w.style.height = `${Math.max(300, Math.round(bottom - w.getBoundingClientRect().top - 8))}px`;
+  }
+  addEventListener('resize', () => setTimeout(fitFame, 80)); // после пересборки аллеи под новую ширину  // Ролики, достойные звезды: шедевры (от 85) без звезды — под прогулкой
   function fameVideosHtml() {
     const vcands = Object.values(db.videos)
       .filter((v) => v.rating && v.rating.total >= 85 && !v.star)

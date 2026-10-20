@@ -1084,7 +1084,7 @@ const TR = (() => {
     }
     // на телефоне баннер с горой — отдельной карточкой над экраном (в самом экране только вид сверху)
     host.innerHTML = `${phone ? `<div class="w3-banner">${fameSceneHtml('')}</div>` : ''}<div class="w3${lite ? ' lite' : ''}${lowfx ? ' lowfx' : ''}${phone ? ' phone' : ''}${firstShow ? ' loading' : ''}" style="--len:${LEN}px">
-      <div class="w3-sky">${fameSceneHtml('')}<div class="w3-city" style="background-image:${cityImg()}"></div></div>
+      <div class="w3-sky">${fameSceneHtml('').replace('xMidYMax slice', 'xMidYMid slice') /* полоса неба низкая — гору по центру, чтобы буквы не обрезались */}<div class="w3-city" style="background-image:${cityImg()}"></div></div>
       <div class="w3-view">
         <div class="w3-move">
           <div class="w3-floor" style="height:${LEN}px;width:${W}px">
@@ -1141,8 +1141,12 @@ const TR = (() => {
     let sc = 1;
     const measure = () => {
       const w = w3.clientWidth || 760;
-      // на телефоне — крупнее; на широком экране улица растёт вместе с ним (до 1.3), чтобы по бокам не было пустоты
-      sc = w < 620 ? w / 520 : Math.min(1.3, Math.max(w / 1250, Math.min(1, w / 760)));
+      // на телефоне — крупнее; на компьютере — не больше обычного размера, чтобы дома не заслоняли гору
+      sc = w < 620 ? w / 520 : Math.min(1, w / 760);
+      // горизонт — на 15% высоты под полосой кнопок; область улицы начинается выше (от полосы кнопок),
+      // чтобы высокие дома не срезались ровной линией, а плавно растворялись над горизонтом
+      const bar = w3.querySelector('.w3-ctl')?.offsetHeight || 52;
+      w3.style.setProperty('--vshift', `${Math.round(((w3.clientHeight || 600) - bar) * 0.15)}px`);
     };
     measure();
     // Показываем только ближнюю часть улицы: что позади или слишком далеко — скрыто и не рисуется.
