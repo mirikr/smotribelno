@@ -73,6 +73,58 @@
   const settings = () => ({ ...TR.DEFAULT_SETTINGS, ...db.settings });
   const video = (id) => (db.videos[id] ||= { id });
 
+  // ---------- Отмена удаления (как в расширении): уведомление на 10 секунд над нижним меню ----------
+  // Удаление выполняется сразу; «Отменить» возвращает как было, «ОК» или истечение времени — оставить удалённым.
+  const UNDO_MS = 10000;
+  let undoEl = null;
+  function undoToast(text, undo) {
+    undoEl?._close();
+    const box = document.createElement('div');
+    box.className = 'undo-toast';
+    box.setAttribute('role', 'status');
+    box.innerHTML = `<span class="ut-text">${esc(text)}</span><button type="button" class="btn primary ut-undo">Отменить</button><button type="button" class="btn ut-ok">ОК</button><i class="ut-bar" aria-hidden="true"></i>`;
+    document.body.appendChild(box);
+    undoEl = box;
+    const timer = setTimeout(() => box._close(), UNDO_MS);
+    box._close = () => {
+      clearTimeout(timer);
+      if (undoEl === box) undoEl = null;
+      box.classList.add('out');
+      setTimeout(() => box.remove(), 250);
+    };
+    box.querySelector('.ut-ok').addEventListener('click', () => box._close());
+    box.querySelector('.ut-undo').addEventListener('click', () => {
+      box._close();
+      undo();
+      save();
+      render();
+      navigator.vibrate?.(8);
+    });
+  }
+  // снимок полей видео до удаления (null — поля не было) и возврат с меткой «изменено сейчас», как restoreVideo в расширении
+  function undoVideo(id, keys) {
+    const v0 = db.videos[id] || {};
+    const snap = Object.fromEntries(keys.map((k) => [k, v0[k] != null ? JSON.parse(JSON.stringify(v0[k])) : null]));
+    return () => {
+      const v = video(id);
+      const now = Date.now();
+      for (const [k, val] of Object.entries(snap)) {
+        if (val == null) delete v[k];
+        else v[k] = val;
+      }
+      if (snap.later) {
+        v.later.updatedAt = now;
+        delete v.laterDel;
+      }
+      if (snap.rating) {
+        v.rating.updatedAt = now;
+        delete v.ratingDel;
+      }
+      if (snap.star) delete v.starDel;
+      if ('pl' in snap) v.plAt = now;
+    };
+  }
+
   // ---------- Действия (как в фоне расширения) ----------
   function setLater(id, priority) {
     const v = video(id);
@@ -168,6 +220,23 @@
       v.plAt = now;
     }
     save();
+  }
+  // Канал в плейлисте — ссылкой (как plChannel в расширении): хранится в самом плейлисте
+  function plChannelSet(plId, name, url, on, at) {
+    const p = plStore().lists[plId];
+    const k = TR.fameKey(name);
+    if (!p || p.del || !k) return false;
+    p.channels ||= {};
+    const has = !!p.channels[k];
+    const want = on == null ? !has : !!on;
+    if (want !== has) {
+      if (want) p.channels[k] = { name: String(name).trim().slice(0, 120), url: url || '', at: at || Date.now() };
+      else delete p.channels[k];
+      if (!Object.keys(p.channels).length) delete p.channels;
+      p.updatedAt = Date.now();
+      save();
+    }
+    return want;
   }
   function plToggle(id, plId, on) {
     const v = video(id);
@@ -409,6 +478,7 @@
       </div>
       <input type="search" id="pl-q" class="pl-q" placeholder="＋ Добавить: поиск по своим видео" value="${esc(lState.q)}" autocomplete="off" enterkeyhint="search">
       <div id="pl-res">${plResults(open)}</div>
+      ${plChannelsBlock(p)}
       ${items.length > 1 ? '<p class="muted drag-hint">Зажмите видео и перетащите, чтобы поменять порядок.</p>' : ''}
       <div id="pl-items" data-pl="${open}">
         ${items.map((v, i) => `<div class="pl-it${v.watchedAt ? ' done' : ''}"><span class="pl-num">${v.watchedAt ? '✓' : i + 1}</span>${card(v, TR.isStarted(v, s.autoWatchedPct) && !v.watchedAt)}</div>`).join('') || '<div class="empty">Пока пусто. Найдите видео поиском выше или откройте любое видео и отметьте этот плейлист.</div>'}
@@ -418,6 +488,27 @@
       q.focus();
       q.setSelectionRange(q.value.length, q.value.length);
     }
+  }
+
+  // Каналы плейлиста: аватарка, название (→ карточка канала), средняя оценка, YouTube, убрать
+  function plChannelsBlock(p) {
+    const chans = TR.playlistChannels(p);
+    if (!chans.length) return '';
+    const byKey = new Map(channelList().map((c) => [TR.fameKey(c.name), c]));
+    return `<div class="pl-chs"><span class="sh-label">Каналы · ${chans.length}</span>${chans
+      .map((ch) => {
+        const c = byKey.get(TR.fameKey(ch.name));
+        const url = ch.url || c?.url || '';
+        const n = c?.rated?.length || 0;
+        return `<div class="pl-ch">
+          <button type="button" class="pl-ch-open" data-plch-open="${esc(ch.name)}">${chAvatar(c || { name: ch.name }, 40)}<span class="vinfo"><span class="vtitle">${esc(ch.name)}</span><span class="vmeta">${
+            c?.avg != null ? `средняя ${c.avg} · ${n} ${plural(n, 'оценка', 'оценки', 'оценок')}` : 'оценок пока нет'
+          }</span></span></button>
+          ${url ? `<a class="pl-ch-yt" href="${esc(url)}" target="_blank" rel="noopener" aria-label="Открыть на YouTube">↗</a>` : ''}
+          <button type="button" class="pl-ch-del" data-plch-del="${esc(ch.name)}" aria-label="Убрать канал из плейлиста">✕</button>
+        </div>`;
+      })
+      .join('')}</div>`;
   }
 
   // Поиск для добавления: все видео на телефоне (с компьютера тоже), новые сверху
@@ -480,12 +571,39 @@
       return renderLater();
     }
     if (t.closest('[data-pldel]')) {
-      const p = plStore().lists[lState.open];
-      if (!confirm(`Удалить плейлист «${p.name}»? Видео и их оценки останутся.`)) return;
-      plDelete(lState.open);
+      const plId = lState.open;
+      const p = plStore().lists[plId];
+      const list = JSON.parse(JSON.stringify(p));
+      const members = Object.fromEntries(Object.values(db.videos).filter((v) => v.pl && plId in v.pl).map((v) => [v.id, v.pl[plId]]));
+      plDelete(plId);
       lState.open = null;
-      toast('Плейлист удалён');
-      return renderLater();
+      renderLater();
+      return undoToast(`Плейлист «${p.name}» удалён`, () => {
+        const now = Date.now();
+        plStore().lists[plId] = { ...list, updatedAt: now };
+        for (const [id, entry] of Object.entries(members)) {
+          const v = video(id);
+          v.pl = { ...(v.pl || {}), [plId]: entry };
+          v.plAt = now;
+        }
+        lState.open = plId;
+      });
+    }
+    const chOpen = t.closest('[data-plch-open]');
+    if (chOpen) {
+      const name = chOpen.dataset.plchOpen;
+      if (channelList().some((c) => c.name === name)) return openChannel(name);
+      return toast('Про этот канал на телефоне пока нет данных');
+    }
+    const chDel = t.closest('[data-plch-del]');
+    if (chDel) {
+      const plId = lState.open;
+      const name = chDel.dataset.plchDel;
+      const was = plStore().lists[plId]?.channels?.[TR.fameKey(name)];
+      plChannelSet(plId, name, '', false);
+      renderLater();
+      if (was) undoToast(`Канал «${name}» убран из плейлиста`, () => plChannelSet(plId, was.name, was.url, true, was.at));
+      return;
     }
     const add = t.closest('[data-pladd]');
     if (add) {
@@ -1025,10 +1143,11 @@
   $('#home').addEventListener('click', (e) => {
     const b = e.target.closest('[data-norate]');
     if (!b) return;
+    const undo = undoVideo(b.dataset.norate, ['noRate']);
     video(b.dataset.norate).noRate = Date.now(); // уйдёт и на компьютер
     save();
-    toast('Убрано из «Ждут оценки»');
     render();
+    undoToast('Убрано из «Ждут оценки»', undo);
   });
 
   // ---------- Каналы ----------
@@ -1222,8 +1341,14 @@
         ? vstars.map((v) => ({ kind: 'v', id: v.id, star: videoFameStar(v), title: v.title || 'Видео', sub: [v.rating ? `оценка <b style="color:${TR.grade(v.rating.total).mark}">${v.rating.total}</b>` : '', esc(v.channel || '')].filter(Boolean).join(' · ') }))
         : [{ kind: 'slot', star: fameStarHtml('Любимый ролик', 'custom', 'ghost'), title: 'Здесь будет первый ролик' }]),
     ];
+    // машины в забеге за ремонтом — каналы со звёздами и те, что смотрите чаще всего
+    const racers = [...stars.map((s) => byKey.get(TR.fameKey(s.name)) || { name: s.name, icon: '' }), ...list.slice().sort((a, b) => b.views + b.rated.length - (a.views + a.rated.length))]
+      .filter((c, i, a) => c.name && a.findIndex((x) => TR.fameKey(x.name) === TR.fameKey(c.name)) === i)
+      .slice(0, 16)
+      .map((c) => ({ name: c.name, icon: c.icon || '' }));
     TR.fameWalk($('#fame-box .w3-host'), {
       items,
+      racers,
       lite: true, // на телефоне — без машин и лишнего света: легче и быстрее
       onOpen: (it) =>
         it.kind === 'ch'
@@ -1361,6 +1486,14 @@
       ${(() => {
         const star = TR.fameStar(fameStore(), c.name);
         return `<div class="sh-sec"><button type="button" class="btn fame-btn wide${star ? ' on' : ''}" data-fame-ch="${esc(c.name)}" data-url="${esc(c.url || '')}">${star ? `★ На аллее славы с ${new Date(star.at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}` : '☆ Звезда на аллее славы'}</button></div>`;
+      })()}
+      ${(() => {
+        const lists = TR.playlistList(plStore());
+        if (!lists.length) return '';
+        const k = TR.fameKey(c.name);
+        return `<div class="sh-sec"><span class="sh-label">В плейлистах</span><div class="chips">${lists
+          .map((p) => `<button type="button" class="chip${p.channels?.[k] ? ' on' : ''}" data-chpl="${p.id}" data-chname="${esc(c.name)}" data-url="${esc(c.url || '')}">${esc(p.emoji || '')} ${esc(p.name)}</button>`)
+          .join('')}</div></div>`;
       })()}
       ${g ? `<div class="sh-sec rate-top">${ringSvg(c.avg, 84)}<div><span class="grade${g.perfect ? ' perfect' : ''}" style="background:${g.color};--g:${g.color}">${g.perfect ? '★ ' : ''}${g.label}</span><div class="muted" style="margin-top:6px">средняя оценка канала</div></div></div>` : ''}
       ${
@@ -1845,8 +1978,11 @@
     const id = sheet.id;
     if (b.dataset.prio != null) {
       sheet.autoAdded = false; // важность выбрали сами — больше не трогаем
+      const removing = !Number(b.dataset.prio) && !!video(id).later;
+      const undo = removing ? undoVideo(id, ['later']) : null;
       setLater(id, Number(b.dataset.prio));
-      toast(Number(b.dataset.prio) ? 'В «Смотреть позже+»' : 'Убрано из списка');
+      if (undo) undoToast('Убрано из «Смотреть позже+»', () => (undo(), sheetEl.open && sheet.id === id && renderSheet()));
+      else toast(Number(b.dataset.prio) ? 'В «Смотреть позже+»' : 'Убрано из списка');
       renderSheet();
       return render();
     }
@@ -1857,18 +1993,34 @@
     if (b.dataset.fameCh) {
       const name = b.dataset.fameCh;
       const has = !!TR.fameStar(fameStore(), name);
-      if (has && !confirm(`Убрать звезду канала «${name}» с аллеи славы?`)) return;
+      const k = TR.fameKey(name);
+      const was = has ? JSON.parse(JSON.stringify(fameStore().stars[k])) : null;
       setFame(name, b.dataset.url || '', !has);
       navigator.vibrate?.(has ? 8 : 16);
-      toast(has ? 'Звезда снята' : `★ «${name}» — на аллее славы`);
+      if (was)
+        undoToast(`Звезда канала «${name}» снята`, () => {
+          fameStore().stars[k] = was;
+          if (sheetEl.open && !sheet.id) openChannel(name);
+        });
+      else toast(`★ «${name}» — на аллее славы`);
       openChannel(name); // перерисовать карточку канала
+      return render();
+    }
+    if (b.dataset.chpl) {
+      // канал — в плейлист ссылкой (из карточки канала)
+      const on = plChannelSet(b.dataset.chpl, b.dataset.chname, b.dataset.url || '', null);
+      b.classList.toggle('on', on);
+      navigator.vibrate?.(8);
+      toast(on ? 'Канал добавлен в плейлист' : 'Канал убран из плейлиста');
       return render();
     }
     if (b.dataset.pltog) {
       const p = plStore().lists[b.dataset.pltog];
+      const undo = video(id).pl && b.dataset.pltog in video(id).pl ? undoVideo(id, ['pl']) : null;
       const on = plToggle(id, b.dataset.pltog);
       navigator.vibrate?.(8);
-      toast(on ? `Добавлено в «${p.name}»` : `Убрано из «${p.name}»`);
+      if (!on && undo) undoToast(`Убрано из «${p.name}»`, () => (undo(), sheetEl.open && sheet.id === id && renderSheet()));
+      else toast(on ? `Добавлено в «${p.name}»` : `Убрано из «${p.name}»`);
       renderSheet();
       return render();
     }
@@ -1898,9 +2050,11 @@
         closeSheet();
         break;
       case 'vstar': {
+        const undo = video(id).star ? undoVideo(id, ['star']) : null;
         const on = setVideoStar(id);
         navigator.vibrate?.(on ? 16 : 8);
-        toast(on ? '★ Ролик — на аллее славы' : 'Звезда ролика снята');
+        if (!on && undo) undoToast('Звезда ролика снята', () => (undo(), sheetEl.open && sheet.id === id && renderSheet()));
+        else toast('★ Ролик — на аллее славы');
         renderSheet();
         render();
         break;
@@ -1936,19 +2090,23 @@
         render();
         break;
       }
-      case 'unrate':
-        if (!confirm('Удалить оценку этого видео?')) return;
+      case 'unrate': {
+        const undo = undoVideo(id, ['rating']);
         rate(id, {});
         closeSheet();
         render();
+        undoToast('Оценка удалена', undo);
         break;
-      case 'norate':
+      }
+      case 'norate': {
+        const undo = undoVideo(id, ['noRate']);
         video(id).noRate = Date.now(); // убрать из «Ждут оценки» — уйдёт и на компьютер
         save();
-        toast('Убрано из «Ждут оценки»');
         closeSheet();
         render();
+        undoToast('Убрано из «Ждут оценки»', undo);
         break;
+      }
     }
   });
   sheetEl.addEventListener('submit', (e) => {

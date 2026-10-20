@@ -4487,6 +4487,133 @@ a.fame-tile:focus-visible {
 .w3-off *::after {
   animation-play-state: paused !important;
 }
+/* Забег за ремонтом: холст поверх аллеи, сама аллея на это время спрятана и стоит */
+.w3-game > :not(.w3-run) {
+  visibility: hidden;
+}
+.w3-game *,
+.w3-game *::before,
+.w3-game *::after,
+.w3-gaming .w3-banner *,
+.w3-gaming .w3-banner *::before,
+.w3-gaming .w3-banner *::after {
+  animation-play-state: paused !important;
+}
+.w3-run {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: #16121c;
+  outline: none;
+  touch-action: none;
+}
+.w3-run canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.wr-x {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(233, 196, 106, 0.35);
+  border-radius: 50%;
+  background: rgba(17, 15, 22, 0.7);
+  color: #f4efe6;
+  font-size: 15px;
+  cursor: pointer;
+}
+.wr-over {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(10, 8, 14, 0.55);
+}
+.wr-over[hidden] {
+  display: none;
+}
+.wr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(340px, 100%);
+  padding: 22px 20px 14px;
+  border: 1px solid rgba(233, 196, 106, 0.4);
+  border-radius: 20px;
+  background: #1d1826;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+.wr-ava {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  border-radius: 50%;
+  color: #fff;
+  font: 700 30px var(--font-display);
+  box-shadow: 0 0 0 3px #f4efe6, 0 0 24px rgba(233, 196, 106, 0.45);
+}
+.wr-ava img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wr-k {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.wr-name {
+  color: #f2d68a;
+  font: 600 20px/1.2 var(--font-display);
+  overflow-wrap: anywhere;
+}
+.wr-sc {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+.wr-sc span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 8px 4px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.wr-sc small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.wr-sc b {
+  color: var(--text);
+  font: 700 18px var(--font-display);
+}
+.wr-new {
+  color: #6ee7b7;
+  font-size: 13px;
+  font-weight: 700;
+}
+.wr-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.wr-tip {
+  min-height: 1em;
+  color: var(--muted);
+  font-size: 11px;
+}
 /* указатели бульваров — поменьше */
 .w3-post {
   height: 210px;
@@ -5067,7 +5194,7 @@ a.fame-tile:focus-visible {
     linear-gradient(90deg, color-mix(in srgb, var(--side) 75%, #000), var(--side));
 }
 /* задний ряд — без вывесок, чуть темнее */
-.w3-wall.back {
+.w3-wall.w3-back {
   border-right-color: #1d1926;
   box-shadow: inset -40px 0 60px rgba(0, 0, 0, 0.55);
 }
@@ -5135,4 +5262,183 @@ body:has(#view-fame:not([hidden])) {
   perspective-origin: 50% 330px;
   -webkit-mask-image: none;
   mask-image: none;
+}
+
+/* ---- Отмена удаления: уведомление на 10 секунд над нижним меню ---- */
+.undo-toast {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(84px + var(--safe-b));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  overflow: hidden;
+  border: 1px solid var(--violet-line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55), 0 0 22px var(--violet-glow);
+  animation: undo-in 0.25s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.undo-toast.out {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.undo-toast .ut-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.undo-toast .btn {
+  flex: none;
+  min-height: 38px;
+  padding: 0 14px;
+}
+.undo-toast .ut-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--violet), var(--violet-ink));
+  transform-origin: 0 50%;
+  animation: undo-bar 10s linear forwards;
+}
+@keyframes undo-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@keyframes undo-bar {
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .undo-toast,
+  .undo-toast .ut-bar {
+    animation: none;
+  }
+}
+/* ---- Каналы в плейлисте ---- */
+.pl-chs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0;
+}
+.pl-ch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.pl-ch-open {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.pl-ch-yt,
+.pl-ch-del {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 15px;
+  text-decoration: none;
+}
+
+/* ---- Объёмные детали домов: портики, колонны, козырьки, вертикальные вывески, башни, баки на крышах ---- */
+.w3-f {
+  position: absolute;
+  display: block;
+  backface-visibility: visible;
+}
+/* вертикальная вывеска (Фримонт-стрит, Парамаунт): буквы столбиком, неон по цвету дома */
+.w3-blade b,
+.w3-roofsign b {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font: 700 26px/1 var(--font-display);
+  text-shadow: 0 0 6px var(--trim), 0 0 16px var(--trim);
+  white-space: nowrap;
+}
+.w3-blade b {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  letter-spacing: -3px;
+}
+.w3-roofsign {
+  border: 3px solid var(--trim);
+  box-shadow: 0 0 14px var(--trim);
+}
+.w3-roofsign b {
+  font-size: 30px;
+}
+.w3-beacon {
+  border-radius: 50%;
+  box-shadow: 0 0 10px #ff3b3b;
+}
+.w3-roofbb {
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/* ---- Аллея без лагов: каждая стена, крыша и деталь рисуется один раз и дальше хранится готовой картинкой.
+   Без этого браузер перерисовывал дома заново на каждом шаге (камера подходит — масштаб меняется),
+   и они то пропадали, то появлялись. Тень у стены — простой градиент вместо размытой тени (её дорого рисовать). ---- */
+.w3-wall,
+.w3-roof,
+.w3-endf,
+.w3-f,
+.w3-roofbb,
+.w3-bb {
+  will-change: transform;
+}
+.w3-wall,
+.w3-wall.w3-back {
+  box-shadow: none;
+}
+.w3-wall::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+}
+.w3-wall.w3-back::before {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.6));
+}
+/* дальние дома — без мелких деталей */
+.w3-far > .w3-f,
+.w3-far > .w3-roofbb {
+  display: none;
 }

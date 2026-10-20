@@ -796,9 +796,10 @@ const TR = (() => {
   // ---- Прогулка по аллее: звёзды лежат на тротуаре и уходят вдаль, листание — шаги вперёд ----
   // items по порядку: { star, title, sub } — звезда; { sign } — табличка-перекрёсток на обочине.
   // onOpen(item) — нажали на звезду или «Рассмотреть». Состояние (где стоим) переживает перерисовку.
+  // racers — каналы для забега за ремонтом ([{ name, icon }] или функция, которая их вернёт); без них — каналы со звёздами.
   const W3_TILT = 62; // наклон тротуара, градусов (вид с аллеи)
   const W3_TILT_TOP = 30; // вид сверху: камера поднята, на звёзды смотрим почти сверху
-  function fameWalk(host, { items, onOpen, lite = false }) {
+  function fameWalk(host, { items, onOpen, lite = false, racers = null }) {
     const liteAsked = lite; // для пересборки при смене ширины
     if (!host) return;
     const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -904,27 +905,21 @@ const TR = (() => {
         r += bulbs(Array.from({ length: 11 }, (_, i) => [66 + 46 * Math.cos(-Math.PI / 2 + (i * Math.PI) / 10), c + 46 * Math.sin(-Math.PI / 2 + (i * Math.PI) / 10)]));
         return r + rect(0, 0, 6, L, '#c9963f');
       },
-      // театр: камень, колонны с капителями, фронтон, козырёк с лампочками над входом, афиши
+      // театр: светлый камень с рустом, высокие арочные окна над портиком, афиши у входа (портик — объёмный)
       theater: (H, L) => {
-        const top = Math.round(H * 0.72);
-        let r = grad('#5e5040', '#3e352a');
-        for (let y = 22; y < L - 20; y += 46) {
-          r += rect(0, y, top, 14, '#8f7f66') + rect(top - 8, y - 4, 8, 22, '#a8987e');
-          if (rnd() < 0.6) r += rect(top - 60, y + 20, 22, 16, lit(0.7));
+        let r = grad('#8a7a62', '#5a4d3c');
+        for (let x = 24; x < H - 10; x += 26) r += rect(x, 0, 2, L, '#6e604d');
+        for (let y = 26; y < L - 36; y += 46) {
+          if (H * 0.62 + 70 < H - 16) r += `<path d="M${Math.round(H * 0.62)} ${y} H${Math.round(H * 0.62) + 54} A11 11 0 0 1 ${Math.round(H * 0.62) + 54} ${y + 22} H${Math.round(H * 0.62)} Z" fill="${lit(0.75)}"/>`;
+          if (rnd() < 0.7) r += rect(28, y + 4, 40, 26, '#e4d4ac') + rect(32, y + 8, 32, 18, pick(['#7a2a2a', '#2a4a6a', '#5a3a6a']));
         }
-        r += rect(top, 0, 12, L, '#a8987e');
-        r += `<polygon points="${top + 12},8 ${H - 4},${L / 2} ${top + 12},${L - 8}" fill="#6e604d" stroke="#a8987e" stroke-width="4"/>`;
-        r += rect(54, L * 0.18, 16, L * 0.64, '#2a2018') + bulbs(rowY(62, L * 0.18 + 6, L * 0.82 - 6, 12));
-        for (let y = 26; y < L - 40; y += 46) if (rnd() < 0.7) r += rect(10, y + 16, 34, 24, '#e4d4ac') + rect(14, y + 20, 26, 16, pick(['#7a2a2a', '#2a4a6a', '#5a3a6a']));
-        return r;
+        return r + rect(H - 16, 0, 16, L, '#b3a385');
       },
       // кино: большая светящаяся вывеска-марки с лампочками, рамки афиш, неоновые полосы
       cinema: (H, L, trim) => {
         let r = grad('#14424a', '#0b2226');
         for (let y = 30; y < L - 10; y += 72) r += rect(0, y, H - 10, 3, trim);
-        r += rect(72, 8, 50, L - 16, '#f4efe6');
-        for (let x = 80; x < 118; x += 12) r += rect(x, 18, 5, L - 36, '#1e1b22');
-        r += bulbs(rowY(70, 12, L - 12, 12)) + bulbs(rowY(124, 12, L - 12, 12));
+        for (let y = 24; y < L - 10; y += 48) r += rect(120, y, H - 140, 6, '#1d5a63');
         for (let y = 18; y < L - 50; y += 64) r += rect(10, y, 50, 36, '#c9963f') + rect(14, y + 4, 42, 28, pick(['#7a2a3a', '#2a3a7a', '#2a6a4a', '#6a4a2a']));
         for (let x = 150; x < H - 30; x += 44) for (let y = 20; y < L - 24; y += 44) if (rnd() < 0.3) r += rect(x, y, 18, 16, '#ffd27a');
         return r;
@@ -979,6 +974,118 @@ const TR = (() => {
     const wallSvg = (kind, H, L, trim) =>
       // в атрибуте style — только одинарные кавычки, а в самой картинке — двойные (они кодируются)
       `url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${H}" height="${L}">${FACADE[kind](H, L, trim)}</svg>`)}')`;
+    // Объёмные детали домов — по типу, как у настоящих: у театра портик с колоннами, ступенями и фронтоном
+    // (Пале Гарнье, Метрополитен), у казино козырёк на лампочках, вертикальная вывеска и корона на крыше
+    // (Фримонт-стрит, «Золотой самородок»), у кино треугольная марки и вертикальное «КИНО» (Парамаунт),
+    // у отеля балконы и вывеска на крыше, у радио ступенчатая башня ар-деко с антенной (Радио-Сити),
+    // у бара полосатая маркиза, у шоу высокий пилон, у диско козырёк и зеркальный шар,
+    // у обычных домов карниз, пожарные лестницы и водонапорные баки на крышах, как в Нью-Йорке.
+    // Координаты: u — вынос от фасада к улице (u < 0 — над самим домом), y — вдоль улицы внутри дома
+    // (0 — дальний край, L — ближний к зрителю), z — высота. Видны верх, сторона к улице и ближний торец.
+    const tone = (hex, k) => {
+      const n = parseInt(hex.slice(1), 16);
+      return '#' + [n >> 16, (n >> 8) & 255, n & 255].map((c) => Math.round(k < 0 ? c * (1 + k) : c + (255 - c) * k).toString(16).padStart(2, '0')).join('');
+    };
+    const BULB_ROW = 'radial-gradient(circle,#ffe9a8 0 2.4px,rgba(255,233,168,.25) 3.4px,transparent 4.5px)';
+    const WTOWER = `url('data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="56" height="96"><path d="M12 96 L15 52 M44 96 L41 52 M24 96 L25 52 M32 96 L31 52 M13 82 H43 M14 68 H42" stroke="#241c17" stroke-width="3" fill="none"/><rect x="8" y="22" width="40" height="32" fill="#6b4a32"/><path d="M8 30 H48 M8 40 H48 M8 50 H48" stroke="#3a281c" stroke-width="2"/><rect x="8" y="22" width="12" height="32" fill="#000" opacity=".28"/><polygon points="5,23 28,4 51,23" fill="#3a2a22"/><polygon points="5,23 28,4 20,23" fill="#000" opacity=".25"/></svg>')}')`;
+    const BALL = `url('data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="60" height="96"><rect x="28" y="56" width="4" height="40" fill="#3a3342"/><circle cx="30" cy="30" r="27" fill="#c9c9d8"/><g stroke="#7a7a92" stroke-width="1.4" fill="none"><ellipse cx="30" cy="30" rx="27" ry="9"/><ellipse cx="30" cy="30" rx="27" ry="19"/><ellipse cx="30" cy="30" rx="9" ry="27"/><ellipse cx="30" cy="30" rx="19" ry="27"/><path d="M3 30 H57 M30 3 V57"/></g><circle cx="21" cy="20" r="6" fill="#fff" opacity=".8"/><circle cx="40" cy="38" r="3" fill="#ff9ad5"/><circle cx="18" cy="40" r="3" fill="#5fe1ff"/></svg>')}')`;
+    const deco = (sideCls, kind, H, L, D, trim) => {
+      const s = sideCls === 'l' ? 1 : -1;
+      const R = Math.round;
+      const lx = (u0, u1) => (s > 0 ? u0 : -u1);
+      const top = (u0, u1, y0, y1, z, bg, more = '') => `<i class="w3-f" style="left:${R(lx(u0, u1))}px;width:${R(u1 - u0)}px;top:${R(y0)}px;height:${R(y1 - y0)}px;transform:translateZ(${R(z)}px);background:${bg}${more}"></i>`;
+      const side = (u, y0, y1, z0, z1, bg, more = '') => `<i class="w3-f" style="left:${R(s * u)}px;width:${R(z1 - z0)}px;top:${R(y0)}px;height:${R(y1 - y0)}px;transform-origin:0 50%;transform:translateZ(${R(z0)}px) rotateY(-90deg);background:${bg}${more}"></i>`;
+      const near = (u0, u1, y, z0, z1, bg, inner = '', cls = '') => `<i class="w3-f${cls}" style="left:${R(lx(u0, u1))}px;width:${R(u1 - u0)}px;top:${R(y - (z1 - z0))}px;height:${R(z1 - z0)}px;transform-origin:50% 100%;transform:translateZ(${R(z0)}px) rotateX(-90deg);background:${bg}">${inner}</i>`;
+      // коробка: верх, сторона к улице, ближний торец; цвета — светлее сверху, темнее у торца
+      const box = (u0, u1, y0, y1, z0, z1, c, o = {}) =>
+        (o.noTop ? '' : top(u0, u1, y0, y1, z1, o.t || tone(c, 0.16))) + side(u1, y0, y1, z0, z1, o.s || c) + near(u0, u1, y1, z0, z1, o.n || tone(c, -0.3), o.inner || '', o.cls || '');
+      // стоячая картинка на крыше (бак, шар) — всегда лицом к зрителю
+      const bb = (u, y, z, w, h, img) => `<div class="w3-bb w3-roofbb" style="left:${R(s * u - w / 2)}px;top:${R(y - h)}px;width:${w}px;height:${h}px;background-image:${img};transform:translateZ(${R(z)}px) rotateX(calc(var(--tilt, 62) * -1deg))"></div>`;
+      const cornice = (c) => box(2, 14, 0, L, H - 16, H, c, { t: tone(c, 0.3) }) + box(2, 8, 0, L, H - 26, H - 16, tone(c, -0.2), { noTop: true });
+      const blade = (u0, u1, y, z0, z1, word, bg) =>
+        box(u0, u1, y - 10, y, z0, z1, tone(bg, -0.2), { n: `${BULB_ROW} left top/12px 12px repeat-y,${BULB_ROW} right top/12px 12px repeat-y,linear-gradient(${bg},${tone(bg, -0.35)})`, inner: `<b>${word}</b>`, cls: ' w3-blade' });
+      const zMax = (z) => Math.min(z, 410);
+      let r = '';
+      if (kind === 'theater') {
+        const a = L * 0.1, b = L * 0.9, P = 34, E = R(H * 0.5);
+        const stone = '#cbbd9f';
+        for (let k = 0; k < 3; k++) r += box(2, P + 20 - k * 7, a - 10 + k * 4, b + 10 - k * 4, k * 7, k * 7 + 7, tone(stone, -0.08 * k));
+        const n = Math.max(4, R((b - a) / 52));
+        for (let i = 0; i < n; i++) {
+          const y = a + 6 + ((b - a - 28) * i) / (n - 1);
+          r += box(P - 14, P + 2, y, y + 16, 21, E - 22, '#d9cdb0', { noTop: true, s: 'linear-gradient(180deg,#8f816a,#f2e8cc 45%,#a89a80)', n: 'linear-gradient(90deg,#8f816a,#e8dcbe 50%,#7d705b)' });
+        }
+        r += box(2, P + 6, a - 4, b + 4, E - 22, E, '#e2d6b8', { inner: '', n: `repeating-linear-gradient(90deg,#b9ab8e 0 3px,#e2d6b8 3px 12px)` });
+        const ph = Math.min(56, (b - a) * 0.2, H * 0.16), mid = (a + b) / 2;
+        r += side(P + 6, a - 4, b + 4, E, E + ph, 'linear-gradient(90deg,#efe4c8 0 9px,#b9ab8e 9px)', ';clip-path:polygon(0 0,100% 50%,0 100%)');
+        const run = b + 4 - mid, len = Math.hypot(run, ph), ang = (Math.atan2(ph, run) * 180) / Math.PI;
+        r += `<i class="w3-f" style="left:${R(lx(0, P + 8))}px;width:${P + 8}px;top:${R(mid)}px;height:${R(len)}px;transform-origin:50% 0;transform:translateZ(${R(E + ph)}px) rotateX(${(-ang).toFixed(1)}deg);background:linear-gradient(180deg,#6e604d,#8f7f66)"></i>`;
+        // над залом — сценическая коробка, как у настоящих театров
+        r += box(-D * 0.8, -D * 0.2, L * 0.25, L * 0.75, H, zMax(H + 44), '#7a6c56', { t: '#4a4036' });
+      } else if (kind === 'casino') {
+        const c = L / 2;
+        r += box(2, 54, c - 66, c + 66, 118, 132, '#c9963f', { s: `${BULB_ROW} center/100% 12px repeat-y,linear-gradient(90deg,#8a5a1f,#e0b45a)`, n: `${BULB_ROW} left center/12px 100% repeat-x,#9a6a26`, t: '#5a1020' });
+        for (const y of [c - 60, c + 52]) r += box(44, 52, y, y + 8, 0, 118, '#c9963f', { noTop: true });
+        r += blade(10, 62, L * 0.86, R(H * 0.3), zMax(H + 54), pick(['КАЗИНО', '777', 'ДЖЕКПОТ']), '#a0182c');
+        r += box(-D * 0.8, -D * 0.15, L * 0.22, L * 0.78, H, H + 30, '#7a1424', { n: `${BULB_ROW} left center/12px 100% repeat-x,#5a0c18` });
+        r += box(-D * 0.65, -D * 0.3, L * 0.36, L * 0.64, H + 30, zMax(H + 56), '#c9963f', { t: '#ffd27a' });
+      } else if (kind === 'cinema') {
+        const a = L * 0.2, b = L * 0.8;
+        const board = `${BULB_ROW} left center/12px 12px repeat-y,${BULB_ROW} right center/12px 12px repeat-y,repeating-linear-gradient(180deg,#2a2530 0 8px,transparent 8px 13px) left 32% top 0/9px 100% no-repeat,repeating-linear-gradient(180deg,#2a2530 0 6px,transparent 6px 14px) left 66% top 0/9px 100% no-repeat,#f4efe6`;
+        r += box(2, 60, a, b, 66, 104, '#f4efe6', { s: board, n: `${BULB_ROW} left top/12px 12px repeat-x,${BULB_ROW} left bottom/12px 12px repeat-x,linear-gradient(${trim},${tone(trim, -0.4)})`, t: '#1e1b22' });
+        r += box(2, 56, a, b, 104, 110, trim, { t: tone(trim, -0.2) });
+        r += blade(12, 50, L / 2 + 5, 112, zMax(H + 46), 'КИНО', '#14424a');
+      } else if (kind === 'hotel') {
+        if (!lowfx)
+          for (let z = 48; z < H - 40; z += 40) {
+            r += top(2, 16, L * 0.06, L * 0.94, z, '#d8cfb6');
+            r += side(16, L * 0.06, L * 0.94, z, z + 12, 'linear-gradient(90deg,transparent 9px,#e8dfc6 9px),repeating-linear-gradient(180deg,#e8dfc6 0 2px,transparent 2px 9px)');
+          }
+        r += box(-D + 14, -10, L - 24, L - 18, H, H + 8, '#2a2431');
+        r += near(-D + 14, -10, L - 22, H + 8, H + 56, 'rgba(10,8,14,.9)', `<b>${pick(KINDS.hotel.words)}</b>`, ' w3-roofsign');
+        r += cornice('#e8dfc6');
+      } else if (kind === 'radio') {
+        const lines = (c) => `repeating-linear-gradient(90deg,${c} 0 6px,${tone(c, 0.18)} 6px 8px)`;
+        r += box(-D * 0.92, -D * 0.08, L * 0.12, L * 0.88, H, H + 30, '#1d3366', { n: lines('#15284f') });
+        r += box(-D * 0.78, -D * 0.22, L * 0.26, L * 0.74, H + 30, H + 56, '#24407d', { n: lines('#1d3366') });
+        r += box(-D * 0.62, -D * 0.38, L * 0.4, L * 0.6, H + 56, H + 76, '#2c4d94', { n: lines('#24407d') });
+        r += box(-D * 0.52, -D * 0.48, L / 2 - 3, L / 2 + 3, H + 76, zMax(H + 140), '#9aa6c0', { noTop: true });
+        r += near(-D * 0.5 - 5, -D * 0.5 + 5, L / 2 + 4, zMax(H + 140) - 2, zMax(H + 140) + 8, '#ff3b3b', '', ' w3-beacon');
+        r += blade(8, 48, L * 0.88, R(H * 0.3), H - 14, 'РАДИО', '#15284f');
+      } else if (kind === 'bar') {
+        const z0 = 74, z1 = 54, U = 30, ang = (Math.atan2(z0 - z1, U) * 180) / Math.PI, len = Math.hypot(U, z0 - z1);
+        const stripes = `repeating-linear-gradient(180deg,${trim} 0 14px,#f2e6cf 14px 28px)`;
+        r += `<i class="w3-f" style="left:${s > 0 ? 2 : -2 - R(len)}px;width:${R(len)}px;top:${R(L * 0.06)}px;height:${R(L * 0.88)}px;transform-origin:${s > 0 ? '0' : '100%'} 50%;transform:translateZ(${z0}px) rotateY(${(s * ang).toFixed(1)}deg);background:${stripes}"></i>`;
+        r += side(U + 2, L * 0.06, L * 0.94, z1 - 10, z1, stripes);
+        r += cornice('#3e1c14');
+        if (rnd() < 0.6) r += bb(-D * 0.5, L * (0.4 + rnd() * 0.4), H, 56, 96, WTOWER);
+      } else if (kind === 'disco') {
+        r += box(2, 56, L * 0.32, L * 0.68, 70, 84, '#1b0a28', { s: `linear-gradient(90deg,${trim} 0 3px,#1b0a28 3px calc(100% - 3px),${trim} 0)`, n: `linear-gradient(${trim} 0 3px,#1b0a28 3px calc(100% - 3px),${trim} 0)`, t: '#2a0f3d' });
+        r += box(-D * 0.8, -D * 0.2, L * 0.3, L * 0.7, H, H + 18, '#2a0f3d', { n: `linear-gradient(90deg,#ff5fa2,#5fe1ff,#ffc85f,#b28bff)` });
+        r += bb(-D * 0.5, L * 0.55, H + 18, 60, 96, BALL);
+      } else if (kind === 'show') {
+        r += box(2, 42, L * 0.28, L * 0.72, 44, 56, '#ff5fa2', { s: `${BULB_ROW} center/100% 12px repeat-y,#c2306e`, n: `${BULB_ROW} left center/12px 100% repeat-x,#9a1f56` });
+        for (const u of [20, 34]) r += box(u - 3, u + 3, L * 0.9 - 6, L * 0.9, 0, 40, '#c9c9d8', { noTop: true });
+        r += box(10, 46, L * 0.9 - 14, L * 0.9, 40, zMax(H + 70), '#5c0f3c', {
+          n: `${BULB_ROW} left top/12px 12px repeat-y,${BULB_ROW} right top/12px 12px repeat-y,radial-gradient(circle at 30% 20%,#e9c46a 0 4px,transparent 5px) 0 0/22px 26px,linear-gradient(#8a1a5c,#3a0626)`,
+          inner: '<b>ШОУ</b>',
+          cls: ' w3-blade',
+        });
+      } else {
+        // обычный дом: карниз, у некоторых — пожарная лестница, на крыше — бак или вентиляция
+        r += cornice('#3a3342');
+        if (!lowfx && rnd() < 0.45) {
+          const y0 = 14 + 38 * Math.floor(rnd() * Math.max(1, (L - 140) / 38));
+          for (let z = 70; z < H - 40; z += 44) {
+            r += top(2, 18, y0 - 6, y0 + 66, z, '#2a2431');
+            r += side(18, y0 - 6, y0 + 66, z, z + 13, 'linear-gradient(90deg,transparent 10px,#3b3444 10px),repeating-linear-gradient(180deg,#3b3444 0 2px,transparent 2px 8px)');
+          }
+        }
+        if (rnd() < 0.5) r += bb(-D * (0.3 + rnd() * 0.4), L * (0.3 + rnd() * 0.5), H, 56, 96, WTOWER);
+        else if (rnd() < 0.6) r += box(-D * 0.7, -D * 0.4, L * 0.4, L * 0.55, H, H + 18, '#4a4452');
+      }
+      return r;
+    };
     // Передний ряд — дома с глубиной: фасад к улице, крыша и торец со стороны зрителя (дом «протянут» вбок от улицы).
     // Задний ряд — выше и проще, только фасады: закрывает пустоту за передними домами. На телефоне (lite) его нет.
     let houses = '';
@@ -986,26 +1093,34 @@ const TR = (() => {
       const out = sideCls === 'l' ? -1 : 1; // наружу от улицы
       for (let y = 40, n = 0; y < LEN - 200; n++) {
         const L = 240 + Math.round(rnd() * 220);
-        const H = 170 + Math.round(rnd() * 190);
+        let H = 170 + Math.round(rnd() * 190);
         const D = 130 + Math.round(rnd() * 70);
         const kind = pick(KIND_POOL);
+        if (kind === 'theater') H = Math.max(H, 270);
+        if (kind === 'radio') H = Math.min(H, 260);
         const K = KINDS[kind];
         const trim = K ? pick(K.trim) : pick(TRIMS);
         const wall = WALLS[n % WALLS.length];
         // вывеска на фасаде — по типу дома: у казино и шоу повыше, у остальных на среднем этаже
-        const sign = K
-          ? `<span class="w3-fsign" style="left:${Math.round(H * (kind === 'casino' || kind === 'show' ? 0.66 : 0.5 + rnd() * 0.12))}px;top:${Math.round(L * (0.35 + rnd() * 0.3))}px"><b>${pick(K.words)}</b></span>`
-          : '';
-        houses += `<div class="w3-bld ${sideCls}" style="left:${x}px;bottom:${y}px;height:${L}px;--h:${H}px;--d:${D}px;--side:${K ? K.side : wall};--trim:${trim}"><div class="w3-wall ${sideCls}" style="width:${H}px;height:${L}px;--wall:${wall};background-image:${wallSvg(kind, H, L, trim)}">${sign}</div><i class="w3-roof"></i><i class="w3-endf"></i></div>`;
+        const sign =
+          K && !['cinema', 'hotel', 'radio', 'show'].includes(kind)
+            ? `<span class="w3-fsign" style="left:${Math.round(H * (kind === 'casino' ? 0.66 : kind === 'theater' ? 0.86 : 0.5 + rnd() * 0.12))}px;top:${Math.round(L * (0.35 + rnd() * 0.3))}px"><b>${pick(K.words)}</b></span>`
+            : '';
+        houses += `<div class="w3-bld ${sideCls}" style="left:${x}px;bottom:${y}px;height:${L}px;--h:${H}px;--d:${D}px;--side:${K ? K.side : wall};--trim:${trim}"><div class="w3-wall ${sideCls}" style="width:${H}px;height:${L}px;--wall:${wall};background-image:${wallSvg(kind, H, L, trim)}">${sign}</div><i class="w3-roof"></i><i class="w3-endf"></i>${deco(sideCls, kind, H, L, D, trim)}</div>`;
         y += L + 18 + Math.round(rnd() * 40);
       }
       if (!lite)
-        for (let y = 0; y < LEN - 200; ) {
-          const L = 300 + Math.round(rnd() * 300);
-          const H = 280 + Math.round(rnd() * 140); // выше передних домов, но ниже верхней границы экрана
-          houses += `<div class="w3-wall ${sideCls} back" style="left:${x + out * 250}px;bottom:${y}px;width:${H}px;height:${L}px;background-image:${wallSvg('back', H, L)}"></div>`;
-          y += L + 12;
-        }
+        for (const [off, h0, h1, y0, gap] of [
+          [250, 280, 400, 0, 12],
+          [470, 340, 430, 150, 30],
+        ])
+          for (let y = y0; y < LEN - 200; ) {
+            const L = 260 + Math.round(rnd() * 300);
+            const H = h0 + Math.round(rnd() * (h1 - h0)); // выше передних домов, но ниже верхней границы экрана
+            const D = 160 + Math.round(rnd() * 60);
+            houses += `<div class="w3-bld ${sideCls} w3-back" style="left:${x + out * off}px;bottom:${y}px;height:${L}px;--h:${H}px;--d:${D}px;--side:#1d1926;--trim:#2c2636"><div class="w3-wall ${sideCls} w3-back" style="width:${H}px;height:${L}px;background-image:${wallSvg('back', H, L)}"></div><i class="w3-roof"></i>${off < 400 ? '<i class="w3-endf"></i>' : ''}</div>`;
+            y += L + gap + Math.round(rnd() * gap);
+          }
     }
     // Ретро-машины 50-х: одна стоячая картинка на машину, объём нарисован прямыми линиями — торец кузова,
     // крышка багажника (или капот) и кабина сужаются вдаль. От нас — корма с плавниками и красными фонарями,
@@ -1053,14 +1168,22 @@ const TR = (() => {
       [xRoadL + ROAD * 0.25, true, 10.5, -5.8],
       [xRoadR + ROAD * 0.25, false, 9.4, -4.7],
     ];
-    // Машин всегда четыре, они ездят по кругу. Едут не по всей улице, а по отрезку перед зрителем (FAR),
-    // и этот отрезок идёт вместе с ним: иначе машина позади проезжала бы у самой «камеры» —
-    // браузер растягивал её в огромную картинку, и аллея начинала подтормаживать.
-    // В конце отрезка машина растворяется в тумане (встречные — выезжают из него).
+    // Машины ездят по всей улице сами по себе — с постоянной скоростью, как бы быстро ни листали аллею.
+    // Время из lanes — за отрезок видимости (FAR); на всю улицу — во столько же раз дольше, а машин в полосе
+    // столько, чтобы плотность движения была прежней. Позади камеры и дальше видимого машина скрыта
+    // (иначе вблизи «камеры» браузер растягивал бы её в огромную картинку — аллея подтормаживала).
+    const CAR_SPAN = LEN + 640; // от 320px позади начала улицы до 320px за её концом
+    const carK = Math.max(1, Math.min(3, Math.round(CAR_SPAN / (FAR + 640))));
+    const carList = lanes.flatMap(([left, come, t], li) =>
+      Array.from({ length: carK }, (_, j) => {
+        const T = (t * CAR_SPAN) / (FAR + 640);
+        return { left, come, T, d: -(((li * 0.37 + j / carK) % 1) * T), color: CAR_COLORS[(li + j) % CAR_COLORS.length] };
+      })
+    );
     const cars = lite
       ? ''
-      : `<div class="w3-traffic" style="--len:${FAR}px">${lanes
-          .map(([left, come, t, d], i) => `<div class="w3-car ${come ? 'come' : 'away'}" style="--d:${d}s;--t:${t}s;left:${left}px"><div class="w3-bb w3-rc" style="background-image:${retroCar(come, CAR_COLORS[i % CAR_COLORS.length])}"></div></div>`)
+      : `<div class="w3-traffic" style="--len:${LEN}px">${carList
+          .map((c) => `<div class="w3-car ${c.come ? 'come' : 'away'}" style="--d:${c.d.toFixed(2)}s;--t:${c.T.toFixed(2)}s;left:${c.left}px"><div class="w3-bb w3-rc" style="background-image:${retroCar(c.come, c.color)}"></div></div>`)
           .join('')}</div>`;
     // Дальний город у подножия холма: силуэты домов с редкими огнями — связывают улицу и гору
     function cityImg() {
@@ -1160,7 +1283,12 @@ const TR = (() => {
     measure();
     // Показываем только ближнюю часть улицы: что позади или слишком далеко — скрыто и не рисуется.
     // Сама дорога тянется до горизонта, а даль прячет дымка — никаких щитов-задников.
+    // Показанное не прячется сразу, как только выйдет из окна, а держится с большим запасом (KEEP):
+    // браузеру не приходится снова и снова рисовать одни и те же дома, когда ходишь туда-сюда, —
+    // каждый дом рисуется один раз и дальше просто стоит. Прячется только то, что далеко позади или впереди.
     const NEAR = 450;
+    const KEEP = 1600;
+    const DETAIL = 2400;
     let cull = [];
     let traffic = null;
     let bucket = null;
@@ -1169,20 +1297,48 @@ const TR = (() => {
         .filter((el) => el.style.bottom)
         .map((el) => {
           const a = parseFloat(el.style.bottom);
-          return { el, a, b: a + (parseFloat(el.style.height) || 260), on: true };
+          return { el, a, b: a + (parseFloat(el.style.height) || 260), on: true, deco: el.querySelector(':scope > .w3-f, :scope > .w3-roofbb') ? true : null };
         });
-      traffic = floor.querySelector('.w3-traffic');
+      traffic = [...floor.querySelectorAll('.w3-car')].map((el) => ({ el, come: el.classList.contains('come'), on: true, anim: null }));
       bucket = null;
+    };
+    let carsAt = -1e9;
+    // где сейчас каждая машина (по ходу её анимации): позади камеры и дальше видимого — скрыта
+    // Анимацию каждой машины находим один раз: поиск заново на каждом кадре заставлял браузер
+    // пересчитывать стили всей улицы.
+    const carsNow = () => {
+      if (!traffic) return;
+      carsAt = pos;
+      for (const c of traffic) {
+        if (!c.anim) c.anim = c.el.getAnimations?.().find((x) => /w3-(away|come)/.test(x.animationName || '')) || null;
+        const p = c.anim?.effect?.getComputedTiming?.().progress;
+        if (p == null) continue;
+        const z = c.come ? LEN + 320 - p * CAR_SPAN : -320 + p * CAR_SPAN;
+        const on = z > pos - 260 && z < pos + FAR;
+        if (on !== c.on) {
+          c.on = on;
+          c.el.style.visibility = on ? '' : 'hidden';
+        }
+      }
     };
     const cullNow = () => {
       const k = Math.round(pos / 120);
       if (k === bucket) return;
       bucket = k;
       for (const c of cull) {
-        const on = c.b > pos - NEAR && c.a < pos + FAR;
+        // показать — как только подошли к окну; спрятать — только когда ушли далеко за его край
+        const on = c.on ? c.b > pos - NEAR - KEEP && c.a < pos + FAR + KEEP : c.b > pos - NEAR && c.a < pos + FAR;
         if (on !== c.on) {
           c.on = on;
           c.el.style.display = on ? '' : 'none';
+        }
+        // детали дома — только в ближних DETAIL px (тоже с запасом, чтобы не мигали на границе)
+        if (c.deco !== null) {
+          const d = c.deco ? c.a < pos + DETAIL + 500 : c.a < pos + DETAIL;
+          if (d !== c.deco) {
+            c.deco = d;
+            c.el.classList.toggle('w3-far', !d);
+          }
         }
       }
     };
@@ -1194,7 +1350,7 @@ const TR = (() => {
       floor.style.transform = `translateX(-50%) scale(${(sc * zoom).toFixed(4)}) rotateX(${tilt.toFixed(2)}deg) translateY(${pos}px)`;
       // стоящие предметы (фонари, пальмы, указатели, машины) поворачиваются на тот же угол — стоят ровно
       if (tilt !== tiltShown) w3.style.setProperty('--tilt', (tiltShown = tilt).toFixed(2));
-      if (traffic) traffic.style.transform = `translateY(${-pos}px)`; // дорожный поток идёт вместе со зрителем
+      if (Math.abs(pos - carsAt) > 80) carsNow(); // машины проверяем, когда заметно сдвинулись (и по таймеру)
       move.style.transform = reduce ? '' : `translateY(${(Math.sin(pos / 85) * 1.8).toFixed(2)}px)`; // покачивание шага
       prog.style.width = maxPos ? `${((pos / maxPos) * 100).toFixed(1)}%` : '0%';
       // у какой звезды стоим: ближайшая впереди, в «зоне взгляда»
@@ -1212,7 +1368,7 @@ const TR = (() => {
       if (best !== shown) {
         shown = best;
         const r = rows[best];
-        cap.innerHTML = r ? `<b>★ ${escH(r.title)}</b>${r.sub ? `<span>${r.sub}</span>` : ''}<button type="button" class="btn small w3-look" data-w3="${best}">Рассмотреть</button>` : '<b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды: ставьте их любимым каналам и роликам</span>';
+        cap.innerHTML = r ? `<b>★ ${escH(r.title)}</b>${r.sub ? `<span>${r.sub}</span>` : ''}<button type="button" class="btn small w3-look" data-w3="${best}">Рассмотреть</button>` : '<b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды: ставьте их любимым каналам и роликам</span><button type="button" class="btn small primary w3-rungo" title="Мини-игра: забег от машин с аватарками каналов">🏃 Прорваться</button>';
         floor.querySelectorAll('.w3-star.near').forEach((s) => s.classList.remove('near'));
         floor.querySelector(`.w3-star[data-w3="${best}"]`)?.classList.add('near');
       }
@@ -1250,8 +1406,35 @@ const TR = (() => {
       if (on && !raf) raf = requestAnimationFrame(tick);
     }
     autoBtn.addEventListener('click', () => setAuto(!auto));
+    // Забег за ремонтом: на время игры аллея спрятана под холстом и стоит (анимации на паузе, машины не считаются)
+    let gaming = false;
+    const startRun = () => {
+      if (gaming) return;
+      setAuto(false);
+      cancelAnimationFrame(raf);
+      raf = 0;
+      gaming = true;
+      w3.classList.add('w3-game');
+      host.classList.add('w3-gaming');
+      let list = typeof racers === 'function' ? racers() : racers;
+      if (!list?.length) list = rows.filter((r) => r.kind === 'ch' && r.name).map((r) => ({ name: r.name }));
+      fameRun(w3, {
+        racers: list,
+        lowfx,
+        onExit: () => {
+          gaming = false;
+          w3.classList.remove('w3-game');
+          host.classList.remove('w3-gaming');
+          measure();
+          bucket = null;
+          apply();
+          w3.focus({ preventScroll: true });
+        },
+      });
+    };
     // переход сразу на нужный бульвар
     w3.addEventListener('click', (e) => {
+      if (e.target.closest('.w3-rungo')) return startRun();
       const j = e.target.closest('[data-jump]');
       if (!j) return;
       setAuto(false);
@@ -1264,6 +1447,7 @@ const TR = (() => {
       'wheel',
       (e) => {
         e.preventDefault();
+        if (gaming) return;
         setAuto(false);
         go(e.deltaY * (e.deltaMode === 1 ? 30 : 1) * 0.9);
       },
@@ -1273,7 +1457,7 @@ const TR = (() => {
     let moved = 0;
     w3.addEventListener('pointerdown', (e) => {
       moved = 0;
-      if (e.target.closest('.w3-ctl, .w3-cap .btn')) return;
+      if (gaming || e.target.closest('.w3-ctl, .w3-cap .btn')) return;
       lastY = e.clientY;
       setAuto(false);
     });
@@ -1295,6 +1479,7 @@ const TR = (() => {
     });
     w3.tabIndex = 0;
     w3.addEventListener('keydown', (e) => {
+      if (gaming) return;
       const k = { ArrowUp: 1, KeyW: 1, ArrowDown: -1, KeyS: -1, PageDown: 3, PageUp: -3 }[e.code];
       if (!k) return;
       e.preventDefault();
@@ -1328,6 +1513,8 @@ const TR = (() => {
       setTimeout(reveal, 1500); // страховка: кадры могут не идти (вкладка в фоне)
     };
     idle(nextStage);
+    clearInterval(host._cars);
+    if (!lite) host._cars = setInterval(() => (!w3.isConnected ? clearInterval(host._cars) : gaming || carsNow()), 200);
     // аллея не на экране (другая вкладка, прокрутили) — все анимации на паузе
     host._io?.disconnect();
     host._ro?.disconnect();
@@ -1341,11 +1528,11 @@ const TR = (() => {
         const hw = host.clientWidth;
         if (hw > 0 && hw < 620 !== phone) {
           host._sig = '';
-          return fameWalk(host, { items, onOpen, lite: liteAsked });
+          return fameWalk(host, { items, onOpen, lite: liteAsked, racers });
         }
         measure();
         bucket = null;
-        apply();
+        if (!gaming) apply();
       });
       host._ro.observe(w3);
     }
@@ -1353,6 +1540,1138 @@ const TR = (() => {
       host._resizeBound = true;
       addEventListener('resize', () => host.isConnected && host.querySelector('.w3-floor') && (host._sig = '', 0));
     }
+  }
+
+  // ---- Забег за ремонтом: мини-игра в конце аллеи ----
+  // Человечек прорывает заграждение и бежит, пока его не выбьет машина (или заграждение) с аватаркой канала.
+  // Три полосы: левая дорога, тротуар, правая дорога. Один <canvas> поверх аллеи — сама аллея на это время
+  // спрятана и стоит. Псевдо-3D, как в старых раннерах: точка (x, высота, z) → экран через перспективу.
+  // Всё, что видно, нарисовано заранее (машины с аватарками, человечек, дома, фонари, небо) — в кадре только drawImage.
+  // Физика — фиксированным шагом; машины, монетки и обломки — из пулов, в кадре новые объекты не создаются.
+  const RUN_BEST = 'fameRunBest';
+  // рекорд: без n — прочитать, с n — записать. В расширении — chrome.storage.local, на телефоне — localStorage
+  async function runBest(n) {
+    try {
+      const st = globalThis.chrome?.storage?.local;
+      if (n == null) return (st ? (await st.get(RUN_BEST))[RUN_BEST] : Number(localStorage.getItem('smotribelno:' + RUN_BEST))) || 0;
+      if (st) await st.set({ [RUN_BEST]: n });
+      else localStorage.setItem('smotribelno:' + RUN_BEST, String(n));
+    } catch {
+      // хранилище недоступно (приватное окно) — рекорд живёт до закрытия
+    }
+    return n || 0;
+  }
+  // racers: [{ name, icon }] — каналы для машин; lowfx — слабое устройство; onExit() — вернулись на аллею
+  function fameRun(box, { racers = [], lowfx = false, onExit } = {}) {
+    const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    const RC = racers.filter((r) => r && String(r.name || '').trim()).slice(0, 16);
+    if (!RC.length) RC.push({ name: 'Смотрибельно' });
+    const wrap = document.createElement('div');
+    wrap.className = 'w3-run';
+    wrap.innerHTML = '<canvas></canvas><button type="button" class="wr-x" aria-label="Вернуться на аллею" title="Вернуться на аллею (Esc)">✕</button><div class="wr-over" hidden></div>';
+    box.appendChild(wrap);
+    const cv = wrap.querySelector('canvas');
+    const ctx = cv.getContext('2d', { alpha: false });
+    const over = wrap.querySelector('.wr-over');
+    const touch = matchMedia('(pointer: coarse)').matches;
+    const mk = (w, h) => {
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(w));
+      c.height = Math.max(1, Math.round(h));
+      return c;
+    };
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const rint = (n) => Math.floor(rnd() * n);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const FONT = 'Manrope, system-ui, -apple-system, "Segoe UI", sans-serif';
+    const PI2 = Math.PI * 2;
+    const poly = (g, pts, fill) => {
+      g.beginPath();
+      g.moveTo(pts[0], pts[1]);
+      for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+      g.closePath();
+      g.fillStyle = fill;
+      g.fill();
+    };
+    const shade = (hex, k) => {
+      const n = parseInt(hex.slice(1), 16);
+      return '#' + [n >> 16, (n >> 8) & 255, n & 255].map((c) => Math.round(k < 0 ? c * (1 + k) : c + (255 - c) * k).toString(16).padStart(2, '0')).join('');
+    };
+
+    // ---- мир: метры. Полосы по x: −LANE, 0, +LANE; камера в ZP м позади человечка ----
+    const LANE = 2.6;
+    const ZP = 6;
+    const FAR = 150;
+    const STEP = 1 / 120;
+    const V0 = 14;
+    const VMAX = 40;
+    const G = 25;
+    const JUMP = 9;
+    const ROLL = 0.6;
+
+    // ---- аватарки: круг с картинкой канала, если её нет — инициалы ----
+    const PAL = ['#b8323f', '#2a8a8f', '#c9a45f', '#5a7fbf', '#8c4a9c', '#c26a2e', '#3f8f5a', '#a8326e'];
+    const initials = (name) =>
+      String(name)
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((w) => w[0] || '')
+        .join('')
+        .toUpperCase() || '?';
+    const avaOf = (i, img) => {
+      const c = mk(128, 128);
+      const g = c.getContext('2d');
+      g.beginPath();
+      g.arc(64, 64, 60, 0, PI2);
+      g.fillStyle = PAL[i % PAL.length];
+      g.fill();
+      g.save();
+      g.clip();
+      if (img) {
+        const s = Math.max(120 / img.naturalWidth, 120 / img.naturalHeight);
+        g.drawImage(img, 64 - (img.naturalWidth * s) / 2, 64 - (img.naturalHeight * s) / 2, img.naturalWidth * s, img.naturalHeight * s);
+      } else {
+        const t = initials(RC[i].name);
+        g.fillStyle = '#fff';
+        g.font = `800 ${t.length > 1 ? 50 : 64}px ${FONT}`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(t, 64, 68);
+      }
+      g.restore();
+      g.lineWidth = 6;
+      g.strokeStyle = '#f4efe6';
+      g.stroke();
+      return c;
+    };
+    // Машина 50-х навстречу (как на аллее): решётка, фары, на крыше — круглая табличка с аватаркой канала
+    const CAR_W = 2.3;
+    const carOf = (i) => {
+      const k = 256 / 150;
+      const c = mk(256, 140 * k);
+      const g = c.getContext('2d');
+      g.scale(k, k);
+      g.translate(0, 30);
+      const col = PAL[i % PAL.length];
+      const r = (x, y, w, h, f) => {
+        g.fillStyle = f;
+        g.fillRect(x, y, w, h);
+      };
+      const chrome = '#dcd6ca';
+      r(14, 86, 22, 22, '#0b0a0e');
+      r(114, 86, 22, 22, '#0b0a0e');
+      poly(g, [22, 44, 128, 44, 142, 62, 8, 62], shade(col, 0.3));
+      poly(g, [6, 62, 144, 62, 146, 90, 4, 90], shade(col, -0.2));
+      r(6, 62, 138, 4, shade(col, 0.08));
+      poly(g, [6, 62, 32, 62, 28, 53, 10, 53], shade(col, 0.16));
+      poly(g, [144, 62, 118, 62, 122, 53, 140, 53], shade(col, 0.16));
+      poly(g, [30, 44, 120, 44, 106, 18, 44, 18], shade(col, -0.06));
+      poly(g, [38, 42, 112, 42, 101, 22, 49, 22], 'rgba(150,190,255,.55)');
+      poly(g, [44, 18, 106, 18, 100, 10, 50, 10], shade(col, 0.42));
+      r(2, 82, 146, 7, chrome);
+      r(6, 63, 34, 17, 'rgba(255,236,170,.45)');
+      r(110, 63, 34, 17, 'rgba(255,236,170,.45)');
+      for (const x of [10, 128]) r(x, 66, 12, 10, '#fff4cc');
+      for (const x of [25, 116]) r(x, 67, 9, 8, '#fff4cc');
+      r(44, 66, 62, 14, '#1a1720');
+      for (let x = 48; x < 104; x += 7) r(x, 67, 1.5, 12, chrome);
+      // стойка таблички и сама табличка
+      r(72, 2, 6, 9, '#2a2630');
+      g.drawImage(ava[i], 75 - 25, -26, 50, 50);
+      return c;
+    };
+    // Заграждение пониже — перепрыгнуть; табличка с аватаркой канала-«подрядчика» посередине
+    const LOW_W = 2.4;
+    const lowSp = (() => {
+      const c = mk(260, 112);
+      const g = c.getContext('2d');
+      g.scale(2, 2);
+      g.fillStyle = '#9a958c';
+      g.fillRect(12, 20, 7, 36);
+      g.fillRect(111, 20, 7, 36);
+      g.fillStyle = '#f4efe6';
+      g.fillRect(2, 8, 126, 22);
+      g.fillStyle = '#e0453a';
+      for (let x = -14; x < 130; x += 32) poly(g, [x + 16, 8, x + 34, 8, x + 12, 30, x - 6, 30], '#e0453a');
+      g.clearRect(0, 8, 2, 22);
+      g.clearRect(128, 8, 2, 22);
+      g.fillStyle = '#f4efe6';
+      g.fillRect(2, 38, 126, 9);
+      g.fillStyle = '#ffae2e';
+      g.fillRect(4, 2, 10, 6);
+      g.fillRect(116, 2, 10, 6);
+      return c;
+    })();
+    // Шлагбаум — только прокатиться под ним; табличка с аватаркой сверху
+    const HIGH_W = 2.4;
+    const highSp = (() => {
+      const c = mk(260, 240);
+      const g = c.getContext('2d');
+      g.scale(2, 2);
+      g.fillStyle = '#4a4552';
+      g.fillRect(4, 30, 8, 90);
+      g.fillRect(118, 30, 8, 90);
+      g.fillStyle = '#ffae2e';
+      g.beginPath();
+      g.arc(8, 28, 5, 0, PI2);
+      g.arc(122, 28, 5, 0, PI2);
+      g.fill();
+      g.fillStyle = '#f4efe6';
+      g.fillRect(0, 54, 130, 14);
+      for (let x = -6; x < 130; x += 22) poly(g, [x + 8, 54, x + 18, 54, x + 10, 68, x, 68], '#e0453a');
+      g.fillStyle = '#2a2630';
+      g.fillRect(62, 22, 6, 32);
+      return c;
+    })();
+    // заграждение «Ремонт аллеи» из конца аллеи — его человечек и прорывает
+    const gateSp = (() => {
+      const c = mk(260, 148);
+      const g = c.getContext('2d');
+      g.scale(2, 2);
+      g.fillStyle = '#9a958c';
+      g.fillRect(12, 24, 7, 50);
+      g.fillRect(111, 24, 7, 50);
+      g.fillStyle = '#f4efe6';
+      g.fillRect(2, 12, 126, 22);
+      for (let x = -14; x < 130; x += 32) poly(g, [x + 16, 12, x + 34, 12, x + 12, 34, x - 6, 34], '#e0453a');
+      g.clearRect(0, 12, 2, 22);
+      g.clearRect(128, 12, 2, 22);
+      g.fillStyle = '#f4efe6';
+      g.fillRect(2, 44, 126, 10);
+      g.fillStyle = '#ffae2e';
+      g.fillRect(58, 2, 14, 10);
+      return c;
+    })();
+    const coinSp = (() => {
+      const c = mk(64, 64);
+      const g = c.getContext('2d');
+      g.beginPath();
+      g.arc(32, 32, 29, 0, PI2);
+      g.fillStyle = '#c9963f';
+      g.fill();
+      g.beginPath();
+      g.arc(32, 32, 23, 0, PI2);
+      g.fillStyle = '#ffd56a';
+      g.fill();
+      g.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const q = i % 2 ? 6.5 : 15;
+        g.lineTo(32 + q * Math.cos(a), 33 + q * Math.sin(a));
+      }
+      g.fillStyle = '#c9963f';
+      g.fill();
+      return c;
+    })();
+    // звёзды-«формы» на тротуаре, как в конце аллеи (вид сверху; в кадре сплющиваются перспективой)
+    const moldSp = (() => {
+      const c = mk(128, 128);
+      const g = c.getContext('2d');
+      g.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const q = i % 2 ? 24 : 58;
+        g.lineTo(64 + q * Math.cos(a), 68 + q * Math.sin(a));
+      }
+      g.closePath();
+      g.fillStyle = 'rgba(233,196,106,.08)';
+      g.fill();
+      g.lineWidth = 4;
+      g.strokeStyle = 'rgba(233,196,106,.45)';
+      g.setLineDash([9, 7]);
+      g.stroke();
+      return c;
+    })();
+    const lampSp = (() => {
+      const c = mk(96, 400);
+      const g = c.getContext('2d');
+      if (!lowfx) {
+        const gr = g.createRadialGradient(48, 62, 2, 48, 62, 46);
+        gr.addColorStop(0, 'rgba(255,214,140,.75)');
+        gr.addColorStop(1, 'rgba(255,214,140,0)');
+        g.fillStyle = gr;
+        g.fillRect(0, 10, 96, 104);
+      }
+      g.fillStyle = '#2a2630';
+      g.fillRect(44, 70, 8, 330);
+      g.fillRect(34, 384, 28, 16);
+      poly(g, [30, 76, 66, 76, 60, 44, 36, 44], '#2a2630');
+      g.beginPath();
+      g.arc(48, 62, 9, 0, PI2);
+      g.fillStyle = '#ffe2a0';
+      g.fill();
+      return c;
+    })();
+    const palmSp = (() => {
+      const c = mk(200, 360);
+      const g = c.getContext('2d');
+      g.lineCap = 'round';
+      g.strokeStyle = '#3a2a22';
+      g.lineWidth = 12;
+      g.beginPath();
+      g.moveTo(100, 360);
+      g.bezierCurveTo(104, 280, 110, 180, 118, 90);
+      g.stroke();
+      g.strokeStyle = '#1f5a3a';
+      g.lineWidth = 9;
+      for (const [x, y] of [[-70, 10], [-54, -26], [-12, -50], [40, -38], [70, 0], [36, 40], [-36, 36]]) {
+        g.beginPath();
+        g.moveTo(118, 90);
+        g.quadraticCurveTo(118 + x * 0.55, 90 + y - 26, 118 + x, 90 + y);
+        g.stroke();
+      }
+      return c;
+    })();
+    // Дома Лас-Вегаса по сторонам — фасады к зрителю, по 8 видов: стена, окна, неоновая вывеска, витрина внизу
+    const WALLS = ['#4a1f4f', '#1f3f5a', '#5a3a1f', '#3a2a5f', '#5a1f35', '#1f4a45', '#2a3350', '#4f2a2a'];
+    const TRIMS = ['#ff5fa2', '#5fe1ff', '#ffc85f', '#b28bff', '#ff6b5f', '#5fffb0', '#7fb2ff', '#ff8a3d'];
+    const WORDS = ['КАЗИНО', 'КИНО', 'ОТЕЛЬ', 'БАР', 'ТЕАТР', 'ДИСКО', 'ШОУ', 'РАДИО'];
+    const BLD_W = 7;
+    const bld = WALLS.map((wall, i) => {
+      const H = 300 + rint(5) * 40;
+      const c = mk(200, H);
+      const g = c.getContext('2d');
+      const gr = g.createLinearGradient(0, 0, 200, 0);
+      gr.addColorStop(0, shade(wall, 0.12));
+      gr.addColorStop(1, shade(wall, -0.35));
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 200, H);
+      g.fillStyle = TRIMS[i];
+      g.fillRect(0, 0, 200, 6);
+      for (let y = 78; y < H - 70; y += 30) for (let x = 16; x < 184; x += 34) {
+        g.fillStyle = rnd() < 0.38 ? (rnd() < 0.5 ? '#ffd27a' : '#ffb85c') : '#120f17';
+        g.fillRect(x, y, 20, 16);
+      }
+      // неоновая вывеска
+      g.fillStyle = 'rgba(10,8,14,.85)';
+      g.fillRect(14, 18, 172, 46);
+      g.font = `800 ${WORDS[i].length > 5 ? 30 : 36}px ${FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.shadowColor = TRIMS[i];
+      g.shadowBlur = 12;
+      g.fillStyle = TRIMS[i];
+      g.fillText(WORDS[i], 100, 43);
+      g.shadowBlur = 0;
+      // витрина и дверь
+      g.fillStyle = shade(wall, -0.5);
+      g.fillRect(0, H - 62, 200, 62);
+      g.fillStyle = '#ffcf7a';
+      g.fillRect(12, H - 52, 70, 40);
+      g.fillRect(118, H - 52, 70, 40);
+      g.fillStyle = '#2a1a12';
+      g.fillRect(88, H - 56, 24, 56);
+      return c;
+    });
+
+    // ---- аватарки грузим сразу; пока не загрузилась — инициалы, потом машина перерисовывается ----
+    const ava = RC.map((_, i) => avaOf(i, null));
+    const carSp = RC.map((_, i) => carOf(i));
+    const avaOk = RC.map(() => false);
+    RC.forEach((rc, i) => {
+      if (!rc.icon) return;
+      const img = new Image();
+      img.referrerPolicy = 'no-referrer';
+      img.decoding = 'async';
+      img.onload = () => {
+        if (!img.naturalWidth) return;
+        ava[i] = avaOf(i, img);
+        carSp[i] = carOf(i);
+        avaOk[i] = true;
+      };
+      img.src = rc.icon;
+    });
+
+    // ---- экран: размеры, перспектива, небо и человечек — пересобираются при смене размера ----
+    let W = 0;
+    let H = 0;
+    let Q = 1;
+    let hy = 0; // горизонт
+    let F = 1; // фокус: пикселей на метр на расстоянии 1 м
+    let CH = 3; // высота камеры
+    let sky = null;
+    let skyX = 0;
+    let haze = null;
+    let pl = null; // кадры человечка
+    let PW = 0;
+    let PHt = 0;
+    let shadowSp = null;
+    let hudFont = '';
+    let hudSmall = '';
+    const layout = () => {
+      W = Math.max(240, wrap.clientWidth || 640);
+      H = Math.max(240, wrap.clientHeight || 480);
+      Q = lowfx ? 0.75 : Math.min(devicePixelRatio || 1, 2);
+      Q = Math.min(Q, Math.sqrt(2600000 / (W * H))); // огромный экран — не больше ~2,6 млн точек: кадр успевает
+      cv.width = Math.round(W * Q);
+      cv.height = Math.round(H * Q);
+      hy = H * (W < H ? 0.22 : 0.3);
+      const span = Math.min(W * 0.84, H * 1.3); // три полосы — по ширине экрана у человечка
+      F = (span * ZP) / (3 * LANE);
+      CH = ((H * 0.84 - hy) * ZP) / F;
+      // небо: градиент, прожекторы, холм с надписью СМОТРИБЕЛЬНО, дальний город на горизонте
+      const BW = W * 1.3;
+      sky = mk(BW * Q, hy * Q + 2);
+      skyX = (W - BW) / 2;
+      const g = sky.getContext('2d');
+      g.scale(Q, Q);
+      const gr = g.createLinearGradient(0, 0, 0, hy);
+      gr.addColorStop(0, '#0b0816');
+      gr.addColorStop(0.7, '#2a1838');
+      gr.addColorStop(1, '#4a2550');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, BW, hy + 2);
+      g.fillStyle = 'rgba(255,255,255,.7)';
+      for (let i = 0; i < 70; i++) g.fillRect(rnd() * BW, rnd() * hy * 0.6, 1.2, 1.2);
+      if (!lowfx)
+        for (const [x, a] of [[0.25, -0.35], [0.7, 0.3]]) {
+          g.save();
+          g.translate(BW * x, hy);
+          g.rotate(a);
+          const bg = g.createLinearGradient(0, 0, 0, -hy * 1.2);
+          bg.addColorStop(0, 'rgba(196,181,253,.28)');
+          bg.addColorStop(1, 'rgba(196,181,253,0)');
+          g.fillStyle = bg;
+          g.beginPath();
+          g.moveTo(-6, 0);
+          g.lineTo(6, 0);
+          g.lineTo(40, -hy * 1.2);
+          g.lineTo(-40, -hy * 1.2);
+          g.fill();
+          g.restore();
+        }
+      const hill = (y0, amp, col) => {
+        g.beginPath();
+        g.moveTo(0, hy + 2);
+        for (let x = 0; x <= BW; x += BW / 24) g.lineTo(x, y0 - amp * (0.5 + 0.5 * Math.sin(x / (BW / 5.3) + y0)));
+        g.lineTo(BW, hy + 2);
+        g.fillStyle = col;
+        g.fill();
+      };
+      hill(hy * 0.66, hy * 0.18, '#211630');
+      // надпись на холме
+      const word = 'СМОТРИБЕЛЬНО';
+      const fs = Math.min(hy * 0.16, W / 22);
+      g.font = `800 ${fs}px ${FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'alphabetic';
+      const step = fs * 0.95;
+      for (let i = 0; i < word.length; i++) {
+        const x = BW / 2 + (i - (word.length - 1) / 2) * step;
+        const y = hy * 0.6 + [0, -2, 1, -1, 2, -1, 2, -2, 0, 1, -2, 1][i] * fs * 0.06;
+        g.fillStyle = '#e8e2f0';
+        g.fillText(word[i], x, y);
+      }
+      hill(hy * 0.84, hy * 0.1, '#1a1226');
+      for (let x = 0; x < BW; ) {
+        const w = 14 + rnd() * 26;
+        const h = hy * (0.04 + rnd() * 0.12);
+        g.fillStyle = '#251a31';
+        g.fillRect(x, hy - h, w, h + 2);
+        g.fillStyle = 'rgba(255,207,122,.7)';
+        for (let wy = hy - h + 3; wy < hy - 3; wy += 6) for (let wx = x + 3; wx < x + w - 3; wx += 5) if (rnd() < 0.25) g.fillRect(wx, wy, 1.6, 2.2);
+        x += w + 2;
+      }
+      // дымка у горизонта — одна заранее заготовленная полоса
+      haze = ctx.createLinearGradient(0, hy - H * 0.04, 0, hy + H * 0.14);
+      haze.addColorStop(0, 'rgba(74,37,80,0)');
+      haze.addColorStop(0.3, 'rgba(74,37,80,.8)');
+      haze.addColorStop(1, 'rgba(74,37,80,0)');
+      // человечек — всегда на одном расстоянии от камеры, поэтому его кадры рисуются сразу в нужном размере
+      PHt = (1.8 * F) / ZP;
+      PW = PHt * 0.9;
+      pl = mk(PW * Q * 9, PHt * 1.1 * Q);
+      const p = pl.getContext('2d');
+      p.scale(Q, Q);
+      for (let fr = 0; fr < 9; fr++) {
+        p.save();
+        p.translate(fr * PW + PW / 2 - PHt / 2, PHt * 0.05);
+        p.scale(PHt / 100, PHt / 100);
+        runner(p, fr);
+        p.restore();
+      }
+      shadowSp = mk(PW * Q, PHt * 0.3 * Q);
+      const s = shadowSp.getContext('2d');
+      s.scale(Q, Q);
+      s.fillStyle = 'rgba(0,0,0,.4)';
+      s.beginPath();
+      s.ellipse(PW / 2, PHt * 0.15, PW * 0.34, PHt * 0.07, 0, 0, PI2);
+      s.fill();
+      const hs = Math.round(Math.max(16, Math.min(30, W / 26)));
+      hudFont = `800 ${hs}px ${FONT}`;
+      hudSmall = `700 ${Math.round(hs * 0.55)}px ${FONT}`;
+    };
+    // Человечек со спины (в единицах: рост 100). Кадры 0–5 — бег, 6 — прыжок, 7 — перекат, 8 — сбит
+    function runner(p, fr) {
+      const skin = '#e0a982';
+      const shirt = '#7c3aed';
+      const jeans = '#2b3a67';
+      const shoe = '#f4efe6';
+      p.lineCap = 'round';
+      p.lineJoin = 'round';
+      const limb = (x0, y0, x1, y1, w, c) => {
+        p.strokeStyle = c;
+        p.lineWidth = w;
+        p.beginPath();
+        p.moveTo(x0, y0);
+        p.lineTo(x1, y1);
+        p.stroke();
+      };
+      const dot = (x, y, r, c) => {
+        p.fillStyle = c;
+        p.beginPath();
+        p.arc(x, y, r, 0, PI2);
+        p.fill();
+      };
+      if (fr === 7) {
+        // перекат — клубком у земли
+        dot(50, 84, 20, shirt);
+        p.strokeStyle = '#a78bfa';
+        p.lineWidth = 3;
+        p.beginPath();
+        p.arc(50, 84, 13, 0.4, 2.6);
+        p.stroke();
+        dot(50, 68, 10, '#3a2418');
+        p.fillStyle = '#e9c46a';
+        p.beginPath();
+        p.arc(50, 66, 10, Math.PI, PI2);
+        p.fill();
+        limb(36, 100, 44, 102, 7, shoe);
+        limb(56, 102, 64, 100, 7, shoe);
+        return;
+      }
+      const a = (fr / 6) * PI2;
+      const jump = fr === 6 || fr === 8;
+      const bob = jump ? 0 : Math.abs(Math.sin(a)) * 2.5;
+      const up = (k) => Math.max(0, k) * 16;
+      // ноги
+      if (jump) {
+        limb(44, 60, 38, 74, 9, jeans);
+        limb(38, 74, 42, 88, 9, jeans);
+        limb(56, 60, 62, 76, 9, jeans);
+        limb(62, 76, 60, 90, 9, jeans);
+        limb(39, 90, 45, 90, 8, shoe);
+        limb(57, 92, 63, 92, 8, shoe);
+      } else {
+        const lL = up(Math.sin(a));
+        const lR = up(-Math.sin(a));
+        limb(44, 60 - bob, 43, 97 - lL, 9.5, jeans);
+        limb(56, 60 - bob, 57, 97 - lR, 9.5, jeans);
+        limb(40, 99 - lL, 47, 99 - lL, lL > 4 ? 9 : 7, shoe);
+        limb(53, 99 - lR, 60, 99 - lR, lR > 4 ? 9 : 7, shoe);
+      }
+      // руки
+      const sw = jump ? 0 : Math.sin(a) * 9;
+      const ay = 30 - bob;
+      if (fr === 8) {
+        limb(37, ay + 4, 22, ay - 14, 7, shirt);
+        limb(63, ay + 4, 78, ay - 14, 7, shirt);
+        dot(21, ay - 16, 4, skin);
+        dot(79, ay - 16, 4, skin);
+      } else if (jump) {
+        limb(37, ay + 4, 25, ay - 6, 7, shirt);
+        limb(63, ay + 4, 75, ay - 6, 7, shirt);
+        dot(24, ay - 8, 4, skin);
+        dot(76, ay - 8, 4, skin);
+      } else {
+        limb(37, ay + 4, 30, ay + 22 + sw, 7, shirt);
+        limb(63, ay + 4, 70, ay + 22 - sw, 7, shirt);
+        dot(30, ay + 25 + sw, 4, skin);
+        dot(70, ay + 25 - sw, 4, skin);
+      }
+      // туловище и рюкзак
+      p.fillStyle = shirt;
+      p.beginPath();
+      p.roundRect ? p.roundRect(35, ay, 30, 34, 8) : p.rect(35, ay, 30, 34);
+      p.fill();
+      p.fillStyle = '#5b21b6';
+      p.fillRect(35, ay + 26, 30, 5);
+      p.fillStyle = '#e9c46a';
+      p.beginPath();
+      p.roundRect ? p.roundRect(41, ay + 5, 18, 20, 5) : p.rect(41, ay + 5, 18, 20);
+      p.fill();
+      p.fillStyle = '#c9963f';
+      p.fillRect(41, ay + 12, 18, 3);
+      // голова: волосы и кепка козырьком назад
+      dot(50, ay - 11, 11, '#3a2418');
+      dot(39, ay - 10, 3, skin);
+      dot(61, ay - 10, 3, skin);
+      p.fillStyle = '#e9c46a';
+      p.beginPath();
+      p.arc(50, ay - 13, 11.5, Math.PI, PI2);
+      p.fill();
+      p.fillRect(44, ay - 4, 12, 4);
+    }
+
+    // ---- состояние игры ----
+    // предметы: kind 1 — машина, 2 — низкое заграждение, 3 — шлагбаум, 4 — монетка, 5 — заграждение ремонта
+    const pool = Array.from({ length: 160 }, () => ({ on: false, kind: 0, lane: 0, wz: 0, row: 0, vc: 0, len: 0, r: 0, y: 0, z: 0 }));
+    const bits = Array.from({ length: 20 }, () => ({ on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, a: 0, va: 0, w: 0, h: 0, c: '' }));
+    const act = new Array(pool.length); // видимые в этом кадре, по удалению
+    let phase = 'intro'; // intro → run → hit → over; paused — отдельным флагом
+    let paused = false;
+    let t = 0;
+    let tRun = 0;
+    let dist = 0;
+    let v = 0;
+    let lane = 1;
+    let px = 0;
+    let py = 0;
+    let vy = 0;
+    let roll = 0;
+    let camX = 0;
+    let coins = 0;
+    let nextRow = 0;
+    let killer = 0;
+    let hitT = 0;
+    let shake = 0;
+    let best = 0;
+    let broke = false;
+    runBest().then((b) => (best = Math.max(best, b)));
+    const take = () => {
+      for (const o of pool) if (!o.on) return o;
+      return null;
+    };
+    const put = (kind, ln, wz, r, extra = 0) => {
+      const o = take();
+      if (!o) return null;
+      o.on = true;
+      o.kind = kind;
+      o.lane = ln;
+      o.wz = o.row = wz;
+      o.r = r;
+      o.vc = kind === 1 ? extra : 0;
+      o.y = kind === 4 ? extra : 0;
+      o.len = kind === 1 ? 3.9 : kind === 4 ? 0.6 : 0.4;
+      return o;
+    };
+    const diff = () => Math.min(1, Math.max(0, (v - V0) / (VMAX - V0)));
+    // Ряд препятствий. Всегда остаётся проходимая полоса: свободная или такая, что перепрыгнуть/прокатиться
+    function spawnRow(wz) {
+      const d = diff();
+      const r = () => rint(RC.length);
+      const bar = (ln) => put(rnd() < 0.5 ? 2 : 3, ln, wz, r());
+      const road = (ln) => (rnd() < 0.6 + 0.25 * d ? put(1, ln, wz, r(), 5 + 9 * d + rnd() * 3) : bar(ln));
+      const block = (ln) => (ln === 1 ? bar(ln) : road(ln));
+      const free = rint(3);
+      if (tRun > 8 && d > 0.35 && rnd() < 0.14) {
+        // поперёк всей улицы — только заграждения: прыгать или катиться; над низким — дуга из монеток
+        for (let ln = 0; ln < 3; ln++) {
+          const o = bar(ln);
+          if (o?.kind === 2 && ln === free) for (let i = 0; i < 5; i++) put(4, ln, wz - 4 + i * 2, 0, 0.7 + 1.3 * Math.sin((Math.PI * i) / 4));
+        }
+        return;
+      }
+      if (tRun > 6 && rnd() < 0.12 + 0.55 * d) {
+        for (let ln = 0; ln < 3; ln++) if (ln !== free) block(ln);
+      } else block((free + 1 + rint(2)) % 3);
+      if (rnd() < 0.55) for (let i = 0; i < 5; i++) put(4, free, wz + 3 + i * 2.4, 0, 0.75);
+    }
+    function reset() {
+      for (const o of pool) o.on = false;
+      for (const b of bits) b.on = false;
+      phase = 'intro';
+      t = tRun = dist = v = px = py = vy = roll = camX = coins = shake = 0;
+      lane = 1;
+      broke = false;
+      nextRow = 44;
+      for (let ln = 0; ln < 3; ln++) put(5, ln, 7, 0);
+      over.hidden = true;
+      over.innerHTML = '';
+    }
+    // обломки заграждения, которое прорвал человечек
+    function smash(o) {
+      o.on = false;
+      for (let i = 0; i < bits.length; i++) {
+        const b = bits[i];
+        b.on = true;
+        b.x = (o.lane - 1) * LANE + (rnd() - 0.5) * 2.2;
+        b.y = 0.4 + rnd() * 0.8;
+        b.z = o.wz;
+        b.vx = (rnd() - 0.5) * 6;
+        b.vy = 3 + rnd() * 6;
+        b.vz = 4 + rnd() * 10;
+        b.a = rnd() * PI2;
+        b.va = (rnd() - 0.5) * 16;
+        b.w = 0.25 + rnd() * 0.5;
+        b.h = 0.12 + rnd() * 0.12;
+        b.c = i % 3 ? '#f4efe6' : '#e0453a';
+      }
+      shake = lowfx ? 0 : 0.25;
+    }
+    function crash(o) {
+      phase = 'hit';
+      hitT = 0;
+      killer = o.r;
+      shake = lowfx ? 0 : 0.45;
+      vy = 6;
+    }
+    function step(dt) {
+      t += dt;
+      if (phase === 'hit') {
+        hitT += dt;
+        vy -= G * dt;
+        py = Math.max(0, py + vy * dt);
+        shake = Math.max(0, shake - dt);
+        if (hitT > 0.7) gameOver();
+        return;
+      }
+      if (phase === 'intro') {
+        v = t < 0.45 ? 0 : Math.min(V0, v + (V0 / 0.8) * dt);
+        if (dist > 8.5) phase = 'run';
+      } else {
+        tRun += dt;
+        v = V0 + (VMAX - V0) * (1 - Math.exp(-tRun / 110)); // скорость растёт плавно и упирается в предел
+      }
+      dist += v * dt;
+      const tx = (lane - 1) * LANE;
+      const mv = (LANE / 0.13) * dt;
+      px = Math.abs(tx - px) <= mv ? tx : px + Math.sign(tx - px) * mv;
+      if (py > 0 || vy > 0) {
+        vy -= G * dt;
+        py += vy * dt;
+        if (py <= 0) py = vy = 0;
+      }
+      if (roll > 0) roll -= dt;
+      camX += (px * 0.55 - camX) * Math.min(1, dt * 7);
+      shake = Math.max(0, shake - dt);
+      if (phase === 'run') while (nextRow < dist + 120) {
+        spawnRow(nextRow);
+        const d = diff();
+        nextRow += Math.max(14, v * lerp(1.7, 0.85, d) + rnd() * v * 0.35);
+      }
+      const p0 = dist - 0.35;
+      const p1 = dist + 0.35;
+      for (const o of pool) {
+        if (!o.on) continue;
+        // машина подъезжает к своему ряду ровно тогда, когда до него добегает человечек
+        if (o.kind === 1) o.wz = o.row + (o.vc * (o.row - dist)) / Math.max(v, 1);
+        if (o.wz < dist - ZP - 6) {
+          o.on = false;
+          continue;
+        }
+        if (o.wz > p1 || o.wz + o.len < p0) continue;
+        const lx = (o.lane - 1) * LANE;
+        if (o.kind === 4) {
+          if (Math.abs(px - lx) < LANE * 0.5 && Math.abs(py + 0.9 - o.y) < 1.3) {
+            o.on = false;
+            coins++;
+          }
+          continue;
+        }
+        if (Math.abs(px - lx) > LANE * 0.62) continue;
+        if (o.kind === 5) {
+          smash(o);
+          broke = true;
+          continue;
+        }
+        if (o.kind === 2 && py > 1.0) continue;
+        if (o.kind === 3 && roll > 0) continue;
+        return crash(o);
+      }
+      for (const b of bits) {
+        if (!b.on) continue;
+        b.vy -= G * dt;
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        b.z += b.vz * dt;
+        b.a += b.va * dt;
+        if (b.y < 0) {
+          b.y = 0;
+          b.vy *= -0.3;
+          b.vx *= 0.6;
+          b.vz *= 0.6;
+        }
+        if (b.z < dist - ZP) b.on = false;
+      }
+    }
+    const score = () => Math.floor(dist) + coins * 10;
+
+    // ---- кадр ----
+    const fogA = (z) => (z > FAR * 0.55 ? Math.max(0, 1 - (z - FAR * 0.55) / (FAR * 0.45)) : 1);
+    // перспектива: метры (x, высота y, z от камеры) → точки экрана
+    const SX = (x, z) => W / 2 + ((x - camX) * F) / z;
+    const SY = (y, z) => hy + ((CH - y) * F) / z;
+    const ZN = 0.9;
+    const band = (x0, x1, col) => {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(SX(x0, ZN), SY(0, ZN));
+      ctx.lineTo(SX(x1, ZN), SY(0, ZN));
+      ctx.lineTo(SX(x1, FAR), SY(0, FAR));
+      ctx.lineTo(SX(x0, FAR), SY(0, FAR));
+      ctx.fill();
+    };
+    function draw() {
+      const cz = dist - ZP; // где камера
+      ctx.setTransform(Q, 0, 0, Q, 0, 0);
+      if (shake > 0) ctx.translate((rnd() - 0.5) * 14 * shake, (rnd() - 0.5) * 14 * shake);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#16121c';
+      ctx.fillRect(-20, -20, W + 40, H + 40);
+      ctx.drawImage(sky, 0, 0, sky.width, sky.height, skyX - camX * 6, 0, sky.width / Q, sky.height / Q);
+      // земля: полосы улицы трапециями от ближнего края до горизонта
+      band(-30, 30, '#1c1722');
+      band(-7.6, 7.6, '#2b2531');
+      band(-3.95, 3.95, '#221f29');
+      band(-1.4, 1.4, '#7d7387');
+      band(-1.25, 1.25, '#3b2d3c');
+      // разметка на дорогах и швы плитки на тротуаре едут навстречу — видно скорость
+      ctx.fillStyle = 'rgba(244,239,230,.55)';
+      ctx.beginPath();
+      for (let wz = Math.ceil((cz + 1) / 6) * 6; wz < cz + 70; wz += 6) {
+        const z0 = wz - cz;
+        const z1 = z0 + 2.2;
+        for (let x = -2.675; x < 3; x += 5.35) {
+          ctx.moveTo(SX(x - 0.08, z0), SY(0, z0));
+          ctx.lineTo(SX(x + 0.08, z0), SY(0, z0));
+          ctx.lineTo(SX(x + 0.08, z1), SY(0, z1));
+          ctx.lineTo(SX(x - 0.08, z1), SY(0, z1));
+        }
+      }
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let wz = Math.ceil((cz + 1) / 2.5) * 2.5; wz < cz + 45; wz += 2.5) {
+        const z = wz - cz;
+        const y = SY(0, z);
+        ctx.moveTo(SX(-1.25, z), y);
+        ctx.lineTo(SX(1.25, z), y);
+      }
+      ctx.stroke();
+      for (let wz = Math.ceil((cz + 2) / 11) * 11; wz < cz + 80; wz += 11) {
+        const z = wz - cz;
+        const ya = SY(0, z + 1.1);
+        const yb = SY(0, z - 1.1);
+        const w = (2 * F) / z;
+        ctx.globalAlpha = fogA(z);
+        ctx.drawImage(moldSp, SX(0, z) - w / 2, ya, w, yb - ya);
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = haze;
+      ctx.fillRect(0, hy - H * 0.04, W, H * 0.18);
+      // обочины, по дальности: дальний дом, фонарь/пальма, дом поближе…
+      const BS = 8;
+      const kF = Math.floor((cz + FAR) / BS);
+      const kN = Math.ceil((cz + 1.2) / BS);
+      const nearBig = W * 1.5;
+      for (let k = kF; k >= kN - 1; k--) {
+        const zl = k * BS + 4 - cz;
+        if (zl > 1.2 && zl < FAR) {
+          ctx.globalAlpha = fogA(zl);
+          const sp = k & 1 ? lampSp : palmSp;
+          const hgt = k & 1 ? 4.2 : 6;
+          const wdt = (hgt * sp.width) / sp.height;
+          for (let s = -1; s <= 1; s += 2) {
+            const x = s * (k & 1 ? 4.3 : 5.6);
+            const l = SX(x - wdt / 2, zl);
+            const r = SX(x + wdt / 2, zl);
+            if (r < 0 || l > W || r - l > nearBig) continue;
+            const top = SY(hgt, zl);
+            ctx.drawImage(sp, l, top, r - l, SY(0, zl) - top);
+          }
+        }
+        const zb = k * BS - cz;
+        if (zb > 1.2 && zb < FAR) {
+          ctx.globalAlpha = fogA(zb);
+          for (let s = -1; s <= 1; s += 2) {
+            const sp = bld[(k * 5 + (s > 0 ? 3 : 0) + (k >> 2)) & 7];
+            const x = s * 11.2;
+            const l = SX(x - BLD_W / 2, zb);
+            const r = SX(x + BLD_W / 2, zb);
+            if (r < 0 || l > W) continue;
+            const top = SY((BLD_W * sp.height) / sp.width, zb);
+            ctx.drawImage(sp, l, top, r - l, SY(0, zb) - top);
+          }
+        }
+      }
+      // предметы на полосах — от дальних к ближним; человечек — на своём месте в этом порядке
+      let n = 0;
+      for (const o of pool) {
+        if (!o.on) continue;
+        o.z = o.wz - cz;
+        if (o.z < 0.8 || o.z > FAR) continue;
+        let j = n++;
+        while (j > 0 && act[j - 1].z < o.z) {
+          act[j] = act[j - 1];
+          j--;
+        }
+        act[j] = o;
+      }
+      let manDrawn = false;
+      for (let i = 0; i < n; i++) {
+        const o = act[i];
+        if (!manDrawn && o.z < ZP) {
+          drawMan();
+          manDrawn = true;
+        }
+        const z = o.z;
+        const lx = (o.lane - 1) * LANE;
+        const sc = F / z;
+        const bot = SY(0, z);
+        const xc = SX(lx, z);
+        ctx.globalAlpha = fogA(z);
+        if (o.kind === 1) {
+          const sp = carSp[o.r];
+          const w = CAR_W * sc;
+          const h = (w * sp.height) / sp.width;
+          ctx.drawImage(sp, xc - w / 2, bot - h, w, h);
+        } else if (o.kind === 2 || o.kind === 5) {
+          const sp = o.kind === 2 ? lowSp : gateSp;
+          const w = LOW_W * sc;
+          const h = (w * sp.height) / sp.width;
+          ctx.drawImage(sp, xc - w / 2, bot - h, w, h);
+          if (o.kind === 2) {
+            const a = 0.5 * sc;
+            ctx.drawImage(ava[o.r], xc - a / 2, bot - h * 0.95, a, a);
+          }
+        } else if (o.kind === 3) {
+          const w = HIGH_W * sc;
+          const h = (w * highSp.height) / highSp.width;
+          ctx.drawImage(highSp, xc - w / 2, bot - h, w, h);
+          const a = 0.62 * sc;
+          ctx.drawImage(ava[o.r], xc - a / 2, bot - h - a * 0.25, a, a);
+        } else {
+          const a = 0.6 * sc;
+          const bob = Math.sin(t * 6 + o.row) * 0.08;
+          ctx.drawImage(coinSp, xc - a / 2, SY(o.y + bob, z) - a / 2, a, a);
+        }
+      }
+      ctx.globalAlpha = 1;
+      if (!manDrawn) drawMan();
+      for (const b of bits) {
+        if (!b.on) continue;
+        const z = b.z - cz;
+        if (z < 0.6) continue;
+        const sc = F / z;
+        ctx.setTransform(Q, 0, 0, Q, 0, 0);
+        ctx.translate(SX(b.x, z), SY(b.y, z));
+        ctx.rotate(b.a);
+        ctx.fillStyle = b.c;
+        ctx.fillRect((-b.w * sc) / 2, (-b.h * sc) / 2, b.w * sc, b.h * sc);
+      }
+      ctx.setTransform(Q, 0, 0, Q, 0, 0);
+      hud();
+    }
+    function drawMan() {
+      const x = SX(px, ZP);
+      const g0 = SY(0, ZP);
+      ctx.drawImage(shadowSp, x - PW / 2, g0 - PHt * 0.15, PW, PHt * 0.3);
+      let fr = 0;
+      if (phase === 'hit') fr = 8;
+      else if (roll > 0) fr = 7;
+      else if (py > 0.02) fr = 6;
+      else if (v > 0.5) fr = Math.floor(t * (5 + v * 0.55)) % 6;
+      const yb = SY(py, ZP);
+      const sw = pl.width / 9;
+      if (phase === 'hit') {
+        ctx.save();
+        ctx.translate(x, yb - PHt * 0.5);
+        ctx.rotate(Math.min(1, hitT * 3) * 1.2);
+        ctx.drawImage(pl, fr * sw, 0, sw, pl.height, -PW / 2, -PHt * 0.6, PW, PHt * 1.1);
+        ctx.restore();
+        return;
+      }
+      ctx.drawImage(pl, fr * sw, 0, sw, pl.height, x - PW / 2, yb - PHt * 1.02, PW, PHt * 1.1);
+    }
+    function hud() {
+      const s = score();
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      ctx.font = hudFont;
+      ctx.fillStyle = 'rgba(0,0,0,.45)';
+      ctx.fillText(String(s), 18, 16);
+      ctx.fillStyle = '#f2d68a';
+      ctx.fillText(String(s), 16, 14);
+      const fs = parseFloat(hudFont.split(' ')[1]);
+      ctx.font = hudSmall;
+      ctx.drawImage(coinSp, 16, 20 + fs, fs * 0.62, fs * 0.62);
+      ctx.fillStyle = '#f4efe6';
+      ctx.fillText(`${coins}   ·   рекорд ${Math.max(best, 0)}`, 22 + fs * 0.62, 22 + fs);
+      if (phase === 'intro' || tRun < 3.5) {
+        const a = phase === 'intro' ? 1 : Math.max(0, 1 - (tRun - 2.5));
+        if (a > 0) {
+          ctx.globalAlpha = a;
+          ctx.textAlign = 'center';
+          ctx.font = hudSmall;
+          const tip = touch ? 'Свайп ← → — полоса · ↑ — прыжок · ↓ — перекат' : 'A / D — полоса · W или пробел — прыжок · S — перекат';
+          const tw = ctx.measureText(tip).width + 28;
+          ctx.fillStyle = 'rgba(17,15,22,.78)';
+          ctx.fillRect(W / 2 - tw / 2, H - fs * 2.6, tw, fs * 1.5);
+          ctx.fillStyle = '#f2d68a';
+          ctx.fillText(tip, W / 2, H - fs * 2.6 + fs * 0.4);
+          if (phase === 'intro' && !broke) {
+            ctx.font = hudFont;
+            ctx.fillStyle = '#f4efe6';
+            ctx.fillText('Прорываемся!', W / 2, hy + (H - hy) * 0.12);
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+
+    // ---- цикл: один requestAnimationFrame, физика шагами по 1/120 с ----
+    let raf = 0;
+    let last = 0;
+    let acc = 0;
+    const frame = (now) => {
+      raf = 0;
+      if (!wrap.isConnected) return destroy();
+      const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+      last = now;
+      if (!paused && phase !== 'over') {
+        acc += dt;
+        while (acc >= STEP) {
+          step(STEP);
+          acc -= STEP;
+          if (phase === 'over') break;
+        }
+      }
+      draw();
+      if (!paused && phase !== 'over') raf = requestAnimationFrame(frame);
+    };
+    const run = () => {
+      if (raf) return;
+      last = 0;
+      acc = 0;
+      raf = requestAnimationFrame(frame);
+    };
+    async function gameOver() {
+      phase = 'over';
+      const s = score();
+      const prev = best;
+      if (s > best) best = s;
+      const rc = RC[killer] || RC[0];
+      const pic = rc.icon && avaOk[killer] ? `<img src="${escH(rc.icon)}" alt="" referrerpolicy="no-referrer">` : escH(initials(rc.name));
+      over.innerHTML = `<div class="wr-card" role="dialog" aria-label="Забег окончен">
+        <span class="wr-ava" style="background:${PAL[killer % PAL.length]}">${pic}</span>
+        <span class="wr-k">Вас выбил канал</span>
+        <b class="wr-name">${escH(rc.name)}</b>
+        <div class="wr-sc"><span><small>счёт</small><b>${s}</b></span><span><small>монетки</small><b>${coins}</b></span><span><small>рекорд</small><b>${best}</b></span></div>
+        ${s > prev && prev > 0 ? '<span class="wr-new">★ Новый рекорд!</span>' : ''}
+        <div class="wr-acts"><button type="button" class="btn primary wr-again">Ещё раз</button><button type="button" class="btn wr-back">На аллею</button></div>
+        <span class="wr-tip">${touch ? '' : 'Пробел — ещё раз · Esc — на аллею'}</span>
+      </div>`;
+      over.hidden = false;
+      over.querySelector('.wr-again').focus();
+      if (s > prev) best = await runBest(s);
+    }
+    function again() {
+      reset();
+      paused = false;
+      run();
+    }
+    function setPause(on) {
+      if (phase === 'over' || paused === on) return;
+      paused = on;
+      if (on) {
+        over.innerHTML = '<div class="wr-card wr-pause"><b class="wr-name">Пауза</b><div class="wr-acts"><button type="button" class="btn primary wr-go">Продолжить</button><button type="button" class="btn wr-back">На аллею</button></div></div>';
+        over.hidden = false;
+        over.querySelector('.wr-go').focus();
+      } else {
+        over.hidden = true;
+        run();
+      }
+    }
+    // ---- управление: клавиши и свайпы ----
+    const left = () => phase !== 'hit' && (lane = Math.max(0, lane - 1));
+    const right = () => phase !== 'hit' && (lane = Math.min(2, lane + 1));
+    const jump = () => {
+      if (phase === 'hit' || py > 0.02) return;
+      vy = JUMP;
+      roll = 0;
+    };
+    const duck = () => {
+      if (phase === 'hit') return;
+      if (py > 0.02) vy = -16; // в воздухе — быстро вниз
+      roll = ROLL;
+    };
+    const onKey = (e) => {
+      if (!wrap.isConnected) return destroy();
+      const c = e.code;
+      if (c === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        return destroy();
+      }
+      const game = { KeyA: left, ArrowLeft: left, KeyD: right, ArrowRight: right, KeyW: jump, ArrowUp: jump, Space: jump, KeyS: duck, ArrowDown: duck }[c];
+      if (!game && c !== 'KeyP' && c !== 'Enter') return;
+      if (e.target.closest?.('button') && (c === 'Enter' || c === 'Space') && !over.hidden) return; // нажатие кнопки на карточке
+      e.preventDefault();
+      e.stopPropagation();
+      if (phase === 'over') return (c === 'Space' || c === 'Enter') && again();
+      if (c === 'KeyP') return setPause(!paused);
+      if (paused) return (c === 'Space' || c === 'Enter') && setPause(false);
+      game?.();
+    };
+    document.addEventListener('keydown', onKey, true);
+    let sx0 = 0;
+    let sy0 = 0;
+    let swiping = false;
+    cv.addEventListener('pointerdown', (e) => {
+      sx0 = e.clientX;
+      sy0 = e.clientY;
+      swiping = true;
+    });
+    cv.addEventListener('pointermove', (e) => {
+      if (!swiping) return;
+      const dx = e.clientX - sx0;
+      const dy = e.clientY - sy0;
+      const m = Math.max(24, Math.min(W, H) * 0.05);
+      if (Math.abs(dx) < m && Math.abs(dy) < m) return;
+      swiping = false; // один свайп — одно действие
+      if (paused || phase === 'over') return;
+      if (Math.abs(dx) > Math.abs(dy)) (dx < 0 ? left : right)();
+      else (dy < 0 ? jump : duck)();
+    });
+    const stopSwipe = () => (swiping = false);
+    cv.addEventListener('pointerup', stopSwipe);
+    cv.addEventListener('pointercancel', stopSwipe);
+    over.addEventListener('click', (e) => {
+      if (e.target.closest('.wr-again')) again();
+      else if (e.target.closest('.wr-go')) setPause(false);
+      else if (e.target.closest('.wr-back')) destroy();
+    });
+    wrap.querySelector('.wr-x').addEventListener('click', () => destroy());
+    // вкладку свернули — пауза, а не забег вслепую
+    const onVis = () => document.hidden && phase !== 'over' && setPause(true);
+    document.addEventListener('visibilitychange', onVis);
+    let ro = null;
+    if (window.ResizeObserver) {
+      let pend = false;
+      ro = new ResizeObserver(() => {
+        if (pend) return;
+        pend = true;
+        requestAnimationFrame(() => {
+          pend = false;
+          if (Math.abs(wrap.clientWidth - W) < 1 && Math.abs(wrap.clientHeight - H) < 1) return;
+          layout();
+          if (!raf) draw();
+        });
+      });
+      ro.observe(wrap);
+    }
+    let gone = false;
+    function destroy() {
+      if (gone) return;
+      gone = true;
+      cancelAnimationFrame(raf);
+      raf = 0;
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('visibilitychange', onVis);
+      ro?.disconnect();
+      wrap.remove();
+      onExit?.();
+    }
+    layout();
+    reset();
+    run();
+    wrap.tabIndex = -1;
+    wrap.focus({ preventScroll: true });
+    return { destroy, wrap };
   }
 
   // Блок ролика в карточке звезды: крупное превью (ведёт на YouTube) и плитки с цифрами.
@@ -1394,7 +2713,7 @@ const TR = (() => {
       const i = html.indexOf(marker);
       if (i < 0) continue;
       const start = i + marker.length;
-      const end = html.indexOf(';</script>', start);
+      const end = html.indexOf(';<\/script>', start); // «<\/» — чтобы код можно было встроить в страницу
       if (end > start) return JSON.parse(html.slice(start, end));
     }
     return null;
@@ -1739,6 +3058,7 @@ const TR = (() => {
     fameBoulevard,
     fitFameWalks,
     fameWalk,
+    fameRun,
     thumbHQ,
     thumbFallback,
     watchThumbFallback,
