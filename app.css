@@ -4685,7 +4685,7 @@ a.fame-tile:focus-visible {
 .w3-view {
   transition: top 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.w3.top .w3-view {
+.w3.w3-topview .w3-view {
   top: calc(var(--bar) + (100% - var(--bar)) * 0.36);
 }
 .w3-fog::before {
@@ -4696,7 +4696,7 @@ a.fame-tile:focus-visible {
   opacity: 0;
   transition: opacity 0.6s ease;
 }
-.w3.top .w3-fog::before {
+.w3.w3-topview .w3-fog::before {
   opacity: 1;
 }
 .w3-cam {
@@ -4823,7 +4823,7 @@ a.fame-tile:focus-visible {
   height: min(40vw, 160px);
 }
 .w3.phone .w3-view,
-.w3.phone.top .w3-view {
+.w3.phone.w3-topview .w3-view {
   top: calc(var(--bar) + min(40vw, 160px));
   transition: none;
 }
@@ -4852,7 +4852,7 @@ a.fame-tile:focus-visible {
     opacity 0.5s ease,
     visibility 0s;
 }
-.w3.top .w3-sky {
+.w3.w3-topview .w3-sky {
   transform: translateY(-100%);
   opacity: 0;
   visibility: hidden;
@@ -4861,9 +4861,9 @@ a.fame-tile:focus-visible {
     opacity 0.5s ease,
     visibility 0s 0.6s;
 }
-.w3.top .w3-view,
+.w3.w3-topview .w3-view,
 .w3.phone .w3-view,
-.w3.phone.top .w3-view {
+.w3.phone.w3-topview .w3-view {
   top: var(--bar);
 }
 /* дальний край улицы сверху тонет в темноте, цвет — как у полосы с кнопками */
@@ -4879,7 +4879,7 @@ a.fame-tile:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .w3-sky,
-  .w3.top .w3-sky {
+  .w3.w3-topview .w3-sky {
     transition: none;
   }
 }
@@ -4943,4 +4943,131 @@ a.fame-tile:focus-visible {
 .w3-car.come::after {
   left: -25px;
   width: 170px;
+}
+}
+
+/* Дымка горизонта — отдельным слоем: в виде сверху горизонта нет, и её светлая полоса легла бы поперёк дороги */
+.w3-fog {
+  background: none;
+}
+.w3-fog::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(37, 26, 49, 0) 0%, rgba(37, 26, 49, 0.6) 10%, rgba(37, 26, 49, 0.35) 20%, rgba(18, 14, 25, 0) 42%);
+  transition: opacity 0.5s ease;
+}
+.w3.w3-topview .w3-fog::after {
+  opacity: 0;
+}
+
+/* Указатель бульвара — объёмная табличка: лицевая сторона, торцы со всех сторон и задняя стенка.
+   Табличка чуть повёрнута к тротуару, как настоящие уличные указатели, — так видна её толщина. */
+.w3-plate.a {
+  --d: 12px;
+  transform-style: preserve-3d;
+  transform: translateX(-50%) rotateY(-26deg);
+}
+.w3-plate.a::before,
+.w3-plate.a::after,
+.w3-plate.a i {
+  content: '';
+  position: absolute;
+  display: block;
+}
+/* верхний торец — светлее (на него падает свет), нижний — темнее */
+.w3-plate.a::before {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--d);
+  transform-origin: 50% 0;
+  transform: rotateX(-90deg);
+  background: #2f9466;
+}
+.w3-plate.a::after {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--d);
+  transform-origin: 50% 100%;
+  transform: rotateX(90deg);
+  background: #0c3121;
+}
+.w3-plate.a .pl-l {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--d);
+  transform-origin: 0 50%;
+  transform: rotateY(90deg);
+  background: #17583b;
+}
+.w3-plate.a .pl-r {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: var(--d);
+  transform-origin: 100% 50%;
+  transform: rotateY(-90deg);
+  background: #124a31;
+}
+.w3-plate.a .pl-back {
+  inset: 0;
+  border-radius: 6px;
+  transform: translateZ(calc(-1 * var(--d)));
+  background: #1d6b46;
+}
+/* табличка стоит на верхушке столба, а не насквозь: столб доходит до её нижнего края */
+.w3-post .w3-pole {
+  height: calc(100% - 52px);
+}
+.w3-post .w3-finial {
+  display: none;
+}
+
+/* ---- Дома с глубиной: фасад к улице, крыша и торец к зрителю; за ними — задний ряд повыше ---- */
+.w3-bld {
+  position: absolute;
+  width: 0;
+  transform-style: preserve-3d;
+}
+.w3-bld .w3-wall {
+  left: 0;
+  bottom: 0;
+}
+/* крыша: тёмная плита на высоте дома, уходит вбок от улицы на глубину дома */
+.w3-roof {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--d);
+  transform: translateZ(var(--h));
+  background: linear-gradient(90deg, #14111a, #221d2b);
+  box-shadow: inset 0 0 0 3px #2c2636;
+}
+.w3-bld.l .w3-roof,
+.w3-bld.l .w3-endf {
+  left: calc(-1 * var(--d));
+}
+.w3-bld.r .w3-roof,
+.w3-bld.r .w3-endf {
+  left: 0;
+}
+/* торец со стороны зрителя: стоит у ближнего края дома, цветом — в тон фасада */
+.w3-endf {
+  position: absolute;
+  bottom: 0;
+  width: var(--d);
+  height: var(--h);
+  transform-origin: 50% 100%;
+  transform: rotateX(-90deg);
+  background:
+    linear-gradient(0deg, rgba(0, 0, 0, 0) 0 calc(100% - 6px), var(--trim) calc(100% - 6px)),
+    linear-gradient(90deg, color-mix(in srgb, var(--side) 75%, #000), var(--side));
+}
+/* задний ряд — без вывесок, чуть темнее */
+.w3-wall.back {
+  border-right-color: #1d1926;
+  box-shadow: inset -40px 0 60px rgba(0, 0, 0, 0.55);
 }

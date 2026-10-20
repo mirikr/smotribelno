@@ -790,6 +790,7 @@ const TR = (() => {
   const W3_TILT = 62; // наклон тротуара, градусов (вид с аллеи)
   const W3_TILT_TOP = 30; // вид сверху: камера поднята, на звёзды смотрим почти сверху
   function fameWalk(host, { items, onOpen, lite = false }) {
+    const liteAsked = lite; // для пересборки при смене ширины
     if (!host) return;
     const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     const sig = items.map((it) => it.sign || it.title + '|' + (it.sub || '')).join('¦');
@@ -820,46 +821,183 @@ const TR = (() => {
     // этого отрезка, даже у конца аллеи: машины уходят в туман над асфальтом, а не едут по воздуху.
     const FAR = 4400;
     const LEN = Math.max(zb + 1500, maxPos + FAR + 900);
-    // Улица (поперёк, px) — зеркальная относительно тротуара: дома 0 | обочина 0–50 | дорога 50–300 | газон с фонарями
-    // и пальмами 300–340 | тротуар 340–760 (середина 550) | газон 760–800 | дорога 800–1050 | обочина | дома 1100.
+    // Улица поперёк (px) — зеркальная относительно тротуара: дома | обочина | дорога в две полосы | газон с фонарями
+    // и пальмами | тротуар со звёздами | газон | дорога | обочина | дома. Всё считается от этих ширин.
     // Раскладка — по постоянному «зерну»: улица не меняется.
+    const SIDE = 70;
+    const ROAD = 300;
+    const GRASS = 50;
+    const WALK = 460;
+    const W = 2 * (SIDE + ROAD + GRASS) + WALK; // вся ширина улицы между домами
+    const C = W / 2; // середина тротуара — по центру взгляда
+    const xRoadL = SIDE;
+    const xGrassL = xRoadL + ROAD;
+    const xWalk = xGrassL + GRASS;
+    const xGrassR = xWalk + WALK;
+    const xRoadR = xGrassR + GRASS;
+    const xSideR = xRoadR + ROAD;
+    const lampL = xGrassL + GRASS / 2;
+    const lampR = xGrassR + GRASS / 2;
     let seed = 20261019;
     const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
     let side = '';
     for (let y = 120; y < LEN - 300; y += 520) {
-      side += `<div class="w3-pool" style="bottom:${y - 60}px;left:320px"></div><div class="w3-pool" style="bottom:${y - 60}px;left:780px"></div>`;
-      side += `<div class="w3-bb w3-lamp" style="bottom:${y}px;left:320px">${FAME_LAMP}</div><div class="w3-bb w3-lamp" style="bottom:${y}px;left:780px">${FAME_LAMP}</div>`;
+      side += `<div class="w3-pool" style="bottom:${y - 60}px;left:${lampL}px"></div><div class="w3-pool" style="bottom:${y - 60}px;left:${lampR}px"></div>`;
+      side += `<div class="w3-bb w3-lamp" style="bottom:${y}px;left:${lampL}px">${FAME_LAMP}</div><div class="w3-bb w3-lamp" style="bottom:${y}px;left:${lampR}px">${FAME_LAMP}</div>`;
     }
     // пальмы — на обоих газонах, вперемежку
-    for (let y = 380, i = 0; y < LEN - 300; y += 640, i++) side += `<div class="w3-bb w3-palm${i % 2 ? ' small' : ''}" style="bottom:${y}px;left:${i % 2 ? 782 : 318}px"></div>`;
-    // Дома Лас-Вегаса: яркие стены с окнами (часть горит), на фасадах — вывески с неоновой рамкой и лампочками.
-    // Вывеска — часть стены, поэтому уходит в перспективу вместе с домом.
+    for (let y = 380, i = 0; y < LEN - 300; y += 640, i++) side += `<div class="w3-bb w3-palm${i % 2 ? ' small' : ''}" style="bottom:${y}px;left:${i % 2 ? lampR + 2 : lampL - 2}px"></div>`;
+    // Дома Лас-Вегаса: каждый дом выглядит по своей вывеске — казино, театр, кино, отель, бар, радио, диско, шоу
+    // или обычный дом с окнами. Вывеска — часть стены, поэтому уходит в перспективу вместе с домом.
+    // Координаты фасада: x — высота над землёй (0 — тротуар, H — крыша), y — вдоль улицы (0…L).
     const WALLS = ['#4a1f4f', '#1f3f5a', '#5a3a1f', '#3a2a5f', '#5a1f35', '#1f4a45'];
     const TRIMS = ['#ff5fa2', '#5fe1ff', '#ffc85f', '#b28bff', '#ff6b5f', '#5fffb0'];
-    const SIGNS = ['КАЗИНО', 'ШОУ', 'ДЖЕКПОТ', '777', 'БИНГО', 'РОЯЛЬ', 'КИНО', 'ТЕАТР', 'МОТЕЛЬ', 'БАР', 'РАДИО', 'ОТЕЛЬ', 'ДИСКО'];
-    const wallSvg = (H, L) => {
-      const floors = Math.max(2, Math.floor((H - 30) / 44));
-      const cols = Math.max(2, Math.floor((L - 20) / 38));
-      let r = '';
-      for (let f = 0; f < floors; f++)
-        for (let c = 0; c < cols; c++) {
-          const lit = rnd() < 0.38;
-          r += `<rect x="${30 + f * 44}" y="${14 + c * 38}" width="22" height="18" rx="2" fill="${lit ? (rnd() < 0.5 ? '#ffd27a' : '#ffb85c') : '#120f17'}" opacity="${lit ? 0.75 + rnd() * 0.25 : 1}"/>`;
-        }
-      // в атрибуте style — только одинарные кавычки, а в самой картинке — двойные (они кодируются)
-      return `url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${H}" height="${L}">${r}</svg>`)}')`;
+    // side — цвет торца дома (его видно со стороны зрителя)
+    const KINDS = {
+      casino: { words: ['КАЗИНО', 'ДЖЕКПОТ', '777', 'РОЯЛЬ', 'БИНГО'], trim: ['#ffc85f', '#ff6b5f'], side: '#4a0c18' },
+      theater: { words: ['ТЕАТР'], trim: ['#ffe2a8'], side: '#3e352a' },
+      cinema: { words: ['КИНО'], trim: ['#5fe1ff', '#ff5fa2'], side: '#0f2f35' },
+      hotel: { words: ['ОТЕЛЬ', 'МОТЕЛЬ'], trim: ['#5fffb0', '#ff9ad5'], side: '#22313d' },
+      bar: { words: ['БАР'], trim: ['#ff8a3d'], side: '#3e1c14' },
+      radio: { words: ['РАДИО'], trim: ['#7fb2ff'], side: '#101d3d' },
+      disco: { words: ['ДИСКО'], trim: ['#d58bff'], side: '#200b30' },
+      show: { words: ['ШОУ'], trim: ['#ff5fa2'], side: '#420a2c' },
     };
+    const KIND_POOL = ['casino', 'casino', 'theater', 'cinema', 'hotel', 'bar', 'radio', 'disco', 'show', 'plain', 'plain'];
+    const pick = (a) => a[Math.floor(rnd() * a.length)];
+    const rect = (x, y, w, h, fill, more = '') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"${more}/>`;
+    const bulbs = (pts) => pts.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="#ffe9a8"/>`).join('');
+    const rowY = (x, y0, y1, step) => Array.from({ length: Math.max(0, Math.floor((y1 - y0) / step) + 1) }, (_, i) => [x, y0 + i * step]);
+    const rowX = (y, x0, x1, step) => Array.from({ length: Math.max(0, Math.floor((x1 - x0) / step) + 1) }, (_, i) => [x0 + i * step, y]);
+    const grad = (a, b) => `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/>`;
+    const lit = (p) => (rnd() < p ? (rnd() < 0.5 ? '#ffd27a' : '#ffb85c') : '#120f17');
+    // обычные окна: сетка, часть горит
+    const windows = (H, L, p = 0.38) => {
+      let r = '';
+      for (let x = 30; x < H - 34; x += 44) for (let y = 14; y < L - 24; y += 38) r += rect(x, y, 22, 18, lit(p), ' rx="2"');
+      return r;
+    };
+    const starPts = (x, y, s) =>
+      Array.from({ length: 10 }, (_, i) => {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const q = i % 2 ? s * 0.42 : s;
+        return `${(x + q * Math.cos(a)).toFixed(1)},${(y + q * Math.sin(a)).toFixed(1)}`;
+      }).join(' ');
+    const FACADE = {
+      // казино: красно-золотой фасад, золотые пилястры, окна-ромбы, рамка из лампочек по крыше, арочный вход
+      casino: (H, L) => {
+        let r = grad('#7a1424', '#3a0812');
+        for (let y = 18; y < L - 10; y += 62) r += rect(0, y, H - 14, 8, '#c9963f');
+        for (let x = 96; x < H - 30; x += 40) for (let y = 49; y < L - 20; y += 62) r += `<polygon points="${x},${y - 9} ${x + 9},${y} ${x},${y + 9} ${x - 9},${y}" fill="${rnd() < 0.7 ? '#ffd27a' : '#5a1020'}"/>`;
+        r += rect(H - 14, 0, 14, L, '#c9963f') + bulbs(rowY(H - 7, 8, L - 8, 14));
+        const c = L / 2;
+        r += `<path d="M0 ${c - 46} H66 A46 46 0 0 1 66 ${c + 46} H0 Z" fill="#ffd27a"/><path d="M0 ${c - 34} H60 A34 34 0 0 1 60 ${c + 34} H0 Z" fill="#b8442a"/>`;
+        r += bulbs(Array.from({ length: 11 }, (_, i) => [66 + 46 * Math.cos(-Math.PI / 2 + (i * Math.PI) / 10), c + 46 * Math.sin(-Math.PI / 2 + (i * Math.PI) / 10)]));
+        return r + rect(0, 0, 6, L, '#c9963f');
+      },
+      // театр: камень, колонны с капителями, фронтон, козырёк с лампочками над входом, афиши
+      theater: (H, L) => {
+        const top = Math.round(H * 0.72);
+        let r = grad('#5e5040', '#3e352a');
+        for (let y = 22; y < L - 20; y += 46) {
+          r += rect(0, y, top, 14, '#8f7f66') + rect(top - 8, y - 4, 8, 22, '#a8987e');
+          if (rnd() < 0.6) r += rect(top - 60, y + 20, 22, 16, lit(0.7));
+        }
+        r += rect(top, 0, 12, L, '#a8987e');
+        r += `<polygon points="${top + 12},8 ${H - 4},${L / 2} ${top + 12},${L - 8}" fill="#6e604d" stroke="#a8987e" stroke-width="4"/>`;
+        r += rect(54, L * 0.18, 16, L * 0.64, '#2a2018') + bulbs(rowY(62, L * 0.18 + 6, L * 0.82 - 6, 12));
+        for (let y = 26; y < L - 40; y += 46) if (rnd() < 0.7) r += rect(10, y + 16, 34, 24, '#e4d4ac') + rect(14, y + 20, 26, 16, pick(['#7a2a2a', '#2a4a6a', '#5a3a6a']));
+        return r;
+      },
+      // кино: большая светящаяся вывеска-марки с лампочками, рамки афиш, неоновые полосы
+      cinema: (H, L, trim) => {
+        let r = grad('#14424a', '#0b2226');
+        for (let y = 30; y < L - 10; y += 72) r += rect(0, y, H - 10, 3, trim);
+        r += rect(72, 8, 50, L - 16, '#f4efe6');
+        for (let x = 80; x < 118; x += 12) r += rect(x, 18, 5, L - 36, '#1e1b22');
+        r += bulbs(rowY(70, 12, L - 12, 12)) + bulbs(rowY(124, 12, L - 12, 12));
+        for (let y = 18; y < L - 50; y += 64) r += rect(10, y, 50, 36, '#c9963f') + rect(14, y + 4, 42, 28, pick(['#7a2a3a', '#2a3a7a', '#2a6a4a', '#6a4a2a']));
+        for (let x = 150; x < H - 30; x += 44) for (let y = 20; y < L - 24; y += 44) if (rnd() < 0.3) r += rect(x, y, 18, 16, '#ffd27a');
+        return r;
+      },
+      // отель / мотель: пастельный фасад, ровные ряды окон, балконные перила, двери с тёплым светом внизу
+      hotel: (H, L) => {
+        let r = grad(pick(['#2f6f73', '#8a4a68', '#4a5f8a']), '#1a2430');
+        for (let x = 52; x < H - 26; x += 40) {
+          for (let y = 14; y < L - 24; y += 34) r += rect(x, y, 22, 20, lit(0.5), ' rx="2"');
+          r += rect(x - 6, 6, 3, L - 12, '#e8dfc6');
+        }
+        for (let y = 20; y < L - 30; y += 60) r += rect(0, y, 34, 20, '#ffd27a');
+        return r;
+      },
+      // бар: кирпич, маленькие тёплые окна-арки у тротуара
+      bar: (H, L) => {
+        let r = grad('#5c2a1f', '#3a1812');
+        for (let x = 0; x < H; x += 12) r += rect(x, 0, 1.5, L, '#2e130d');
+        for (let y = 20; y < L - 50; y += 72) r += `<path d="M0 ${y} H40 A16 16 0 0 1 40 ${y + 32} H0 Z" fill="#ff9a4a"/>`;
+        for (let x = 90; x < H - 30; x += 46) for (let y = 30; y < L - 30; y += 58) if (rnd() < 0.4) r += rect(x, y, 16, 14, '#ffb85c');
+        return r;
+      },
+      // радио: тёмно-синий ар-деко, вертикальные линии, ступенчатый верх, холодный свет в окнах
+      radio: (H, L) => {
+        let r = grad('#15284f', '#0b1530');
+        for (let y = 16; y < L - 10; y += 34) r += rect(0, y, H - 34, 2, '#7fb2ff') + rect(0, y + 6, H - 34, 1, '#4a6fae');
+        r += rect(H - 34, L * 0.12, 16, L * 0.76, '#1d3366') + rect(H - 18, L * 0.3, 18, L * 0.4, '#24407d');
+        for (let x = 40; x < H - 50; x += 30) for (let y = 24; y < L - 20; y += 34) if (rnd() < 0.35) r += rect(x, y, 14, 10, '#cfe3ff');
+        return r;
+      },
+      // диско: разноцветная мозаика из плиток и зеркальный шар
+      disco: (H, L) => {
+        let r = grad('#2a0f3d', '#170824');
+        const P = ['#ff5fa2', '#5fe1ff', '#ffc85f', '#b28bff', '#5fffb0'];
+        for (let x = 60; x < H - 10; x += 18) for (let y = 6; y < L - 10; y += 18) if (rnd() < 0.55) r += rect(x, y, 14, 14, pick(P), ' opacity=".75"');
+        const cx = H * 0.7;
+        r += `<circle cx="${cx}" cy="${L / 2}" r="26" fill="#d8d8e6"/>`;
+        for (let k = -2; k <= 2; k++) r += rect(cx - 26, L / 2 + k * 9, 52, 1.5, '#8a8aa0') + rect(cx + k * 9, L / 2 - 26, 1.5, 52, '#8a8aa0');
+        return r + rect(0, 0, 50, L, '#1b0a28') + bulbs(rowY(46, 10, L - 10, 16));
+      },
+      // шоу: малиновый фасад с золотыми звёздами и рамкой из лампочек по краю
+      show: (H, L) => {
+        let r = grad('#5c0f3c', '#2e0820');
+        for (let i = 0; i < Math.round((H * L) / 9000); i++) r += `<polygon points="${starPts(60 + rnd() * (H - 90), 20 + rnd() * (L - 40), 6 + rnd() * 8)}" fill="#e9c46a"/>`;
+        r += bulbs(rowY(H - 8, 8, L - 8, 14)) + bulbs(rowX(8, 10, H - 14, 14)) + bulbs(rowX(L - 8, 10, H - 14, 14));
+        return r + rect(0, L * 0.3, 40, L * 0.4, '#ffd27a');
+      },
+      plain: (H, L) => windows(H, L),
+      // задний ряд — высокие тёмные дома, огней меньше
+      back: (H, L) => rect(0, 0, H, L, '#17131f') + windows(H, L, 0.22),
+    };
+    const wallSvg = (kind, H, L, trim) =>
+      // в атрибуте style — только одинарные кавычки, а в самой картинке — двойные (они кодируются)
+      `url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${H}" height="${L}">${FACADE[kind](H, L, trim)}</svg>`)}')`;
+    // Передний ряд — дома с глубиной: фасад к улице, крыша и торец со стороны зрителя (дом «протянут» вбок от улицы).
+    // Задний ряд — выше и проще, только фасады: закрывает пустоту за передними домами. На телефоне (lite) его нет.
     let houses = '';
-    for (const [sideCls, x] of [['l', 0], ['r', 1100]])
+    for (const [sideCls, x] of [['l', 0], ['r', W]]) {
+      const out = sideCls === 'l' ? -1 : 1; // наружу от улицы
       for (let y = 40, n = 0; y < LEN - 200; n++) {
         const L = 240 + Math.round(rnd() * 220);
         const H = 170 + Math.round(rnd() * 190);
-        const trim = TRIMS[Math.floor(rnd() * TRIMS.length)];
-        // вывеска на фасаде: координаты стены — x это высота над землёй, y — вдоль улицы
-        const sign = rnd() < 0.62 ? `<span class="w3-fsign" style="left:${Math.round(H * (0.5 + rnd() * 0.18))}px;top:${Math.round(L * (0.35 + rnd() * 0.3))}px"><b>${SIGNS[Math.floor(rnd() * SIGNS.length)]}</b></span>` : '';
-        houses += `<div class="w3-wall ${sideCls}" style="left:${x}px;bottom:${y}px;width:${H}px;height:${L}px;--wall:${WALLS[n % WALLS.length]};--trim:${trim};background-image:${wallSvg(H, L)}">${sign}</div>`;
+        const D = 130 + Math.round(rnd() * 70);
+        const kind = pick(KIND_POOL);
+        const K = KINDS[kind];
+        const trim = K ? pick(K.trim) : pick(TRIMS);
+        const wall = WALLS[n % WALLS.length];
+        // вывеска на фасаде — по типу дома: у казино и шоу повыше, у остальных на среднем этаже
+        const sign = K
+          ? `<span class="w3-fsign" style="left:${Math.round(H * (kind === 'casino' || kind === 'show' ? 0.66 : 0.5 + rnd() * 0.12))}px;top:${Math.round(L * (0.35 + rnd() * 0.3))}px"><b>${pick(K.words)}</b></span>`
+          : '';
+        houses += `<div class="w3-bld ${sideCls}" style="left:${x}px;bottom:${y}px;height:${L}px;--h:${H}px;--d:${D}px;--side:${K ? K.side : wall};--trim:${trim}"><div class="w3-wall ${sideCls}" style="width:${H}px;height:${L}px;--wall:${wall};background-image:${wallSvg(kind, H, L, trim)}">${sign}</div><i class="w3-roof"></i><i class="w3-endf"></i></div>`;
         y += L + 18 + Math.round(rnd() * 40);
       }
+      if (!lite)
+        for (let y = 0; y < LEN - 200; ) {
+          const L = 300 + Math.round(rnd() * 300);
+          const H = 280 + Math.round(rnd() * 140); // выше передних домов, но ниже верхней границы экрана
+          houses += `<div class="w3-wall ${sideCls} back" style="left:${x + out * 250}px;bottom:${y}px;width:${H}px;height:${L}px;background-image:${wallSvg('back', H, L)}"></div>`;
+          y += L + 12;
+        }
+    }
     // Ретро-машины 50-х: одна стоячая картинка на машину, объём нарисован прямыми линиями — торец кузова,
     // крышка багажника (или капот) и кабина сужаются вдаль. От нас — корма с плавниками и красными фонарями,
     // навстречу — морда с решёткой и фарами. Лёгкие для браузера; на телефоне (lite) машин нет.
@@ -901,10 +1039,10 @@ const TR = (() => {
     // полосы: на правой дороге — от нас (780) и навстречу (925), на левой — навстречу; две машины в одной полосе
     // едут с одной скоростью через полцикла — не наезжают друг на друга
     const lanes = [
-      [862, false, 9.4, 0],
-      [988, true, 7.4, -2.5],
-      [112, true, 10.5, -5.8],
-      [862, false, 9.4, -4.7],
+      [xRoadR + ROAD * 0.25, false, 9.4, 0],
+      [xRoadR + ROAD * 0.75, true, 7.4, -2.5],
+      [xRoadL + ROAD * 0.25, true, 10.5, -5.8],
+      [xRoadR + ROAD * 0.25, false, 9.4, -4.7],
     ];
     // Машин всегда четыре, они ездят по кругу. Едут не по всей улице, а по отрезку перед зрителем (FAR),
     // и этот отрезок идёт вместе с ним: иначе машина позади проезжала бы у самой «камеры» —
@@ -937,11 +1075,11 @@ const TR = (() => {
       const mold = `url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 250"><polygon points="${pts}" fill="rgba(233,196,106,.06)" stroke="#e9c46a" stroke-opacity=".55" stroke-width="5" stroke-dasharray="16 11" stroke-linejoin="round"/><text x="130" y="142" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="20" fill="#e9c46a" fill-opacity=".6">СКОРО</text></svg>`)}')`;
       const barrier = `url('data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 74"><rect x="12" y="24" width="7" height="50" fill="#9a958c"/><rect x="111" y="24" width="7" height="50" fill="#9a958c"/><rect x="2" y="12" width="126" height="22" fill="#f4efe6"/><polygon points="2,12 20,12 2,34" fill="#e0453a"/><polygon points="34,12 52,12 30,34 12,34" fill="#e0453a"/><polygon points="66,12 84,12 62,34 44,34" fill="#e0453a"/><polygon points="98,12 116,12 94,34 76,34" fill="#e0453a"/><polygon points="128,12 128,34 108,34" fill="#e0453a"/><rect x="2" y="44" width="126" height="10" fill="#f4efe6"/><rect x="58" y="2" width="14" height="10" fill="#ffae2e"/></svg>')}')`;
       const cone = `url('data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 56"><polygon points="16,2 24,2 34,50 6,50" fill="#ff7a1a"/><polygon points="13,18 27,18 29,28 11,28" fill="#f4efe6"/><rect x="1" y="49" width="38" height="7" fill="#2a2630"/></svg>')}')`;
-      let s = `<div class="w3-mold" style="bottom:${z}px;transform:translateX(-34px);background-image:${mold}"></div>`;
-      s += `<div class="w3-mold" style="bottom:${z + 300}px;transform:translateX(34px);background-image:${mold}"></div>`;
-      for (const x of [370, 490, 610, 730]) s += `<div class="w3-bb w3-cone" style="bottom:${zb - 70}px;left:${x}px;background-image:${cone}"></div>`;
-      for (const x of [410, 550, 690]) s += `<div class="w3-bb w3-barrier" style="bottom:${zb}px;left:${x}px;background-image:${barrier}"><i></i></div>`;
-      s += `<div class="w3-bb w3-works" style="bottom:${zb + 70}px;left:550px"><div><b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды</span></div></div>`;
+      let s = `<div class="w3-mold" style="bottom:${z}px;left:${C}px;transform:translateX(-34px);background-image:${mold}"></div>`;
+      s += `<div class="w3-mold" style="bottom:${z + 300}px;left:${C}px;transform:translateX(34px);background-image:${mold}"></div>`;
+      for (const x of [C - 180, C - 60, C + 60, C + 180]) s += `<div class="w3-bb w3-cone" style="bottom:${zb - 70}px;left:${x}px;background-image:${cone}"></div>`;
+      for (const x of [C - 140, C, C + 140]) s += `<div class="w3-bb w3-barrier" style="bottom:${zb}px;left:${x}px;background-image:${barrier}"><i></i></div>`;
+      s += `<div class="w3-bb w3-works" style="bottom:${zb + 70}px;left:${C}px"><div><b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды</span></div></div>`;
       return s;
     }
     // на телефоне баннер с горой — отдельной карточкой над экраном (в самом экране только вид сверху)
@@ -949,15 +1087,14 @@ const TR = (() => {
       <div class="w3-sky">${fameSceneHtml('')}<div class="w3-city" style="background-image:${cityImg()}"></div></div>
       <div class="w3-view">
         <div class="w3-move">
-          <div class="w3-floor" style="height:${LEN}px">
-            <div class="w3-side l"></div><div class="w3-road left"><span class="w3-dash"></span></div><div class="w3-grass"></div><div class="w3-walkway"></div><div class="w3-grass right"></div><div class="w3-road"><span class="w3-dash"></span></div><div class="w3-side"></div>
+          <div class="w3-floor" style="height:${LEN}px;width:${W}px">
+            <div class="w3-side l" style="left:0;width:${SIDE}px"></div><div class="w3-road left" style="left:${xRoadL}px;width:${ROAD}px"><span class="w3-dash"></span></div><div class="w3-grass" style="left:${xGrassL}px;width:${GRASS}px"></div><div class="w3-walkway" style="left:${xWalk}px;width:${WALK}px"></div><div class="w3-grass right" style="left:${xGrassR}px;width:${GRASS}px"></div><div class="w3-road" style="left:${xRoadR}px;width:${ROAD}px"><span class="w3-dash"></span></div><div class="w3-side" style="left:${xSideR}px;width:${SIDE}px"></div>
             ${rows
               .map((r, i) =>
                 r.sign
-                  ? // уличный указатель на перекрёстке: столб и две таблички крест-накрест — название бульвара к нам,
-                    // «Аллея славы» — вдоль улицы (в перспективе)
-                    `<div class="w3-bb w3-post" style="bottom:${r.z}px;left:690px"><i class="w3-pole"></i><i class="w3-finial"></i><span class="w3-plate a"><small>${escH(r.sign.split(' ')[0])}</small> ${escH(r.sign.split(' ').slice(1).join(' '))}</span><span class="w3-plate b">★ Аллея славы</span></div>`
-                  : `<button type="button" class="w3-star${i % 2 ? ' alt' : ''}" style="bottom:${r.z}px" data-w3="${i}" aria-label="${escH(r.title)} — рассмотреть">${r.star}</button>`
+                  ? // уличный указатель на перекрёстке: столб и объёмная табличка с названием бульвара, повёрнутая к тротуару
+                    `<div class="w3-bb w3-post" style="bottom:${r.z}px;left:${xGrassR - 70}px"><i class="w3-pole"></i><i class="w3-finial"></i><span class="w3-plate a"><small>${escH(r.sign.split(' ')[0])}</small> ${escH(r.sign.split(' ').slice(1).join(' '))}<i class="pl-l"></i><i class="pl-r"></i><i class="pl-back"></i></span></div>`
+                  : `<button type="button" class="w3-star${i % 2 ? ' alt' : ''}" style="bottom:${r.z}px;left:${C}px" data-w3="${i}" aria-label="${escH(r.title)} — рассмотреть">${r.star}</button>`
               )
               .join('')}
             ${roadworks()}
@@ -991,7 +1128,7 @@ const TR = (() => {
     const setCam = (on) => {
       topView = on;
       if (!phone) host._top = on;
-      w3.classList.toggle('top', on);
+      w3.classList.toggle('w3-topview', on); // не «top»: так называется шапка страницы
       if (!camBtn) return;
       camBtn.setAttribute('aria-pressed', String(on));
       camBtn.querySelector('.w3-cam-t').textContent = on ? 'Вид с аллеи' : 'Вид сверху';
@@ -1004,7 +1141,8 @@ const TR = (() => {
     let sc = 1;
     const measure = () => {
       const w = w3.clientWidth || 760;
-      sc = Math.min(1, w / (w < 620 ? 520 : 760)); // на телефоне — крупнее
+      // на телефоне — крупнее; на широком экране улица растёт вместе с ним (до 1.3), чтобы по бокам не было пустоты
+      sc = w < 620 ? w / 520 : Math.min(1.3, Math.max(w / 1250, Math.min(1, w / 760)));
     };
     measure();
     // Показываем только ближнюю часть улицы: что позади или слишком далеко — скрыто и не рисуется.
@@ -1038,8 +1176,8 @@ const TR = (() => {
     const apply = () => {
       host._pos = pos;
       cullNow();
-      // сверху камера ещё и отдаляется — видно несколько звёзд и дома по бокам
-      const zoom = 1 - 0.45 * ((W3_TILT - tilt) / (W3_TILT - W3_TILT_TOP));
+      // сверху камера подходит ближе, чтобы надписи на звёздах читались (на телефоне — ещё ближе)
+      const zoom = 1 + ((phone ? 1.2 : 0.9) - 1) * ((W3_TILT - tilt) / (W3_TILT - W3_TILT_TOP));
       floor.style.transform = `translateX(-50%) scale(${(sc * zoom).toFixed(4)}) rotateX(${tilt.toFixed(2)}deg) translateY(${pos}px)`;
       // стоящие предметы (фонари, пальмы, указатели, машины) поворачиваются на тот же угол — стоят ровно
       if (tilt !== tiltShown) w3.style.setProperty('--tilt', (tiltShown = tilt).toFixed(2));
@@ -1052,7 +1190,7 @@ const TR = (() => {
       rows.forEach((r, i) => {
         if (r.sign) return;
         // сверху «зона взгляда» дальше по тротуару: камера смотрит вниз, ближняя часть внизу экрана
-        const d = r.z - pos - (170 + ((W3_TILT - tilt) / (W3_TILT - W3_TILT_TOP)) * 150);
+        const d = r.z - pos - (170 + ((W3_TILT - tilt) / (W3_TILT - W3_TILT_TOP)) * 60);
         if (d > -140 && Math.abs(d) < bd) {
           bd = Math.abs(d);
           best = i;
@@ -1186,6 +1324,12 @@ const TR = (() => {
     }
     if (window.ResizeObserver) {
       host._ro = new ResizeObserver(() => {
+        // окно растянули или сузили через ширину телефона — собираем аллею заново в нужном виде
+        const hw = host.clientWidth;
+        if (hw > 0 && hw < 620 !== phone) {
+          host._sig = '';
+          return fameWalk(host, { items, onOpen, lite: liteAsked });
+        }
         measure();
         bucket = null;
         apply();
