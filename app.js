@@ -79,6 +79,7 @@
     const now = Date.now();
     if (priority) {
       const keep = v.later?.priority === priority && v.later.order != null ? { order: v.later.order } : {}; // в другом блоке — наверх
+      if (v.later?.pinned) keep.pinned = v.later.pinned; // закреплённое остаётся закреплённым
       v.later = { priority, addedAt: v.later?.addedAt || now, updatedAt: now, ...keep };
       delete v.laterDel;
     } else if (v.later) {

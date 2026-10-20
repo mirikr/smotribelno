@@ -357,7 +357,12 @@ const TR = (() => {
   // Непросмотренные видео из «Смотреть позже+»: сначала важные, внутри — свежие
   // Порядок «Смотреть позже+»: по важности, внутри блока — свой порядок, который задали перетаскиванием
   // (later.order: 1, 2, 3…). Добавленное после этого — сверху блока, новое выше.
+  // Порядок «Смотреть позже+»: закреплённые — первыми (последнее закреплённое — выше), дальше по важности
+  // и своему порядку в блоке
   function laterCmp(a, b) {
+    const pa = a.later.pinned || 0;
+    const pb = b.later.pinned || 0;
+    if (pa !== pb) return pb - pa; // закреплённые в одну секунду — дальше по важности
     const oa = a.later.order != null;
     const ob = b.later.order != null;
     return b.later.priority - a.later.priority || oa - ob || (oa ? a.later.order - b.later.order : b.later.addedAt - a.later.addedAt);
@@ -1378,6 +1383,145 @@ const TR = (() => {
     return Object.entries(n).sort((a, b) => b[1] - a[1])[0]?.[0] || 'custom';
   }
 
+  // ---- История YouTube: страница /feed/history общая для всех устройств аккаунта ----
+  // Разбор нужен и вкладке YouTube, и фону расширения (он читает историю сам, без открытой вкладки).
+  function initialDataFrom(html) {
+    for (const marker of ['var ytInitialData = ', 'window["ytInitialData"] = ']) {
+      const i = html.indexOf(marker);
+      if (i < 0) continue;
+      const start = i + marker.length;
+      const end = html.indexOf(';</script>', start);
+      if (end > start) return JSON.parse(html.slice(start, end));
+    }
+    return null;
+  }
+
+  const txt = (t) => (typeof t === 'string' ? t : t?.simpleText || t?.content || t?.runs?.map((r) => r.text).join('') || '');
+
+  function deepFind(o, pred, depth = 0) {
+    if (!o || typeof o !== 'object' || depth > 30) return undefined;
+    if (!Array.isArray(o) && pred(o)) return o;
+    for (const k in o) {
+      const r = deepFind(o[k], pred, depth + 1);
+      if (r !== undefined) return r;
+    }
+    return undefined;
+  }
+
+  function clockToSec(s) {
+    const m = String(s || '').trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+    return m ? (Number(m[1]) || 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) : 0;
+  }
+
+  const WEEKDAYS = [['воскресенье', 'sunday'], ['понедельник', 'monday'], ['вторник', 'tuesday'], ['среда', 'wednesday'], ['четверг', 'thursday'], ['пятница', 'friday'], ['суббота', 'saturday']];
+  const MON_RU = ['янв', 'фев', 'мар', 'апр', 'ма', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const MON_EN = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+  // «Сегодня», «Вчера», «Понедельник», «12 окт.», «Oct 12, 2025» → YYYY-MM-DD
+  function historyDay(title) {
+    const t = (title || '').toLowerCase().trim();
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    if (!t || /сегодня|today/.test(t)) return dateKey(d);
+    if (/вчера|yesterday/.test(t)) {
+      d.setDate(d.getDate() - 1);
+      return dateKey(d);
+    }
+    const wd = WEEKDAYS.findIndex(([ru, en]) => t.startsWith(ru) || t.startsWith(en));
+    if (wd >= 0) {
+      d.setDate(d.getDate() - ((d.getDay() - wd + 7) % 7 || 7));
+      return dateKey(d);
+    }
+    let day, mon, year;
+    let m = t.match(/(\d{1,2})\s+([а-яё]+)\.?(?:\s+(\d{4}))?/);
+    if (m) {
+      day = +m[1];
+      mon = MON_RU.findIndex((p) => m[2].startsWith(p));
+      year = m[3] && +m[3];
+    } else if ((m = t.match(/([a-z]{3})[a-z]*\.?\s+(\d{1,2})(?:,\s*(\d{4}))?/))) {
+      mon = MON_EN.indexOf(m[1]);
+      day = +m[2];
+      year = m[3] && +m[3];
+    }
+    if (m && mon >= 0) {
+      const x = new Date(year || d.getFullYear(), mon, day, 12);
+      if (!year && x > d) x.setFullYear(x.getFullYear() - 1);
+      return dateKey(x);
+    }
+    return null;
+  }
+
+  // Трансляция / премьера: значки «В эфире», «Трансляция закончилась…», «Streamed…», «Премьера…»
+  const LIVE_MARK_RE = /трансляци|прямой эфир|в эфире|streamed|live stream|премьер|premiere|BADGE_STYLE_TYPE_LIVE|"LIVE"|"style":"LIVE"/i;
+  const isLiveItem = (o) => LIVE_MARK_RE.test(JSON.stringify(o));
+
+  function fromVideoRenderer(vr) {
+    const owner = vr.ownerText || vr.longBylineText || vr.shortBylineText;
+    const resume = deepFind(vr.thumbnailOverlays, (x) => typeof x.percentDurationWatched === 'number');
+    return {
+      id: vr.videoId,
+      title: txt(vr.title),
+      channel: txt(owner),
+      channelUrl: owner?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.canonicalBaseUrl || '',
+      avatar: deepFind(vr.channelThumbnailSupportedRenderers || vr.channelThumbnail, (x) => typeof x.url === 'string')?.url || '',
+      duration: clockToSec(txt(vr.lengthText)),
+      progress: resume ? resume.percentDurationWatched / 100 : null,
+      live: isLiveItem(vr),
+    };
+  }
+
+  function fromLockup(lv) {
+    if (lv.contentType && !/VIDEO/.test(lv.contentType)) return null;
+    const md = lv.metadata?.lockupMetadataViewModel;
+    const part = md?.metadata?.contentMetadataViewModel?.metadataRows?.[0]?.metadataParts?.[0];
+    const bar = deepFind(lv.contentImage, (x) => typeof x.startPercent === 'number');
+    const badge = deepFind(lv.contentImage, (x) => typeof x.text === 'string' && /^\d+:\d{2}(:\d{2})?$/.test(x.text.trim()));
+    return {
+      id: lv.contentId,
+      title: txt(md?.title),
+      channel: txt(part?.text),
+      channelUrl: deepFind(part, (x) => typeof x.canonicalBaseUrl === 'string')?.canonicalBaseUrl || '',
+      avatar: deepFind(md?.image, (x) => typeof x.url === 'string')?.url || '',
+      duration: clockToSec(badge?.text),
+      progress: bar ? bar.startPercent / 100 : null,
+      live: isLiveItem(lv),
+    };
+  }
+
+  function historyItems(root) {
+    const out = [];
+    const seen = new Set();
+    const push = (it, day) => {
+      if (!it?.id || !/^[\w-]{11}$/.test(it.id) || seen.has(it.id)) return;
+      seen.add(it.id);
+      out.push({ ...it, day });
+    };
+    (function walk(o, day) {
+      if (!o || typeof o !== 'object') return;
+      if (Array.isArray(o)) {
+        for (const x of o) walk(x, day);
+        return;
+      }
+      if (o.itemSectionRenderer) {
+        const sec = o.itemSectionRenderer;
+        const head = deepFind(sec.header, (x) => typeof x.simpleText === 'string' || typeof x.content === 'string' || Array.isArray(x.runs));
+        walk(sec.contents, historyDay(txt(head)) || day);
+        return;
+      }
+      if (o.reelShelfRenderer) return; // Shorts в истории пропускаем
+      if (o.videoRenderer?.videoId) return push(fromVideoRenderer(o.videoRenderer), day);
+      if (o.lockupViewModel?.contentId) return push(fromLockup(o.lockupViewModel), day);
+      for (const k in o) walk(o[k], day);
+    })(root, dateKey());
+    return out;
+  }
+
+  // Страница истории → [{ id, title, channel, channelUrl, avatar, duration, progress, live, day }] или null, если не прочиталась
+  function parseHistoryPage(html) {
+    const data = initialDataFrom(html);
+    return data ? historyItems(data) : null;
+  }
+
   // ---- Синхронизация через Google Drive (расширение ↔ телефон) ----
   // Один файл smotribelno.json в скрытой папке приложения на Диске пользователя (appDataFolder):
   // приложению виден только он. Вход — OAuth 2.0 (токен на час), клиент «Веб-приложение» из Google Cloud
@@ -1585,6 +1729,7 @@ const TR = (() => {
     fameCloseup,
     fameVideoExtra,
     fameVideoTiles,
+    parseHistoryPage,
     fameSceneHtml,
     FAME_LAMP,
     fameBoulevard,
