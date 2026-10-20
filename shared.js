@@ -561,6 +561,10 @@ const TR = (() => {
     return [...items.slice(from), ...items.slice(0, Math.max(0, from - 1))].find((v) => !v.watchedAt && v.id !== afterId) || null;
   }
   // Списки двух устройств: у каждого плейлиста побеждает более поздняя правка (переименование, значок, удаление)
+  // Каналы плейлиста — по порядку добавления
+  function playlistChannels(list) {
+    return Object.values(list?.channels || {}).sort((a, b) => (a.at || 0) - (b.at || 0) || String(a.name).localeCompare(String(b.name), 'ru'));
+  }
   function mergePlaylists(a, b) {
     const out = { lists: {} };
     const la = a?.lists || {};
@@ -1747,6 +1751,7 @@ const TR = (() => {
     playlistSummary,
     playlistNext,
     mergePlaylists,
+    playlistChannels,
     send,
   };
 })();
