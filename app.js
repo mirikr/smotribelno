@@ -70,7 +70,12 @@
       console.warn(e);
     }
   }
-  const settings = () => ({ ...TR.DEFAULT_SETTINGS, ...db.settings });
+  // свои наборы из настроек — сразу и в типы оценки (кнопки выбора типа)
+  const settings = () => {
+    const s = { ...TR.DEFAULT_SETTINGS, ...db.settings };
+    TR.useSettings(s);
+    return s;
+  };
   const video = (id) => (db.videos[id] ||= { id });
 
   // ---------- Отмена удаления (как в расширении): уведомление на 10 секунд над нижним меню ----------
@@ -2150,6 +2155,7 @@
     if (json?.app === 'TubeRate' && json.data) {
       for (const [k, v] of Object.entries(json.data)) if (k.startsWith('v:') && v) incoming[k.slice(2)] = v;
       if (json.data.settings?.criteria) db.settings.criteria = json.data.settings.criteria;
+      if (json.data.settings?.customSets) db.settings.customSets = TR.mergeSets(db.settings.customSets, json.data.settings.customSets);
       if (json.data.settings?.autoWatchedPct) db.settings.autoWatchedPct = json.data.settings.autoWatchedPct;
     } else if (json?.app === TR.MOBILE_APP && json.videos) {
       incoming = json.videos;
@@ -2286,6 +2292,7 @@
       if (r.playlists) db.playlists = r.playlists; // плейлисты с компьютера (или их переименование, удаление)
       if (r.fame) db.fame = r.fame; // аллея славы с компьютера
       if (r.remoteCriteria) db.settings.criteria = r.remoteCriteria;
+      if (r.customSets) db.settings.customSets = r.customSets; // свои наборы с компьютера
       if (r.remoteStats) db.stats = r.remoteStats; // время по дням и каналам — с компьютера
       save(false);
       drive = { ...drive, needLogin: false, error: '', at: Date.now(), received: Object.keys(r.changes).length, total: r.total };
@@ -2442,7 +2449,8 @@
   mainEl.addEventListener(
     'touchstart',
     (e) => {
-      ptr.y0 = window.scrollY <= 0 && !sheetEl.open && e.touches.length === 1 ? e.touches[0].clientY : null;
+      // на аллее свайп вниз — шаг назад (или прыжок в игре), а не «потянуть — обновить»
+      ptr.y0 = window.scrollY <= 0 && !sheetEl.open && $('#view-fame').hidden && e.touches.length === 1 ? e.touches[0].clientY : null;
       ptr.d = 0;
       ptr.active = false;
     },
@@ -2519,6 +2527,16 @@
     sec.classList.add('enter-' + dir);
     markEntering(sec);
   });
+  // Аллея славы стоит на месте: страница под ней не листается и не «пружинит» — ни от свайпа по аллее,
+  // ни от свайпа по шапке или нижнему меню (иначе ходить по аллее и играть невозможно)
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if ($('#view-fame').hidden || sheetEl.open) return;
+      if (e.target.closest?.('#view-fame, .top, .tabbar, .w3-run') && e.cancelable) e.preventDefault();
+    },
+    { passive: false }
+  );
   // Клавиатура открыта (фокус в поле ввода) — нижнее меню прячем, чтобы iPhone не тащил его над клавиатурой
   document.addEventListener('focusin', (e) => {
     if (e.target.matches('input:not([type="range"]):not([type="checkbox"]), textarea')) document.body.classList.add('kb-open');

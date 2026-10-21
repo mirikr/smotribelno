@@ -42,22 +42,78 @@ const TR = (() => {
     { id: 'custom', label: 'Свой', own: [] },
   ];
   const DEFAULT_TYPE = 'fun';
-  const videoType = (id) => VIDEO_TYPES.find((t) => t.id === id) || VIDEO_TYPES[VIDEO_TYPES.length - 1];
+
+  // ---- Свои наборы, кроме основного «Свой» ----
+  // settings.customSets = [{ id: 'u-…', label, criteria: [{ id, name, hint }], at, deleted? }].
+  // Каждый набор — ещё один тип оценки (после «Свой»). Удалённый набор остаётся в настройках с deleted:
+  // его оценки не теряют подписи, но выбрать его для новой оценки уже нельзя.
+  const USER_SET_RE = /^u-[a-z0-9]{2,12}$/;
+  const MAX_USER_SETS = 8;
+  let userSets = [];
+  let userSetsKey = '[]';
+  const cleanSets = (sets) =>
+    (Array.isArray(sets) ? sets : [])
+      .filter((s) => s && USER_SET_RE.test(s.id) && Array.isArray(s.criteria))
+      .map((s) => ({ ...s, criteria: s.criteria.filter((c) => c && typeof c.id === 'string' && c.id) }));
+  // Подключить наборы из настроек: после этого они есть в VIDEO_TYPES (для кнопок выбора типа)
+  function useSettings(settings) {
+    const sets = cleanSets(settings?.customSets);
+    const key = JSON.stringify(sets);
+    if (key === userSetsKey) return;
+    userSetsKey = key;
+    userSets = sets;
+    for (let i = VIDEO_TYPES.length - 1; i >= 0; i--) if (VIDEO_TYPES[i].user) VIDEO_TYPES.splice(i, 1);
+    const at = VIDEO_TYPES.findIndex((t) => t.id === 'custom') + 1;
+    VIDEO_TYPES.splice(at, 0, ...sets.filter((s) => !s.deleted).map((s) => ({ id: s.id, label: s.label || 'Свой набор', own: [], user: true })));
+  }
+  const userSet = (id, settings) => {
+    if (settings) useSettings(settings);
+    return userSets.find((s) => s.id === id) || null;
+  };
+  // Свой ли это тип (в том числе набор с другого устройства, который сюда ещё не дошёл)
+  const isTypeId = (id) => VIDEO_TYPES.some((t) => t.id === id) || USER_SET_RE.test(String(id || ''));
+  const videoType = (id) => {
+    const t = VIDEO_TYPES.find((x) => x.id === id);
+    if (t) return t;
+    if (USER_SET_RE.test(String(id || ''))) {
+      const s = userSets.find((x) => x.id === id);
+      return { id, label: s ? `${s.label || 'Свой набор'} (удалён)` : 'Свой набор', own: [], user: true };
+    }
+    return VIDEO_TYPES.find((x) => x.id === 'custom');
+  };
 
   // Критерии типа: [{ id, name, hint, common }]
   function typeCriteria(type, settings) {
+    if (settings) useSettings(settings);
     const t = videoType(type);
     if (t.id === 'custom') return (settings?.criteria || DEFAULT_CRITERIA).map((c) => ({ ...c, common: false }));
+    if (t.user) return (userSet(t.id)?.criteria || []).map((c) => ({ ...c, common: false }));
     return [...t.own, ...COMMON_CRITERIA].map((id) => ({ id, ...CATALOG[id], common: COMMON_CRITERIA.includes(id) }));
   }
 
-  // Название критерия по id: из каталога или из своего набора
+  // Название критерия по id: из каталога, из своего набора или из своих наборов
   function critName(id, settings) {
-    return (settings?.criteria || DEFAULT_CRITERIA).find((c) => c.id === id)?.name || CATALOG[id]?.name || 'Удалённый критерий';
+    if (settings) useSettings(settings);
+    return (
+      (settings?.criteria || DEFAULT_CRITERIA).find((c) => c.id === id)?.name ||
+      CATALOG[id]?.name ||
+      userSets.flatMap((s) => s.criteria).find((c) => c.id === id)?.name ||
+      'Удалённый критерий'
+    );
+  }
+
+  // Свои наборы с двух устройств: по каждому набору — более свежий (at); удалённые тоже переносятся
+  function mergeSets(a, b) {
+    const out = new Map();
+    for (const s of [...cleanSets(b), ...cleanSets(a)]) {
+      const cur = out.get(s.id);
+      if (!cur || (s.at || 0) >= (cur.at || 0)) out.set(s.id, s);
+    }
+    return [...out.values()].sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0) || String(x.id).localeCompare(String(y.id)));
   }
 
   // Тип оценки; у оценок без типа (поставленных раньше) — «Свой»
-  const ratingType = (rating) => (rating ? (VIDEO_TYPES.some((t) => t.id === rating.type) ? rating.type : 'custom') : null);
+  const ratingType = (rating) => (rating ? (isTypeId(rating.type) ? rating.type : 'custom') : null);
 
   // Тип для видео: у оценённого — его тип; иначе тот, что ставили видео этого канала последним;
   // иначе последний выбранный вообще. Оценки без типа в подсказку не идут.
@@ -91,6 +147,7 @@ const TR = (() => {
 
   const DEFAULT_SETTINGS = {
     criteria: DEFAULT_CRITERIA,
+    customSets: [], // свои наборы кроме основного «Свой»: [{ id: 'u-…', label, criteria, at, createdAt, deleted? }]
     dailyLimitMin: 0, // 0 — без лимита
     autoWatchedPct: 90, // видео считается просмотренным с этого процента
     thumbBadges: true, // значки на миниатюрах
@@ -343,7 +400,9 @@ const TR = (() => {
 
   async function getSettings() {
     const { settings } = await chrome.storage.local.get('settings');
-    return { ...DEFAULT_SETTINGS, ...(settings || {}) };
+    const s = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+    useSettings(s);
+    return s;
   }
 
   // Все сохранённые видео: { id: video }
@@ -1470,11 +1529,14 @@ const TR = (() => {
       w3.classList.remove('loading');
       w3.classList.add('w3-game');
       host.classList.add('w3-gaming');
+      // на телефоне игра — на весь экран (по стилям — поверх всего; где браузер умеет — ещё и без его полос)
+      if (phone) w3.requestFullscreen?.({ navigationUI: 'hide' })?.catch?.(() => {});
       let list = typeof racers === 'function' ? racers() : racers;
       if (!list?.length) list = rows.filter((r) => r.kind === 'ch' && r.name).map((r) => ({ name: r.name }));
       fameRun(w3, {
         racers: list,
-        lowfx,
+        // упрощать игру — только на действительно слабом устройстве, а не просто на телефоне
+        lowfx: cores <= 4 || mem <= 4,
         onExit: () => {
           if (!w3.isConnected) return; // аллею за время игры уже пересобрали — перезагружать незачем
           try {
@@ -1629,6 +1691,26 @@ const TR = (() => {
       // хранилище недоступно (приватное окно) — рекорд живёт до закрытия
     }
     return n || 0;
+  }
+  // Банк монет: всё, что собрано во всех забегах (потом — валюта для нарядов каналам). add — сколько положить,
+  // без add — прочитать. Хранится там же, где рекорд; записи идут по очереди, чтобы две подряд не потеряли друг друга.
+  const RUN_BANK = 'fameRunCoins';
+  let bankQ = Promise.resolve(0);
+  function runBank(add = 0) {
+    bankQ = bankQ.then(async () => {
+      try {
+        const st = globalThis.chrome?.storage?.local;
+        const cur = Number(st ? (await st.get(RUN_BANK))[RUN_BANK] : localStorage.getItem('smotribelno:' + RUN_BANK)) || 0;
+        if (!(add > 0)) return cur;
+        const n = cur + Math.round(add);
+        if (st) await st.set({ [RUN_BANK]: n });
+        else localStorage.setItem('smotribelno:' + RUN_BANK, String(n));
+        return n;
+      } catch {
+        return 0; // хранилище недоступно (приватное окно) — монеты этого забега не сохранятся
+      }
+    });
+    return bankQ;
   }
   // racers: [{ name, icon }] — каналы для машин; lowfx — слабое устройство; onExit() — вернулись на аллею
   function fameRun(box, { racers = [], lowfx = false, onExit } = {}) {
@@ -1919,47 +2001,446 @@ const TR = (() => {
       }
       return c;
     })();
-    // Дома Лас-Вегаса по сторонам — фасады к зрителю, по 8 видов: стена, окна, неоновая вывеска, витрина внизу
+    // Дома Лас-Вегаса по сторонам — плоские, но у каждого свой силуэт и свои детали, как у домов на аллее:
+    // театр — корпус с фронтоном, крылья пониже, портик с колоннами; казино — башня с уступами, вертикальная вывеска,
+    // козырёк на лампочках, корона; кино — ар-деко со скруглённым верхом, марки и вертикальное «КИНО»; отель —
+    // узкая высотка с надстройкой, балконами и вывеской на крыше; радио — ступенчатый зиккурат с антенной; бар —
+    // фальшфасад с изогнутым верхом и полосатой маркизой; шоу — арка и пилон со звездой; диско — купол и зеркальный
+    // шар; обычные дома — с трубой и баком, скошенной крышей или двускатным фронтоном. Вне силуэта — прозрачно.
+    // Рисуются один раз при старте (200 точек = 7 м); что торчит над крышей — в той же картинке, сверху.
     const WALLS = ['#4a1f4f', '#1f3f5a', '#5a3a1f', '#3a2a5f', '#5a1f35', '#1f4a45', '#2a3350', '#4f2a2a'];
     const TRIMS = ['#ff5fa2', '#5fe1ff', '#ffc85f', '#b28bff', '#ff6b5f', '#5fffb0', '#7fb2ff', '#ff8a3d'];
-    const WORDS = ['КАЗИНО', 'КИНО', 'ОТЕЛЬ', 'БАР', 'ТЕАТР', 'ДИСКО', 'ШОУ', 'РАДИО'];
     const BLD_W = 7;
-    const bld = WALLS.map((wall, i) => {
-      const H = 300 + rint(5) * 40;
-      const c = mk(200, H);
+    const BWP = 200;
+    const LIT = () => (rnd() < 0.5 ? '#ffd27a' : '#ffb85c');
+    const facade = (kind, wall, trim) => {
+      const TOP = { theater: 40, casino: 52, cinema: 66, hotel: 64, radio: 128, bar: 28, show: 104, disco: 40, brick: 82, office: 50, shop: 36 }[kind] || 0;
+      const H = ({ theater: 300, casino: 340, cinema: 300, hotel: 400, radio: 300, bar: 240, show: 320, disco: 280, brick: 330, office: 420, shop: 260 }[kind] || 300) + rint(3) * 20;
+      const c = mk(BWP, TOP + H);
       const g = c.getContext('2d');
-      const gr = g.createLinearGradient(0, 0, 200, 0);
-      gr.addColorStop(0, shade(wall, 0.12));
-      gr.addColorStop(1, shade(wall, -0.35));
-      g.fillStyle = gr;
-      g.fillRect(0, 0, 200, H);
-      g.fillStyle = TRIMS[i];
-      g.fillRect(0, 0, 200, 6);
-      for (let y = 78; y < H - 70; y += 30) for (let x = 16; x < 184; x += 34) {
-        g.fillStyle = rnd() < 0.38 ? (rnd() < 0.5 ? '#ffd27a' : '#ffb85c') : '#120f17';
-        g.fillRect(x, y, 20, 16);
+      g.translate(0, TOP); // y = 0 — линия крыши, выше — минус; y = H — тротуар
+      const R = (x, y, w, h, f) => {
+        g.fillStyle = f;
+        g.fillRect(x, y, w, h);
+      };
+      const lin = (x0, y0, x1, y1, a, b) => {
+        const gr = g.createLinearGradient(x0, y0, x1, y1);
+        gr.addColorStop(0, a);
+        gr.addColorStop(1, b);
+        return gr;
+      };
+      const dot = (x, y, r, f) => {
+        g.beginPath();
+        g.arc(x, y, r, 0, PI2);
+        g.fillStyle = f;
+        g.fill();
+      };
+      const wins = (x0, y0, x1, y1, w, h, sx, sy, p, off = '#120f17') => {
+        for (let y = y0; y + h <= y1; y += sy) for (let x = x0; x + w <= x1; x += sx) R(x, y, w, h, rnd() < p ? LIT() : off);
+      };
+      const bulbs = (x0, y0, x1, y1, step) => {
+        const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / step));
+        for (let i = 0; i <= n; i++) dot(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, 2.4, '#ffe9a8');
+      };
+      const neon = (t, x, y, size, col) => {
+        g.font = `800 ${size}px ${FONT}`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.shadowColor = col;
+        g.shadowBlur = 10;
+        g.fillStyle = col;
+        g.fillText(t, x, y);
+        g.shadowBlur = 0;
+      };
+      const text = (t, x, y, size, col) => {
+        g.font = `800 ${size}px ${FONT}`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillStyle = col;
+        g.fillText(t, x, y);
+      };
+      const vneon = (t, x, y0, step, size, col) => [...t].forEach((ch, i) => neon(ch, x, y0 + i * step, size, col));
+      const star = (x, y, r, f) => {
+        g.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI) / 5;
+          const q = i % 2 ? r * 0.42 : r;
+          g.lineTo(x + q * Math.cos(a), y + q * Math.sin(a));
+        }
+        g.closePath();
+        g.fillStyle = f;
+        g.fill();
+      };
+      // силуэт по точкам (ломаная) — для clip и обводки
+      const outline = (pts) => () => {
+        g.beginPath();
+        g.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+        g.closePath();
+      };
+      // Дом: силуэт (shape), всё внутри — по силуэту (body), обводка, потом то, что торчит наружу (extra)
+      const house = (shape, body, extra) => {
+        g.save();
+        shape();
+        g.clip();
+        body();
+        // лёгкий свет сверху и тень снизу — плоский дом, но не плоская заливка
+        R(0, -TOP, BWP, H + TOP, lin(0, -TOP, 0, H, 'rgba(255,255,255,.06)', 'rgba(0,0,0,.22)'));
+        g.restore();
+        shape();
+        g.lineJoin = 'round';
+        g.lineWidth = 3;
+        g.strokeStyle = 'rgba(8,6,12,.55)';
+        g.stroke();
+        extra?.();
+      };
+      const fill = (a, b) => R(0, -TOP, BWP, H + TOP, lin(0, 0, BWP, 0, a, b));
+
+      if (kind === 'theater') {
+        // корпус с фронтоном посередине, крылья ниже, портик с колоннами и ступенями
+        const P = H - 200;
+        house(
+          outline([0, H, 0, 70, 34, 70, 34, 4, 100, -34, 166, 4, 166, 70, 200, 70, 200, H]),
+          () => {
+            fill('#ddd0b4', '#9c8c72');
+            for (let y = 80; y < P; y += 14) R(0, y, BWP, 1.5, 'rgba(90,75,55,.35)');
+            poly(g, [44, 4, 156, 4, 100, -24], '#cbbd9f');
+            dot(100, -8, 9, '#ffd27a');
+            R(34, 4, 132, 8, '#ece2c8');
+            R(0, 70, 34, 8, '#ece2c8');
+            R(166, 70, 34, 8, '#ece2c8');
+            for (const x of [46, 86, 126])
+              for (let y = 26; y + 46 < P; y += 64) {
+                const f = rnd() < 0.7 ? LIT() : '#2a2018';
+                R(x, y + 12, 26, 34, f);
+                dot(x + 13, y + 12, 13, f);
+              }
+            for (const x of [8, 174]) for (let y = 92; y + 30 < P; y += 50) R(x, y, 18, 28, rnd() < 0.6 ? LIT() : '#2a2018');
+            poly(g, [4, P + 50, 196, P + 50, 100, P], '#e8dcbe');
+            poly(g, [26, P + 44, 174, P + 44, 100, P + 12], '#cbbd9f');
+            R(4, P + 50, 192, 16, '#e2d6b8');
+            text('ТЕАТР', 100, P + 58, 13, '#5a4a36');
+            R(10, P + 66, 180, H - P - 96, 'rgba(40,28,20,.65)');
+            R(84, H - 90, 32, 60, '#ffcf7a');
+            for (const x of [30, 128]) R(x, H - 104, 24, 34, '#c9963f'), R(x + 3, H - 101, 18, 28, x < 100 ? '#7a2a2a' : '#2a4a6a');
+            for (let i = 0; i < 6; i++) {
+              const x = 14 + i * 31;
+              R(x, P + 70, 12, H - P - 100, lin(x, 0, x + 12, 0, '#a89a80', '#f4ead0'));
+              R(x - 3, P + 66, 18, 5, '#ece2c8');
+              R(x - 3, H - 32, 18, 4, '#ece2c8');
+            }
+            for (let k = 0; k < 3; k++) R(2 + k * 6, H - 28 + k * 9, BWP - 4 - k * 12, 10, shade('#cbbd9f', -0.1 * k));
+          }
+        );
+      } else if (kind === 'casino') {
+        // башня с уступами, окна-ромбы, корона, вертикальная вывеска, козырёк на лампочках, арка входа
+        house(
+          outline([0, H, 0, 96, 22, 96, 22, 34, 52, 34, 52, 0, 148, 0, 148, 34, 178, 34, 178, 96, 200, 96, 200, H]),
+          () => {
+            fill('#8a1828', '#3a0812');
+            for (let y = 20; y < H - 100; y += 62) R(0, y, BWP, 6, '#c9963f');
+            for (let y = 50; y < H - 110; y += 62)
+              for (let x = 66; x < 186; x += 30) poly(g, [x, y - 10, x + 10, y, x, y + 10, x - 10, y], rnd() < 0.7 ? '#ffd27a' : '#5a1020');
+            R(0, H - 100, BWP, 22, '#c9963f');
+            R(0, H - 78, BWP, 6, 'rgba(0,0,0,.35)');
+            g.beginPath();
+            g.moveTo(84, H);
+            g.lineTo(84, H - 40);
+            g.arc(116, H - 40, 32, Math.PI, 0);
+            g.lineTo(148, H);
+            g.fillStyle = '#ffd27a';
+            g.fill();
+            R(98, H - 46, 36, 46, '#b8442a');
+          },
+          () => {
+            poly(g, [58, 0, 142, 0, 150, -34, 126, -14, 100, -46, 74, -14, 50, -34], '#e0b45a');
+            R(58, -8, 84, 8, '#c9963f');
+            for (const [x, y, f] of [[100, -32, '#ff5fa2'], [76, -10, '#5fe1ff'], [124, -10, '#5fffb0']]) dot(x, y, 5, f);
+            R(4, 40, 40, 200, '#a0182c');
+            R(4, 40, 40, 4, '#c9963f');
+            R(4, 236, 40, 4, '#c9963f');
+            bulbs(8, 48, 8, 232, 12);
+            bulbs(40, 48, 40, 232, 12);
+            vneon('КАЗИНО', 24, 64, 32, 24, '#ffe08a');
+            bulbs(6, H - 89, 194, H - 89, 12);
+          }
+        );
+      } else if (kind === 'cinema') {
+        // ар-деко: скруглённый верх с выступом посередине, марки с лампочками, вертикальное «КИНО»
+        house(
+          () => {
+            g.beginPath();
+            g.moveTo(8, H);
+            g.lineTo(8, 50);
+            g.arcTo(8, 10, 48, 10, 40);
+            g.lineTo(70, 10);
+            g.lineTo(70, -14);
+            g.arcTo(70, -24, 80, -24, 10);
+            g.lineTo(120, -24);
+            g.arcTo(130, -24, 130, -14, 10);
+            g.lineTo(130, 10);
+            g.lineTo(152, 10);
+            g.arcTo(192, 10, 192, 50, 40);
+            g.lineTo(192, H);
+            g.closePath();
+          },
+          () => {
+            fill('#17505a', '#0b2226');
+            for (let y = 30; y < H - 140; y += 54) R(0, y, BWP, 3, trim);
+            for (let x = 30; x < 180; x += 20) R(x, 14, 2, H - 160, 'rgba(255,255,255,.06)');
+            wins(18, 44, 76, H - 150, 16, 14, 24, 30, 0.35);
+            wins(126, 44, 190, H - 150, 16, 14, 24, 30, 0.35);
+            R(8, H - 70, BWP, 70, '#0b1a1e');
+            for (const x of [14, 150]) R(x, H - 66, 36, 52, '#c9963f'), R(x + 4, H - 62, 28, 44, rnd() < 0.5 ? '#7a2a3a' : '#2a3a7a');
+            R(70, H - 64, 60, 64, '#ffcf7a');
+          },
+          () => {
+            R(80, -62, 40, 210, '#1e1b22');
+            bulbs(84, -56, 84, 142, 12);
+            bulbs(116, -56, 116, 142, 12);
+            vneon('КИНО', 100, -38, 44, 30, trim);
+            // марки — треугольный козырёк с буквами и лампочками
+            poly(g, [0, H - 136, 200, H - 136, 196, H - 82, 4, H - 82], '#f4efe6');
+            R(0, H - 142, BWP, 8, trim);
+            bulbs(8, H - 138, 192, H - 138, 12);
+            bulbs(8, H - 80, 192, H - 80, 12);
+            text('СЕАНС 19:00', 100, H - 118, 15, '#2a2530');
+            text('ПРЕМЬЕРА', 100, H - 98, 15, '#2a2530');
+          }
+        );
+      } else if (kind === 'hotel') {
+        // узкая высотка с надстройкой: балконы, вывеска на стойках над крышей, козырёк у входа
+        house(
+          outline([22, H, 22, 0, 62, 0, 62, -26, 138, -26, 138, 0, 178, 0, 178, H]),
+          () => {
+            fill(shade(wall, 0.32), shade(wall, -0.25));
+            R(62, -26, 76, 26, shade(wall, -0.1));
+            for (let x = 70; x < 132; x += 16) R(x, -18, 10, 10, rnd() < 0.5 ? LIT() : '#1a1620');
+            for (let y = 20; y < H - 80; y += 40)
+              for (let x = 32; x < 170; x += 46) {
+                R(x, y, 26, 22, rnd() < 0.5 ? LIT() : '#1a1620');
+                R(x - 5, y + 24, 36, 3, '#e8dfc6');
+                for (let b = x - 4; b < x + 32; b += 6) R(b, y + 26, 1.5, 9, '#e8dfc6');
+                R(x - 5, y + 34, 36, 2, '#e8dfc6');
+              }
+            R(76, H - 58, 48, 58, '#ffcf7a');
+          },
+          () => {
+            R(54, -34, 4, 10, '#2a2431');
+            R(142, -34, 4, 10, '#2a2431');
+            R(34, -62, 132, 30, 'rgba(10,8,14,.92)');
+            neon('ОТЕЛЬ', 100, -47, 24, trim);
+            poly(g, [56, H - 70, 144, H - 70, 150, H - 58, 50, H - 58], trim);
+          }
+        );
+      } else if (kind === 'radio') {
+        // зиккурат ар-деко: ступени к башне, пилястры, неон «РАДИО», антенна с красным огоньком
+        house(
+          outline([0, H, 0, 30, 24, 30, 24, 0, 50, 0, 50, -32, 74, -32, 74, -64, 126, -64, 126, -32, 150, -32, 150, 0, 176, 0, 176, 30, 200, 30, 200, H]),
+          () => {
+            fill('#1b3262', '#0b1530');
+            for (let x = 10; x < BWP; x += 22) R(x, -64, 3, H + 64, '#24407d');
+            for (const [x, w, y] of [[0, 200, 30], [24, 152, 0], [50, 100, -32], [74, 52, -64]]) R(x, y, w, 3, '#7fb2ff');
+            wins(16, 78, 190, H - 60, 12, 10, 22, 26, 0.3, '#0d1a38');
+            R(14, 36, 172, 34, 'rgba(8,12,26,.85)');
+            neon('РАДИО', 100, 53, 26, '#7fb2ff');
+            R(78, H - 54, 44, 54, '#cfe3ff');
+          },
+          () => {
+            R(97, -124, 6, 60, '#9aa4b8');
+            for (const y of [-112, -100, -88]) R(88, y, 24, 2, '#9aa4b8');
+            dot(100, -124, 5, '#ff3d3d');
+          }
+        );
+      } else if (kind === 'bar') {
+        // фальшфасад с изогнутым верхом, кирпич, полосатая маркиза с фестоном, вывеска на кронштейне
+        house(
+          () => {
+            g.beginPath();
+            g.moveTo(0, H);
+            g.lineTo(0, 44);
+            g.lineTo(28, 44);
+            g.lineTo(28, 16);
+            g.quadraticCurveTo(100, -40, 172, 16);
+            g.lineTo(172, 44);
+            g.lineTo(200, 44);
+            g.lineTo(200, H);
+            g.closePath();
+          },
+          () => {
+            fill('#6a3022', '#3a1812');
+            for (let y = -20; y < H; y += 9) {
+              R(0, y, BWP, 1.2, '#2e130d');
+              for (let x = ((y + 20) / 9) % 2 ? 0 : 12; x < BWP; x += 24) R(x, y, 1.2, 9, '#2e130d');
+            }
+            R(60, -2, 80, 26, 'rgba(10,8,14,.85)');
+            neon('БАР', 100, 11, 20, '#ff8a3d');
+            wins(20, 50, 186, H - 120, 22, 26, 40, 46, 0.55, '#1e0f0b');
+            R(10, H - 70, 120, 52, '#ff9a4a');
+            for (let x = 40; x < 130; x += 30) R(x, H - 70, 2, 52, '#3a1812');
+            R(144, H - 72, 40, 72, '#2a1a12');
+          },
+          () => {
+            const ay = H - 108;
+            for (let x = 0, i = 0; x < BWP; x += 20, i++) R(x, ay, 20, 24, i % 2 ? '#f4efe6' : trim);
+            for (let x = 10, i = 0; x < BWP; x += 20, i++) {
+              g.beginPath();
+              g.arc(x, ay + 24, 10, 0, Math.PI);
+              g.fillStyle = i % 2 ? '#f4efe6' : trim;
+              g.fill();
+            }
+          }
+        );
+      } else if (kind === 'show') {
+        // арка сверху, малиновый фасад со звёздами, лампочки по арке, пилон «ШОУ» со звездой
+        house(
+          () => {
+            g.beginPath();
+            g.moveTo(6, H);
+            g.lineTo(6, 40);
+            g.arc(76, 40, 70, Math.PI, 0);
+            g.lineTo(146, H);
+            g.closePath();
+          },
+          () => {
+            fill('#7a1452', '#2e0820');
+            for (let i = 0; i < 14; i++) star(20 + rnd() * 110, 0 + rnd() * (H - 100), 4 + rnd() * 6, '#e9c46a');
+            R(16, H - 72, 120, 72, '#ffd27a');
+            R(16, H - 80, 120, 8, '#ff5fa2');
+          },
+          () => {
+            for (let i = 0; i <= 16; i++) dot(76 + 62 * Math.cos(Math.PI + (i * Math.PI) / 16), 40 + 62 * Math.sin(Math.PI + (i * Math.PI) / 16), 2.4, '#ffe9a8');
+            R(150, -74, 42, H + 74, '#2e0820');
+            g.lineWidth = 3;
+            g.strokeStyle = 'rgba(8,6,12,.55)';
+            g.strokeRect(150, -74, 42, H + 74);
+            bulbs(155, -66, 155, H - 20, 12);
+            bulbs(187, -66, 187, H - 20, 12);
+            vneon('ШОУ', 171, -44, 46, 32, '#ff5fa2');
+            star(171, -88, 16, '#ffd56a');
+          }
+        );
+      } else if (kind === 'disco') {
+        // купол над фасадом, мозаика из цветных плиток, неон «ДИСКО», зеркальный шар над входом
+        const P5 = ['#ff5fa2', '#5fe1ff', '#ffc85f', '#b28bff', '#5fffb0'];
+        house(
+          () => {
+            g.beginPath();
+            g.moveTo(0, H);
+            g.lineTo(0, 40);
+            g.lineTo(28, 40);
+            g.arc(100, 40, 72, Math.PI, 0);
+            g.lineTo(200, 40);
+            g.lineTo(200, H);
+            g.closePath();
+          },
+          () => {
+            fill('#34124c', '#170824');
+            g.globalAlpha = 0.8;
+            for (let y = -30; y < H - 150; y += 16) for (let x = 6; x < 194; x += 16) if (rnd() < 0.5) R(x, y, 13, 13, P5[rint(5)]);
+            g.globalAlpha = 1;
+            R(10, 46, 180, 40, 'rgba(10,6,16,.9)');
+            [...'ДИСКО'].forEach((ch, i) => neon(ch, 40 + i * 30, 66, 28, P5[i]));
+            R(64, H - 74, 72, 74, '#b28bff');
+            R(70, H - 68, 60, 68, '#ffd27a');
+          },
+          () => {
+            R(99, H - 150, 2, 24, '#8a8aa0');
+            dot(100, H - 104, 24, '#d8d8e6');
+            g.strokeStyle = '#8a8aa0';
+            g.lineWidth = 1.4;
+            for (let k = -2; k <= 2; k++) {
+              g.beginPath();
+              g.ellipse(100, H - 104, 24, Math.abs(k) * 8 + 2, 0, 0, PI2);
+              g.stroke();
+              g.beginPath();
+              g.ellipse(100, H - 104, Math.abs(k) * 8 + 2, 24, 0, 0, PI2);
+              g.stroke();
+            }
+            dot(92, H - 112, 5, '#fff');
+          }
+        );
+      } else if (kind === 'brick') {
+        // доходный дом: труба, выступающий карниз, пожарная лестница, бак на крыше
+        house(
+          outline([12, H, 12, 0, 140, 0, 140, -30, 160, -30, 160, 0, 188, 0, 188, H]),
+          () => {
+            fill(shade(wall, 0.08), shade(wall, -0.4));
+            R(140, -30, 20, 30, shade(wall, -0.25));
+            wins(24, 26, 124, H - 60, 20, 24, 32, 44, 0.4);
+            R(12, H - 50, BWP, 50, shade(wall, -0.5));
+            R(80, H - 46, 36, 46, '#2a1a12');
+            R(22, H - 40, 50, 28, LIT());
+            R(126, H - 40, 52, 28, LIT());
+          },
+          () => {
+            R(4, -2, 192, 10, shade(wall, 0.35));
+            for (let x = 8; x < 192; x += 10) R(x, 8, 5, 5, shade(wall, 0.25));
+            for (let y = 60; y < H - 50; y += 44) {
+              R(118, y, 74, 3, '#1c1820');
+              for (let x = 120; x < 192; x += 6) R(x, y - 12, 1.2, 12, '#1c1820');
+              g.strokeStyle = '#1c1820';
+              g.lineWidth = 2.4;
+              g.beginPath();
+              g.moveTo(124, y);
+              g.lineTo(184, y + 44);
+              g.stroke();
+            }
+            for (const x of [44, 52, 80, 88]) R(x, -24, 3, 22, '#241c17');
+            R(40, -62, 52, 40, '#6b4a32');
+            for (const y of [-54, -44, -34]) R(40, y, 52, 2, '#3a281c');
+            poly(g, [36, -62, 96, -62, 66, -80], '#3a2a22');
+          }
+        );
+      } else if (kind === 'office') {
+        // высотка в стекле со скошенной крышей и антенной
+        house(
+          outline([18, H, 18, 26, 182, -24, 182, H]),
+          () => {
+            fill('#2d3a52', '#151c2a');
+            for (let y = -24; y < H - 50; y += 22) {
+              R(0, y + 17, BWP, 3, '#3c4c6a');
+              for (let x = 22; x < 180; x += 23) R(x, y, 19, 16, rnd() < 0.3 ? '#cfe3ff' : rnd() < 0.3 ? LIT() : '#1a2234');
+            }
+            R(0, H - 50, BWP, 50, '#10151f');
+            R(60, H - 44, 80, 44, '#cfe3ff');
+          },
+          () => {
+            R(166, -48, 3, 30, '#9aa4b8');
+            dot(167.5, -48, 3.5, '#ff3d3d');
+          }
+        );
+      } else {
+        // дом с лавкой под двускатной крышей: окно-розетка во фронтоне, вывеска, маркиза, витрина
+        house(
+          outline([4, H, 4, 44, 100, -32, 196, 44, 196, H]),
+          () => {
+            fill(shade(wall, 0.18), shade(wall, -0.3));
+            dot(100, 14, 14, rnd() < 0.6 ? LIT() : '#1a1620');
+            R(4, 40, 192, 6, shade(wall, 0.4));
+            wins(20, 62, 186, H - 110, 26, 30, 44, 48, 0.45);
+            R(14, H - 58, 110, 50, LIT());
+            R(140, H - 58, 40, 58, '#2a1a12');
+          },
+          () => {
+            R(10, H - 104, 180, 28, '#f4efe6');
+            text(['АПТЕКА', 'ЦВЕТЫ', 'КНИГИ', 'КОФЕ', 'ПЕКАРНЯ', 'МУЗЫКА'][rint(6)], 100, H - 90, 17, shade(trim, -0.45));
+            poly(g, [0, H - 76, BWP, H - 76, BWP - 8, H - 60, 8, H - 60], trim);
+          }
+        );
       }
-      // неоновая вывеска
-      g.fillStyle = 'rgba(10,8,14,.85)';
-      g.fillRect(14, 18, 172, 46);
-      g.font = `800 ${WORDS[i].length > 5 ? 30 : 36}px ${FONT}`;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.shadowColor = TRIMS[i];
-      g.shadowBlur = 12;
-      g.fillStyle = TRIMS[i];
-      g.fillText(WORDS[i], 100, 43);
-      g.shadowBlur = 0;
-      // витрина и дверь
-      g.fillStyle = shade(wall, -0.5);
-      g.fillRect(0, H - 62, 200, 62);
-      g.fillStyle = '#ffcf7a';
-      g.fillRect(12, H - 52, 70, 40);
-      g.fillRect(118, H - 52, 70, 40);
-      g.fillStyle = '#2a1a12';
-      g.fillRect(88, H - 56, 24, 56);
       return c;
-    });
+    };
+    const KINDS = ['theater', 'casino', 'cinema', 'hotel', 'radio', 'bar', 'show', 'disco', 'brick', 'brick', 'office', 'shop', 'shop'];
+    const bld = KINDS.map((kind, i) => facade(kind, WALLS[i % WALLS.length], TRIMS[(i * 3) % TRIMS.length]));
+    // порядок домов вдоль улицы: заранее и так, чтобы рядом не стояли два одинаковых
+    const bldSeq = [];
+    for (let i = 0; i < 64; i++) {
+      let v;
+      do v = rint(bld.length);
+      while (v === bldSeq[i - 1] || v === bldSeq[i - 2]);
+      bldSeq.push(v);
+    }
 
     // ---- аватарки грузим сразу; пока не загрузилась — инициалы, потом машина перерисовывается ----
     const ava = RC.map((_, i) => avaOf(i, null));
@@ -1998,7 +2479,8 @@ const TR = (() => {
     const layout = () => {
       W = Math.max(240, wrap.clientWidth || 640);
       H = Math.max(240, wrap.clientHeight || 480);
-      Q = lowfx ? 0.75 : Math.min(devicePixelRatio || 1, 2);
+      // чёткость: на телефоне экран плотный — меньше 1,5 точки на пиксель уже заметно мылит
+      Q = Math.min(devicePixelRatio || 1, lowfx ? 1.5 : 2);
       Q = Math.min(Q, Math.sqrt(2600000 / (W * H))); // огромный экран — не больше ~2,6 млн точек: кадр успевает
       cv.width = Math.round(W * Q);
       cv.height = Math.round(H * Q);
@@ -2224,7 +2706,25 @@ const TR = (() => {
     let shake = 0;
     let best = 0;
     let broke = false;
+    let bank = 0; // монет в банке (до этого забега)
+    let banked = false; // монеты этого забега уже в банке
+    let saving = Promise.resolve(); // запись рекорда и банка — перед выходом дожидаемся
     runBest().then((b) => (best = Math.max(best, b)));
+    runBank().then((b) => (bank = b));
+    // монеты забега — в банк (один раз за забег)
+    const deposit = () => {
+      if (banked) return saving;
+      banked = true;
+      const add = coins;
+      if (!add) return saving;
+      bank += add;
+      saving = Promise.all([saving, runBank(add)]).then(([, total]) => {
+        if (total) bank = total;
+        const el = over.querySelector('.wr-bank');
+        if (el) el.textContent = bank;
+      });
+      return saving;
+    };
     const take = () => {
       for (const o of pool) if (!o.on) return o;
       return null;
@@ -2271,6 +2771,7 @@ const TR = (() => {
       t = tRun = dist = v = px = py = vy = roll = camX = coins = shake = 0;
       lane = 1;
       broke = false;
+      banked = false;
       nextRow = 44;
       for (let ln = 0; ln < 3; ln++) put(5, ln, 7, 0);
       over.hidden = true;
@@ -2473,7 +2974,7 @@ const TR = (() => {
         if (zb > 1.2 && zb < FAR) {
           ctx.globalAlpha = fogA(zb);
           for (let s = -1; s <= 1; s += 2) {
-            const sp = bld[(k * 5 + (s > 0 ? 3 : 0) + (k >> 2)) & 7];
+            const sp = bld[bldSeq[(k * 2 + (s > 0 ? 1 : 0)) & 63]];
             const x = s * 11.2;
             const l = SX(x - BLD_W / 2, zb);
             const r = SX(x + BLD_W / 2, zb);
@@ -2585,7 +3086,7 @@ const TR = (() => {
       ctx.font = hudSmall;
       ctx.drawImage(coinSp, 16, 20 + fs, fs * 0.62, fs * 0.62);
       ctx.fillStyle = '#f4efe6';
-      ctx.fillText(`${coins}   ·   рекорд ${Math.max(best, 0)}`, 22 + fs * 0.62, 22 + fs);
+      ctx.fillText(`${coins}   ·   в банке ${bank + (banked ? 0 : coins)}   ·   рекорд ${Math.max(best, 0)}`, 22 + fs * 0.62, 22 + fs);
       if (phase === 'intro' || tRun < 3.5) {
         const a = phase === 'intro' ? 1 : Math.max(0, 1 - (tRun - 2.5));
         if (a > 0) {
@@ -2639,20 +3140,21 @@ const TR = (() => {
       const s = score();
       const prev = best;
       if (s > best) best = s;
+      deposit();
       const rc = RC[killer] || RC[0];
       const pic = rc.icon && avaOk[killer] ? `<img src="${escH(rc.icon)}" alt="" referrerpolicy="no-referrer">` : escH(initials(rc.name));
       over.innerHTML = `<div class="wr-card" role="dialog" aria-label="Забег окончен">
         <span class="wr-ava" style="background:${PAL[killer % PAL.length]}">${pic}</span>
         <span class="wr-k">Вас выбил канал</span>
         <b class="wr-name">${escH(rc.name)}</b>
-        <div class="wr-sc"><span><small>счёт</small><b>${s}</b></span><span><small>монетки</small><b>${coins}</b></span><span><small>рекорд</small><b>${best}</b></span></div>
+        <div class="wr-sc"><span><small>счёт</small><b>${s}</b></span><span><small>рекорд</small><b>${best}</b></span><span><small>монетки</small><b>+${coins}</b></span><span><small>в банке</small><b class="wr-bank">${bank}</b></span></div>
         ${s > prev && prev > 0 ? '<span class="wr-new">★ Новый рекорд!</span>' : ''}
         <div class="wr-acts"><button type="button" class="btn primary wr-again">Ещё раз</button><button type="button" class="btn wr-back">На аллею</button></div>
         <span class="wr-tip">${touch ? '' : 'Пробел — ещё раз · Esc — на аллею'}</span>
       </div>`;
       over.hidden = false;
       over.querySelector('.wr-again').focus();
-      if (s > prev) best = await runBest(s);
+      if (s > prev) saving = Promise.all([saving, runBest(s)]);
     }
     function again() {
       reset();
@@ -2750,7 +3252,7 @@ const TR = (() => {
       ro.observe(wrap);
     }
     let gone = false;
-    function destroy() {
+    async function destroy() {
       if (gone) return;
       gone = true;
       cancelAnimationFrame(raf);
@@ -2758,9 +3260,12 @@ const TR = (() => {
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('visibilitychange', onVis);
       ro?.disconnect();
+      deposit(); // вышли посреди забега — собранные монеты всё равно в банк
       wrap.remove();
-      // холсты отдаём сразу, не дожидаясь сборщика мусора: видеопамять нужна аллее, которая сейчас вернётся
+      // холсты отдаём сразу, не дожидаясь сборщика мусора
       for (const c of [cv, sky, pl, shadowSp, lowSp, highSp, gateSp, coinSp, moldSp, lampSp, palmSp, ...ava, ...carSp, ...bld]) if (c) c.width = c.height = 0;
+      // после выхода страница перезагружается — сначала дописываем рекорд и банк (но не дольше 1,5 с)
+      await Promise.race([saving.catch(() => {}), new Promise((r) => setTimeout(r, 1500))]);
       onExit?.();
     }
     layout();
@@ -3038,6 +3543,9 @@ const TR = (() => {
       } else if (r) remoteChanged = true;
     }
     if (settings?.criteria && stableJson(settings.criteria) !== stableJson(remote.settings?.criteria)) remoteChanged = true;
+    // свои наборы — слиянием по каждому набору (свежее побеждает); у старых версий их нет — не трогаем
+    const outSets = settings?.customSets || remote.settings?.customSets ? mergeSets(settings?.customSets, remote.settings?.customSets) : null;
+    if (outSets && stableJson(outSets) !== stableJson(remote.settings?.customSets || null)) remoteChanged = true;
     if (stats && stableJson(stats) !== stableJson(remote.stats)) remoteChanged = true;
     // Список плейлистов: сливаем по каждому плейлисту; null — у устройства его нет (старая версия), не трогаем
     const outPlaylists = playlists || remote.playlists ? mergePlaylists(playlists, remote.playlists) : null;
@@ -3051,7 +3559,7 @@ const TR = (() => {
     const remoteCriteria = remote.settings?.criteria || null;
     const outStats = stats || remote.stats || null;
     if (remoteChanged) {
-      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA }, stats: outStats, playlists: outPlaylists, fame: outFame, videos: next });
+      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA, ...(outSets ? { customSets: outSets } : {}) }, stats: outStats, playlists: outPlaylists, fame: outFame, videos: next });
       if (fileId) {
         await driveFetch(token, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }, fetchFn);
       } else {
@@ -3061,7 +3569,7 @@ const TR = (() => {
         await driveFetch(token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart }, fetchFn);
       }
     }
-    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria, remoteStats: outStats, playlists: playlistsChanged ? outPlaylists : null, fame: fameChanged ? outFame : null };
+    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria, customSets: outSets, remoteStats: outStats, playlists: playlistsChanged ? outPlaylists : null, fame: fameChanged ? outFame : null };
   }
 
   // Отправка операции в background (он сериализует все записи)
@@ -3080,6 +3588,12 @@ const TR = (() => {
     CATALOG_IDS,
     COMMON_CRITERIA,
     VIDEO_TYPES,
+    USER_SET_RE,
+    MAX_USER_SETS,
+    useSettings,
+    userSet,
+    isTypeId,
+    mergeSets,
     DEFAULT_TYPE,
     videoType,
     typeCriteria,
@@ -3156,6 +3670,7 @@ const TR = (() => {
     fitFameWalks,
     fameWalk,
     fameRun,
+    fameBank: runBank,
     thumbHQ,
     thumbFallback,
     watchThumbFallback,

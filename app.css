@@ -4585,6 +4585,7 @@ a.fame-tile:focus-visible {
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-width: 0;
   padding: 8px 4px;
   border-radius: 12px;
   background: var(--surface-2);
@@ -4594,8 +4595,10 @@ a.fame-tile:focus-visible {
   font-size: 11px;
 }
 .wr-sc b {
+  overflow: hidden;
   color: var(--text);
-  font: 700 18px var(--font-display);
+  font: 700 17px var(--font-display);
+  text-overflow: ellipsis;
 }
 .wr-new {
   color: #6ee7b7;
@@ -5482,4 +5485,43 @@ body:has(#view-fame:not([hidden])) {
     linear-gradient(0deg, rgba(0, 0, 0, 0) 0 calc(100% - 6px), #2c2636 calc(100% - 6px)),
     url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22132%22%20height%3D%2276%22%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2252%22%20y%3D%228%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2294%22%20y%3D%228%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2246%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2252%22%20y%3D%2246%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23ffb85c%22%2F%3E%3Crect%20x%3D%2294%22%20y%3D%2246%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3C%2Fsvg%3E"),
     linear-gradient(90deg, #120f17, #1d1926);
+}
+
+/* ---- Телефон: игра — на весь экран, поверх шапки и нижнего меню; кнопка «✕» — не под вырезом экрана ---- */
+.w3.phone.w3-game {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: auto;
+  height: auto !important;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.w3.phone.w3-game .wr-x {
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+}
+.w3.phone.w3-game .wr-over {
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.w3-gaming .w3-banner {
+  visibility: hidden;
+}
+/* аллея на телефоне не листается и не «пружинит» вместе со страницей */
+html:has(#view-fame:not([hidden])) {
+  overscroll-behavior: none;
+}
+/* короткая страница: документ выше экрана с учётом вырезов сверху и снизу — у приложения с главного экрана
+   iPhone «100vh» короче настоящего экрана, и иначе нижнее меню поднималось над краем */
+body {
+  min-height: calc(100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px) + 1px);
+  min-height: calc(100lvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px) + 1px);
+}
+/* на время игры у раздела не должно быть сдвига от анимации появления — иначе «весь экран» считается от него */
+.view:has(.w3-gaming) {
+  transform: none !important;
+  animation: none !important;
 }
