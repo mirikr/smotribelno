@@ -4487,13 +4487,13 @@ a.fame-tile:focus-visible {
 .w3-off *::after {
   animation-play-state: paused !important;
 }
-/* Забег за ремонтом: холст поверх аллеи, сама аллея на это время спрятана и стоит */
-.w3-game > :not(.w3-run) {
+/* Забег за ремонтом: холст на месте аллеи. 3D-сцену (небо и улицу) shared.js на время игры снимает
+   со страницы, а после игры собирает аллею заново и с начала. Здесь прячутся оставшиеся панели
+   и стоят анимации баннера с горой (телефон). */
+.w3-game .w3-hud,
+.w3-game .w3-ctl {
   visibility: hidden;
 }
-.w3-game *,
-.w3-game *::before,
-.w3-game *::after,
 .w3-gaming .w3-banner *,
 .w3-gaming .w3-banner *::before,
 .w3-gaming .w3-banner *::after {
@@ -4613,6 +4613,30 @@ a.fame-tile:focus-visible {
   min-height: 1em;
   color: var(--muted);
   font-size: 11px;
+}
+/* подпись у звезды: стрелки к соседней звезде — рядом с «Рассмотреть» / «Прорваться» */
+.w3-cap .w3-acts {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-items: center;
+  gap: 6px;
+}
+.w3-cap .w3-acts .btn {
+  margin: 0;
+}
+/* стрелки и «+ −» — квадратные кнопки со значком */
+.w3-step,
+.w3-zoom {
+  justify-content: center;
+  min-width: 32px;
+  padding-inline: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.w3-step:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 /* указатели бульваров — поменьше */
 .w3-post {
@@ -5441,4 +5465,21 @@ body:has(#view-fame:not([hidden])) {
 .w3-far > .w3-f,
 .w3-far > .w3-roofbb {
   display: none;
+}
+
+/* торцы домов (бока к зрителю) — с окнами: одна общая плитка на все дома, картинка рисуется один раз */
+.w3-endf {
+  background-image:
+    linear-gradient(0deg, rgba(0, 0, 0, 0) 0 calc(100% - 6px), var(--trim) calc(100% - 6px)),
+    url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22132%22%20height%3D%2276%22%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2252%22%20y%3D%228%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23ffd27a%22%2F%3E%3Crect%20x%3D%2294%22%20y%3D%228%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2246%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23ffd27a%22%2F%3E%3Crect%20x%3D%2252%22%20y%3D%2246%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2294%22%20y%3D%2246%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3C%2Fsvg%3E"),
+    linear-gradient(90deg, color-mix(in srgb, var(--side) 75%, #000), var(--side));
+  background-size: auto, 132px 76px, auto;
+  background-position: 0 0, 4px calc(100% - 14px), 0 0;
+  background-repeat: no-repeat, repeat, no-repeat;
+}
+.w3-back .w3-endf {
+  background-image:
+    linear-gradient(0deg, rgba(0, 0, 0, 0) 0 calc(100% - 6px), #2c2636 calc(100% - 6px)),
+    url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22132%22%20height%3D%2276%22%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2252%22%20y%3D%228%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2294%22%20y%3D%228%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2246%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3Crect%20x%3D%2252%22%20y%3D%2246%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23ffb85c%22%2F%3E%3Crect%20x%3D%2294%22%20y%3D%2246%22%20width%3D%2224%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23120f17%22%2F%3E%3C%2Fsvg%3E"),
+    linear-gradient(90deg, #120f17, #1d1926);
 }

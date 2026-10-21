@@ -3,7 +3,7 @@
 // «Доступна новая версия», по кнопке присылает «skip» — тогда новая версия включается, страница перезагружается.
 // Имя кэша при сборке заменяется отпечатком файлов (mobile/build.js), поэтому любая правка = новая версия.
 // Превью видео (i.ytimg.com) и запросы к YouTube и Google не кэшируются.
-const CACHE = 'smotribelno-a8583891fe';
+const CACHE = 'smotribelno-76f074299a';
 const SHELL = ['./', './index.html', './app.css', './app.js', './manifest.webmanifest', './icons/192.png', './shared.js', './starhall.css'];
 
 self.addEventListener('install', (e) => {

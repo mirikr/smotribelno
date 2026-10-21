@@ -799,19 +799,36 @@ const TR = (() => {
   // racers — каналы для забега за ремонтом ([{ name, icon }] или функция, которая их вернёт); без них — каналы со звёздами.
   const W3_TILT = 62; // наклон тротуара, градусов (вид с аллеи)
   const W3_TILT_TOP = 30; // вид сверху: камера поднята, на звёзды смотрим почти сверху
-  function fameWalk(host, { items, onOpen, lite = false, racers = null }) {
+  function fameWalk(host, { items, onOpen, lite = false, racers = null, onBuilt = null, _now = false }) {
     const liteAsked = lite; // для пересборки при смене ширины
     if (!host) return;
     const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     const sig = items.map((it) => it.sign || it.title + '|' + (it.sub || '')).join('¦');
     if (host._sig === sig && host.firstChild) return; // то же самое — не перестраиваем, прогулка продолжается с того же места
+    // Сначала — заставка «Аллея готовится», и только когда она уже на экране — тяжёлая сборка улицы.
+    // Иначе страница просто замирала на время сборки, и раздел открывался рывком.
+    if (!_now) {
+      const token = (host._build = {});
+      host._sig = null;
+      host.innerHTML = `<div class="w3 loading${(host.clientWidth || innerWidth) < 620 ? ' phone' : ''}"><div class="w3-load" aria-hidden="true"><span class="w3-load-star">★</span><b>Аллея готовится…</b><i class="w3-load-bar"><i></i></i></div></div>`;
+      const build = () => {
+        if (host._build !== token || !host.isConnected) return;
+        host._build = null;
+        fameWalk(host, { items, onOpen, lite, racers, onBuilt, _now: true });
+        fitFameNames(host); // длинные имена — мельче, чтобы не выходили за звезду
+        onBuilt?.();
+      };
+      requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(build, 0)));
+      setTimeout(build, 400); // страховка: кадры могут не идти (вкладка в фоне)
+      return;
+    }
     host._sig = sig;
     // слабое устройство: совсем слабое — без машин, послабее — без мерцаний и «дышащего» света
     const cores = navigator.hardwareConcurrency || 8;
     const mem = navigator.deviceMemory || 8;
     if (cores <= 2 || mem <= 2) lite = true;
     const lowfx = lite || cores <= 4 || mem <= 4;
-    const firstShow = !host._shown; // заставка «Аллея готовится» — только при первом показе
+    const firstShow = !host._shown || _now; // заставка «Аллея готовится» — пока собирается улица
     host._shown = true;
     // телефон (узкий экран): только вид сверху, а над улицей — полоса с горой СМОТРИБЕЛЬНО целиком
     const hostW = host.clientWidth || innerWidth;
@@ -1118,7 +1135,7 @@ const TR = (() => {
             const L = 260 + Math.round(rnd() * 300);
             const H = h0 + Math.round(rnd() * (h1 - h0)); // выше передних домов, но ниже верхней границы экрана
             const D = 160 + Math.round(rnd() * 60);
-            houses += `<div class="w3-bld ${sideCls} w3-back" style="left:${x + out * off}px;bottom:${y}px;height:${L}px;--h:${H}px;--d:${D}px;--side:#1d1926;--trim:#2c2636"><div class="w3-wall ${sideCls} w3-back" style="width:${H}px;height:${L}px;background-image:${wallSvg('back', H, L)}"></div><i class="w3-roof"></i>${off < 400 ? '<i class="w3-endf"></i>' : ''}</div>`;
+            houses += `<div class="w3-bld ${sideCls} w3-back" style="left:${x + out * off}px;bottom:${y}px;height:${L}px;--h:${H}px;--d:${D}px;--side:#1d1926;--trim:#2c2636"><div class="w3-wall ${sideCls} w3-back" style="width:${H}px;height:${L}px;background-image:${wallSvg('back', H, L)}"></div><i class="w3-roof"></i><i class="w3-endf"></i></div>`;
             y += L + gap + Math.round(rnd() * gap);
           }
     }
@@ -1234,7 +1251,7 @@ const TR = (() => {
         </div>
         <div class="w3-fog"></div>
       </div>
-      <div class="w3-ctl"><span class="w3-hint">Листайте, чтобы идти по аллее</span>${rows.filter((r) => r.sign).map((r) => `<button type="button" class="btn small w3-jump" data-jump="${r.z}">${escH(r.sign).replace(/^(\S+\s)/, '<span class="w3-jpre">$1</span>')}</button>`).join('')}${phone ? '' : '<button type="button" class="btn small w3-cam" aria-pressed="false" title="Посмотреть на аллею сверху"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 15l8 4 8-4M4 10l8 4 8-4-8-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="w3-cam-t">Вид сверху</span></button><button type="button" class="btn small w3-full" title="На весь экран" aria-label="На весь экран"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'}<button type="button" class="btn small w3-auto">▶ Прогуляться</button></div>
+      <div class="w3-ctl"><span class="w3-hint"${phone ? '' : ' title="Колесо мыши, стрелки ↑ ↓ — идти; ← → — к соседней звезде; + и − — приблизить или отдалить"'}>${phone ? 'Ведите пальцем, чтобы идти' : 'Листайте, чтобы идти по аллее'}</span>${rows.filter((r) => r.sign).map((r) => `<button type="button" class="btn small w3-jump" data-jump="${r.z}">${escH(r.sign).replace(/^(\S+\s)/, '<span class="w3-jpre">$1</span>')}</button>`).join('')}${phone ? '' : '<button type="button" class="btn small w3-cam" aria-pressed="false" title="Посмотреть на аллею сверху"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 15l8 4 8-4M4 10l8 4 8-4-8-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="w3-cam-t">Вид сверху</span></button><button type="button" class="btn small w3-zoom" data-zoom="1" title="Приблизить (+)" aria-label="Приблизить">+</button><button type="button" class="btn small w3-zoom" data-zoom="-1" title="Отдалить (−)" aria-label="Отдалить">−</button><button type="button" class="btn small w3-full" title="На весь экран" aria-label="На весь экран"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'}<button type="button" class="btn small w3-auto">▶ Прогуляться</button></div>
       <div class="w3-hud">
         <div class="w3-cap" aria-live="polite"></div>
         <div class="w3-prog"><span></span></div>
@@ -1269,6 +1286,11 @@ const TR = (() => {
     setCam(topView);
     let auto = false;
     let shown = -2;
+    // приближение клавишами + и − (и кнопками) — плавно, в пределах; переживает перерисовку
+    const ZMIN = 0.75;
+    const ZMAX = 1.6;
+    let uz = host._zoom || 1;
+    let uzTo = uz;
     // Размер меряем только при изменении окна, а не каждый кадр
     let sc = 1;
     const measure = () => {
@@ -1342,33 +1364,42 @@ const TR = (() => {
         }
       }
     };
+    // У какой звезды стоим: ближайшая впереди, в «зоне взгляда» (-1 — звёзды позади, впереди ремонт).
+    // Сверху «зона взгляда» дальше по тротуару: камера смотрит вниз, ближняя часть внизу экрана.
+    const starIdx = rows.map((r, i) => (r.sign ? -1 : i)).filter((i) => i >= 0);
+    const lookAt = (t) => 170 + ((W3_TILT - t) / (W3_TILT - W3_TILT_TOP)) * 60;
+    const starAt = (p, t) => {
+      let best = -1;
+      let bd = Infinity;
+      for (const i of starIdx) {
+        const d = rows[i].z - p - lookAt(t);
+        if (d > -140 && Math.abs(d) < bd) {
+          bd = Math.abs(d);
+          best = i;
+        }
+      }
+      return best;
+    };
     const apply = () => {
       host._pos = pos;
       cullNow();
       // сверху камера подходит ближе, чтобы надписи на звёздах читались (на телефоне — ещё ближе)
       const zoom = 1 + ((phone ? 1.2 : 0.9) - 1) * ((W3_TILT - tilt) / (W3_TILT - W3_TILT_TOP));
-      floor.style.transform = `translateX(-50%) scale(${(sc * zoom).toFixed(4)}) rotateX(${tilt.toFixed(2)}deg) translateY(${pos}px)`;
+      floor.style.transform = `translateX(-50%) scale(${(sc * zoom * uz).toFixed(4)}) rotateX(${tilt.toFixed(2)}deg) translateY(${pos}px)`;
       // стоящие предметы (фонари, пальмы, указатели, машины) поворачиваются на тот же угол — стоят ровно
       if (tilt !== tiltShown) w3.style.setProperty('--tilt', (tiltShown = tilt).toFixed(2));
       if (Math.abs(pos - carsAt) > 80) carsNow(); // машины проверяем, когда заметно сдвинулись (и по таймеру)
       move.style.transform = reduce ? '' : `translateY(${(Math.sin(pos / 85) * 1.8).toFixed(2)}px)`; // покачивание шага
       prog.style.width = maxPos ? `${((pos / maxPos) * 100).toFixed(1)}%` : '0%';
-      // у какой звезды стоим: ближайшая впереди, в «зоне взгляда»
-      let best = -1;
-      let bd = Infinity;
-      rows.forEach((r, i) => {
-        if (r.sign) return;
-        // сверху «зона взгляда» дальше по тротуару: камера смотрит вниз, ближняя часть внизу экрана
-        const d = r.z - pos - (170 + ((W3_TILT - tilt) / (W3_TILT - W3_TILT_TOP)) * 60);
-        if (d > -140 && Math.abs(d) < bd) {
-          bd = Math.abs(d);
-          best = i;
-        }
-      });
+      const best = starAt(pos, tilt);
       if (best !== shown) {
         shown = best;
         const r = rows[best];
-        cap.innerHTML = r ? `<b>★ ${escH(r.title)}</b>${r.sub ? `<span>${r.sub}</span>` : ''}<button type="button" class="btn small w3-look" data-w3="${best}">Рассмотреть</button>` : '<b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды: ставьте их любимым каналам и роликам</span><button type="button" class="btn small primary w3-rungo" title="Мини-игра: забег от машин с аватарками каналов">🏃 Прорваться</button>';
+        // стрелки — к соседней звезде; за последней — ремонт
+        const steps = `<button type="button" class="btn small w3-step" data-step="-1" aria-label="Предыдущая звезда" title="Предыдущая звезда (←)"${best === starIdx[0] ? ' disabled' : ''}>‹</button><button type="button" class="btn small w3-step" data-step="1" aria-label="Следующая звезда" title="Следующая звезда (→)"${best === -1 ? ' disabled' : ''}>›</button>`;
+        cap.innerHTML = r
+          ? `<b>★ ${escH(r.title)}</b>${r.sub ? `<span>${r.sub}</span>` : ''}<div class="w3-acts">${steps}<button type="button" class="btn small w3-look" data-w3="${best}">Рассмотреть</button></div>`
+          : `<b>Ремонт аллеи</b><span>Скоро здесь появятся новые звёзды: ставьте их любимым каналам и роликам</span><div class="w3-acts">${steps}<button type="button" class="btn small primary w3-rungo" title="Мини-игра: забег от машин с аватарками каналов">🏃 Прорваться</button></div>`;
         floor.querySelectorAll('.w3-star.near').forEach((s) => s.classList.remove('near'));
         floor.querySelector(`.w3-star[data-w3="${best}"]`)?.classList.add('near');
       }
@@ -1382,8 +1413,9 @@ const TR = (() => {
       pos += (target - pos) * (reduce ? 1 : 0.12);
       const tiltTo = topView ? W3_TILT_TOP : W3_TILT;
       tilt = reduce || Math.abs(tiltTo - tilt) < 0.05 ? tiltTo : tilt + (tiltTo - tilt) * 0.1;
+      uz = reduce || Math.abs(uzTo - uz) < 0.002 ? uzTo : uz + (uzTo - uz) * 0.15;
       apply();
-      if (auto || Math.abs(target - pos) > 0.3 || tilt !== tiltTo) raf = requestAnimationFrame(tick);
+      if (auto || Math.abs(target - pos) > 0.3 || tilt !== tiltTo || uz !== uzTo) raf = requestAnimationFrame(tick);
     };
     // на весь экран (браузер может не разрешить — тогда просто ничего не происходит)
     w3.querySelector('.w3-full')?.addEventListener('click', () => {
@@ -1406,7 +1438,27 @@ const TR = (() => {
       if (on && !raf) raf = requestAnimationFrame(tick);
     }
     autoBtn.addEventListener('click', () => setAuto(!auto));
-    // Забег за ремонтом: на время игры аллея спрятана под холстом и стоит (анимации на паузе, машины не считаются)
+    // приблизить (dir > 0) или отдалить; прогулка при этом не останавливается
+    const zoomBy = (dir) => {
+      uzTo = Math.max(ZMIN, Math.min(ZMAX, uzTo * (dir > 0 ? 1.15 : 1 / 1.15)));
+      host._zoom = uzTo;
+      if (!raf) raf = requestAnimationFrame(tick);
+    };
+    // к соседней звезде: от той, к которой уже идём (несколько нажатий подряд — несколько звёзд)
+    const step = (dir) => {
+      setAuto(false);
+      const t = topView ? W3_TILT_TOP : W3_TILT;
+      const cur = starAt(target, t);
+      const k = cur === -1 ? starIdx.length : starIdx.indexOf(cur);
+      const n = k + dir;
+      if (n < 0 || (cur === -1 && dir > 0)) return;
+      target = n >= starIdx.length ? maxPos : Math.max(0, Math.min(maxPos, rows[starIdx[n]].z - lookAt(t)));
+      if (!raf) raf = requestAnimationFrame(tick);
+    };
+    // Забег за ремонтом. На время игры 3D-сцена (небо и улица) снимается со страницы — игре ничего не мешает.
+    // После игры страница просто перезагружается, как будто вкладку открыли заново, и аллея начинается с начала:
+    // браузер рисует тяжёлую 3D-сцену с чистого листа, без остатков игры и без дорисовки сцены задом наперёд.
+    // Приложение на телефоне по метке в sessionStorage снова откроет аллею (в расширении это делает #fame в адресе).
     let gaming = false;
     const startRun = () => {
       if (gaming) return;
@@ -1414,6 +1466,8 @@ const TR = (() => {
       cancelAnimationFrame(raf);
       raf = 0;
       gaming = true;
+      for (const el of [w3.querySelector('.w3-sky'), view, w3.querySelector('.w3-load')]) el?.remove();
+      w3.classList.remove('loading');
       w3.classList.add('w3-game');
       host.classList.add('w3-gaming');
       let list = typeof racers === 'function' ? racers() : racers;
@@ -1422,19 +1476,23 @@ const TR = (() => {
         racers: list,
         lowfx,
         onExit: () => {
-          gaming = false;
-          w3.classList.remove('w3-game');
-          host.classList.remove('w3-gaming');
-          measure();
-          bucket = null;
-          apply();
-          w3.focus({ preventScroll: true });
+          if (!w3.isConnected) return; // аллею за время игры уже пересобрали — перезагружать незачем
+          try {
+            sessionStorage.setItem('smotribelno:reopen', 'fame');
+          } catch {
+            // хранилище недоступно — откроется главная, не страшно
+          }
+          location.reload();
         },
       });
     };
     // переход сразу на нужный бульвар
     w3.addEventListener('click', (e) => {
       if (e.target.closest('.w3-rungo')) return startRun();
+      const st = e.target.closest('[data-step]');
+      if (st) return step(Number(st.dataset.step));
+      const zb = e.target.closest('[data-zoom]');
+      if (zb) return zoomBy(Number(zb.dataset.zoom));
       const j = e.target.closest('[data-jump]');
       if (!j) return;
       setAuto(false);
@@ -1480,6 +1538,17 @@ const TR = (() => {
     w3.tabIndex = 0;
     w3.addEventListener('keydown', (e) => {
       if (gaming) return;
+      const sd = { ArrowLeft: -1, KeyA: -1, ArrowRight: 1, KeyD: 1 }[e.code];
+      if (sd) {
+        e.preventDefault();
+        return step(sd);
+      }
+      // + и − (и на основной клавиатуре: «=» — это «+» без Shift)
+      const zd = { Equal: 1, NumpadAdd: 1, Minus: -1, NumpadSubtract: -1 }[e.code];
+      if (zd && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        return zoomBy(zd);
+      }
       const k = { ArrowUp: 1, KeyW: 1, ArrowDown: -1, KeyS: -1, PageDown: 3, PageUp: -3 }[e.code];
       if (!k) return;
       e.preventDefault();
@@ -1528,7 +1597,7 @@ const TR = (() => {
         const hw = host.clientWidth;
         if (hw > 0 && hw < 620 !== phone) {
           host._sig = '';
-          return fameWalk(host, { items, onOpen, lite: liteAsked, racers });
+          return fameWalk(host, { items, onOpen, lite: liteAsked, racers, onBuilt });
         }
         measure();
         bucket = null;
@@ -1571,7 +1640,7 @@ const TR = (() => {
     wrap.innerHTML = '<canvas></canvas><button type="button" class="wr-x" aria-label="Вернуться на аллею" title="Вернуться на аллею (Esc)">✕</button><div class="wr-over" hidden></div>';
     box.appendChild(wrap);
     const cv = wrap.querySelector('canvas');
-    const ctx = cv.getContext('2d', { alpha: false });
+    const ctx = cv.getContext('2d', { alpha: false }); // каждый кадр закрашен целиком — прозрачность не нужна
     const over = wrap.querySelector('.wr-over');
     const touch = matchMedia('(pointer: coarse)').matches;
     const mk = (w, h) => {
@@ -1704,25 +1773,51 @@ const TR = (() => {
       g.fillRect(116, 2, 10, 6);
       return c;
     })();
-    // Шлагбаум — только прокатиться под ним; табличка с аватаркой сверху
+    // Шлагбаум — высокая рама 3 м, широкий щит в жёлто-чёрную полоску висит над землёй, снизу просвет:
+    // сразу видно, что только прокатиться под ним. Стрелки вниз по бокам, аватарка канала — на щите.
+    // Единица — 2,4 м / 130; земля — y = 164, щит — от 0,95 до 2,5 м
     const HIGH_W = 2.4;
+    const HIGH_AVA = 93 / 164; // высота середины щита — доля высоты картинки
     const highSp = (() => {
-      const c = mk(260, 240);
+      const c = mk(260, 328);
       const g = c.getContext('2d');
       g.scale(2, 2);
+      // столбы с мигалками
       g.fillStyle = '#4a4552';
-      g.fillRect(4, 30, 8, 90);
-      g.fillRect(118, 30, 8, 90);
+      g.fillRect(3, 10, 9, 154);
+      g.fillRect(118, 10, 9, 154);
+      g.fillStyle = '#2a2630';
+      g.fillRect(0, 158, 15, 6);
+      g.fillRect(115, 158, 15, 6);
       g.fillStyle = '#ffae2e';
       g.beginPath();
-      g.arc(8, 28, 5, 0, PI2);
-      g.arc(122, 28, 5, 0, PI2);
+      g.arc(7.5, 8, 6, 0, PI2);
+      g.arc(122.5, 8, 6, 0, PI2);
       g.fill();
-      g.fillStyle = '#f4efe6';
-      g.fillRect(0, 54, 130, 14);
-      for (let x = -6; x < 130; x += 22) poly(g, [x + 8, 54, x + 18, 54, x + 10, 68, x, 68], '#e0453a');
-      g.fillStyle = '#2a2630';
-      g.fillRect(62, 22, 6, 32);
+      // щит в полоску
+      g.fillStyle = '#ffc83d';
+      g.fillRect(8, 29, 114, 84);
+      g.save();
+      g.beginPath();
+      g.rect(8, 29, 114, 84);
+      g.clip();
+      for (let x = -90; x < 130; x += 26) poly(g, [x, 113, x + 13, 113, x + 97, 29, x + 84, 29], '#1d1a22');
+      g.restore();
+      g.lineWidth = 3;
+      g.strokeStyle = '#f4efe6';
+      g.strokeRect(9.5, 30.5, 111, 81);
+      // стрелки вниз — «под ним»
+      for (const x of [26, 104]) {
+        g.fillStyle = 'rgba(20,16,26,.85)';
+        g.beginPath();
+        g.arc(x, 71, 13, 0, PI2);
+        g.fill();
+        poly(g, [x - 7, 65, x + 7, 65, x + 7, 67, x, 75, x - 7, 67], '#ffc83d');
+        poly(g, [x - 7, 72, x + 7, 72, x + 7, 74, x, 82, x - 7, 74], '#ffc83d');
+      }
+      // тень под щитом — просвет у земли
+      g.fillStyle = 'rgba(0,0,0,.35)';
+      g.fillRect(12, 113, 106, 4);
       return c;
     })();
     // заграждение «Ремонт аллеи» из конца аллеи — его человечек и прорывает
@@ -1876,7 +1971,7 @@ const TR = (() => {
       img.referrerPolicy = 'no-referrer';
       img.decoding = 'async';
       img.onload = () => {
-        if (!img.naturalWidth) return;
+        if (!img.naturalWidth || gone) return; // игру уже закрыли — машину не перерисовываем
         ava[i] = avaOf(i, img);
         carSp[i] = carOf(i);
         avaOk[i] = true;
@@ -2433,7 +2528,7 @@ const TR = (() => {
           const h = (w * highSp.height) / highSp.width;
           ctx.drawImage(highSp, xc - w / 2, bot - h, w, h);
           const a = 0.62 * sc;
-          ctx.drawImage(ava[o.r], xc - a / 2, bot - h - a * 0.25, a, a);
+          ctx.drawImage(ava[o.r], xc - a / 2, bot - h * HIGH_AVA - a / 2, a, a);
         } else {
           const a = 0.6 * sc;
           const bob = Math.sin(t * 6 + o.row) * 0.08;
@@ -2664,6 +2759,8 @@ const TR = (() => {
       document.removeEventListener('visibilitychange', onVis);
       ro?.disconnect();
       wrap.remove();
+      // холсты отдаём сразу, не дожидаясь сборщика мусора: видеопамять нужна аллее, которая сейчас вернётся
+      for (const c of [cv, sky, pl, shadowSp, lowSp, highSp, gateSp, coinSp, moldSp, lampSp, palmSp, ...ava, ...carSp, ...bld]) if (c) c.width = c.height = 0;
       onExit?.();
     }
     layout();

@@ -356,7 +356,14 @@
 
   // ---------- Списки ----------
   let view = 'home';
-  const thumb = (v, pct) => `<span class="vthumb"><img src="${TR.thumbUrl(v.id)}" alt="" loading="lazy">${v.duration ? `<span class="dur">${TR.fmtClock(v.duration)}</span>` : ''}${pct ? `<span class="bar" style="width:${pct}%"></span>` : ''}</span>`;
+  // после забега за ремонтом страница перезагружается (см. fameWalk в shared.js) — снова открываем аллею
+  try {
+    if (sessionStorage.getItem('smotribelno:reopen') === 'fame') view = 'fame';
+    sessionStorage.removeItem('smotribelno:reopen');
+  } catch {
+    // хранилище недоступно — откроется главная
+  }
+  const thumb =(v, pct) => `<span class="vthumb"><img src="${TR.thumbUrl(v.id)}" alt="" loading="lazy">${v.duration ? `<span class="dur">${TR.fmtClock(v.duration)}</span>` : ''}${pct ? `<span class="bar" style="width:${pct}%"></span>` : ''}</span>`;
   const prioChip = (p) => {
     const P = TR.PRIORITIES[p];
     return P ? `<span class="prio" style="background:${P.tint};color:${P.ink}">${TR.prioGlyph(p, 10)}${P.short}</span>` : '';
@@ -1350,6 +1357,7 @@
       items,
       racers,
       lite: true, // на телефоне — без машин и лишнего света: легче и быстрее
+      onBuilt: fitFame, // улица собирается после заставки — подогнать высоту ещё раз
       onOpen: (it) =>
         it.kind === 'ch'
           ? zoomFameChannel(it.name)
