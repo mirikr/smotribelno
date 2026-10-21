@@ -1712,10 +1712,12 @@ const TR = (() => {
     });
     return bankQ;
   }
-  // racers: [{ name, icon }] — каналы для машин; lowfx — слабое устройство; onExit() — вернулись на аллею
+  // racers: [{ name, icon, tier, dressed }] — каналы для машин, до 48; tier — откуда канал: 'star' — со звездой на аллее,
+  // 'top' — из лучших по оценкам, 'time' — из самых просматриваемых; dressed — наряженный в гараже (на будущее).
+  // lowfx — слабое устройство; onExit() — вернулись на аллею
   function fameRun(box, { racers = [], lowfx = false, onExit } = {}) {
     const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-    const RC = racers.filter((r) => r && String(r.name || '').trim()).slice(0, 16);
+    const RC = racers.filter((r) => r && String(r.name || '').trim()).slice(0, 48);
     if (!RC.length) RC.push({ name: 'Смотрибельно' });
     const wrap = document.createElement('div');
     wrap.className = 'w3-run';
@@ -1731,10 +1733,28 @@ const TR = (() => {
       c.height = Math.max(1, Math.round(h));
       return c;
     };
-    let seed = 7;
+    // каждый запуск — свой: другие каналы на машинах, другой порядок домов
+    let seed = (Math.random() * 4294967296) >>> 0;
     const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
     const rint = (n) => Math.floor(rnd() * n);
     const lerp = (a, b, t) => a + (b - a) * t;
+    // Машины идут из перемешанного «мешка»: в нём каждый канал столько раз, каков его вес — со звездой ×3,
+    // лучшие по оценкам ×2, просматриваемые ×1, наряженные +3. Так все каналы мелькают, звёздные — чаще, подряд не повторяются
+    let bag = [];
+    let lastR = -1;
+    const nextRacer = () => {
+      if (!bag.length) {
+        bag = RC.flatMap((r, i) => Array((r.tier === 'star' ? 3 : r.tier === 'top' ? 2 : 1) + (r.dressed ? 3 : 0)).fill(i));
+        for (let i = bag.length - 1; i > 0; i--) {
+          const j = rint(i + 1);
+          [bag[i], bag[j]] = [bag[j], bag[i]];
+        }
+      }
+      let k = bag.length - 1;
+      if (bag[k] === lastR && k > 0) k = rint(k);
+      lastR = bag.splice(k, 1)[0];
+      return lastR;
+    };
     const FONT = 'Manrope, system-ui, -apple-system, "Segoe UI", sans-serif';
     const PI2 = Math.PI * 2;
     const poly = (g, pts, fill) => {
@@ -1999,6 +2019,90 @@ const TR = (() => {
         g.quadraticCurveTo(118 + x * 0.55, 90 + y - 26, 118 + x, 90 + y);
         g.stroke();
       }
+      return c;
+    })();
+    // Сад между тротуаром и домами: лиственное дерево, куст, две клумбы, скамейка у тротуара, пятно света под фонарём
+    const treeSp = (() => {
+      const c = mk(220, 340);
+      const g = c.getContext('2d');
+      g.fillStyle = '#3a2a22';
+      g.fillRect(100, 200, 20, 140);
+      poly(g, [100, 250, 82, 214, 88, 210, 104, 240], '#3a2a22');
+      for (const [x, y, r, col] of [[110, 150, 92, '#1d4a31'], [60, 170, 58, '#1f5236'], [160, 168, 58, '#1f5236'], [110, 92, 64, '#256140'], [76, 120, 44, '#2a6b47'], [146, 118, 44, '#2a6b47']]) {
+        g.beginPath();
+        g.arc(x, y, r, 0, PI2);
+        g.fillStyle = col;
+        g.fill();
+      }
+      g.fillStyle = 'rgba(255,214,140,.16)'; // тёплый отсвет фонарей сверху
+      g.beginPath();
+      g.arc(96, 80, 34, 0, PI2);
+      g.fill();
+      return c;
+    })();
+    const bushSp = (() => {
+      const c = mk(180, 110);
+      const g = c.getContext('2d');
+      for (const [x, y, r, col] of [[50, 72, 38, '#1d4a31'], [130, 72, 38, '#1d4a31'], [90, 60, 46, '#235a3b'], [62, 52, 28, '#2a6b47'], [118, 50, 28, '#2a6b47']]) {
+        g.beginPath();
+        g.arc(x, y, r, 0, PI2);
+        g.fillStyle = col;
+        g.fill();
+      }
+      for (const [x, y] of [[60, 40], [96, 30], [126, 46], [80, 62], [112, 66]]) {
+        g.beginPath();
+        g.arc(x, y, 5, 0, PI2);
+        g.fillStyle = '#ff9ad5';
+        g.fill();
+      }
+      return c;
+    })();
+    const flowerOf = (cols) => {
+      const c = mk(260, 100);
+      const g = c.getContext('2d');
+      g.fillStyle = '#8a8094';
+      g.beginPath();
+      g.roundRect(4, 54, 252, 40, 14);
+      g.fill();
+      g.fillStyle = '#3a2a22';
+      g.beginPath();
+      g.roundRect(12, 50, 236, 30, 12);
+      g.fill();
+      for (let x = 20, i = 0; x < 240; x += 14, i++) {
+        const y = 28 + (i % 3) * 4;
+        g.fillStyle = '#2a6b47';
+        g.fillRect(x, y + 2, 4, 30);
+        g.beginPath();
+        g.arc(x + 2, y, 8, 0, PI2);
+        g.fillStyle = cols[i % cols.length];
+        g.fill();
+        g.beginPath();
+        g.arc(x + 2, y, 3, 0, PI2);
+        g.fillStyle = '#ffe9a8';
+        g.fill();
+      }
+      return c;
+    };
+    const flowerSp = [flowerOf(['#ff5fa2', '#ffc85f', '#f4efe6']), flowerOf(['#e0453a', '#b28bff', '#ffc85f'])];
+    const benchSp = (() => {
+      const c = mk(180, 100);
+      const g = c.getContext('2d');
+      g.fillStyle = '#2a2630';
+      for (const x of [20, 150]) g.fillRect(x, 40, 10, 60);
+      g.fillStyle = '#8a5a2b';
+      for (const y of [8, 26, 52]) g.fillRect(6, y, 168, 12);
+      g.fillStyle = '#6b4424';
+      g.fillRect(6, 64, 168, 6);
+      return c;
+    })();
+    const poolSp = (() => {
+      const c = mk(128, 128);
+      const g = c.getContext('2d');
+      const gr = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+      gr.addColorStop(0, 'rgba(255,214,140,.38)');
+      gr.addColorStop(1, 'rgba(255,214,140,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 128, 128);
       return c;
     })();
     // Дома Лас-Вегаса по сторонам — плоские, но у каждого свой силуэт и свои детали, как у домов на аллее:
@@ -2746,7 +2850,7 @@ const TR = (() => {
     // Ряд препятствий. Всегда остаётся проходимая полоса: свободная или такая, что перепрыгнуть/прокатиться
     function spawnRow(wz) {
       const d = diff();
-      const r = () => rint(RC.length);
+      const r = nextRacer;
       const bar = (ln) => put(rnd() < 0.5 ? 2 : 3, ln, wz, r());
       const road = (ln) => (rnd() < 0.6 + 0.25 * d ? put(1, ln, wz, r(), 5 + 9 * d + rnd() * 3) : bar(ln));
       const block = (ln) => (ln === 1 ? bar(ln) : road(ln));
@@ -2909,8 +3013,12 @@ const TR = (() => {
       ctx.fillRect(-20, -20, W + 40, H + 40);
       ctx.drawImage(sky, 0, 0, sky.width, sky.height, skyX - camX * 6, 0, sky.width / Q, sky.height / Q);
       // земля: полосы улицы трапециями от ближнего края до горизонта
+      // улица поперёк: дорога | бордюр | тротуар из плитки | бортовой камень | газон с садом | площадь у домов
       band(-30, 30, '#1c1722');
-      band(-7.6, 7.6, '#2b2531');
+      band(-9, 9, '#1d3a2a');
+      band(-6.65, 6.65, '#6e6577');
+      band(-6.5, 6.5, '#3d3242');
+      band(-4.15, 4.15, '#8f8598');
       band(-3.95, 3.95, '#221f29');
       band(-1.4, 1.4, '#7d7387');
       band(-1.25, 1.25, '#3b2d3c');
@@ -2936,6 +3044,16 @@ const TR = (() => {
         const y = SY(0, z);
         ctx.moveTo(SX(-1.25, z), y);
         ctx.lineTo(SX(1.25, z), y);
+        // плитка тротуаров по обе стороны дороги
+        for (let sd = -1; sd <= 1; sd += 2) {
+          ctx.moveTo(SX(sd * 4.15, z), y);
+          ctx.lineTo(SX(sd * 6.5, z), y);
+        }
+      }
+      // продольный стык плитки
+      for (let sd = -1; sd <= 1; sd += 2) {
+        ctx.moveTo(SX(sd * 5.3, ZN), SY(0, ZN));
+        ctx.lineTo(SX(sd * 5.3, 45), SY(0, 45));
       }
       ctx.stroke();
       for (let wz = Math.ceil((cz + 2) / 11) * 11; wz < cz + 80; wz += 11) {
@@ -2954,28 +3072,56 @@ const TR = (() => {
       const kF = Math.floor((cz + FAR) / BS);
       const kN = Math.ceil((cz + 1.2) / BS);
       const nearBig = W * 1.5;
+      // стоячая картинка на земле: x — середина, w — ширина, h — высота (метры)
+      const stand = (sp, x, z, w, h) => {
+        const l = SX(x - w / 2, z);
+        const r = SX(x + w / 2, z);
+        if (r < 0 || l > W || r - l > nearBig || r - l < 1) return;
+        const top = SY(h, z);
+        ctx.drawImage(sp, l, top, r - l, SY(0, z) - top);
+      };
       for (let k = kF; k >= kN - 1; k--) {
-        const zl = k * BS + 4 - cz;
-        if (zl > 1.2 && zl < FAR) {
-          ctx.globalAlpha = fogA(zl);
-          const sp = k & 1 ? lampSp : palmSp;
-          const hgt = k & 1 ? 4.2 : 6;
-          const wdt = (hgt * sp.width) / sp.height;
+        const odd = k & 1;
+        // в каждом отрезке 8 м, от дальнего к ближнему: пальма/дерево, фонарь/скамейка, куст, клумба, дом
+        const z6 = k * BS + 6 - cz;
+        if (z6 > 1.2 && z6 < FAR) {
+          ctx.globalAlpha = fogA(z6);
           for (let s = -1; s <= 1; s += 2) {
-            const x = s * (k & 1 ? 4.3 : 5.6);
-            const l = SX(x - wdt / 2, zl);
-            const r = SX(x + wdt / 2, zl);
-            if (r < 0 || l > W || r - l > nearBig) continue;
-            const top = SY(hgt, zl);
-            ctx.drawImage(sp, l, top, r - l, SY(0, zl) - top);
+            if (odd) stand(palmSp, s * 7.9, z6, 3.2, 6);
+            else stand(treeSp, s * 8, z6, 3.4, 5.2);
           }
+        }
+        const z4 = k * BS + 4 - cz;
+        if (z4 > 1.2 && z4 < FAR) {
+          ctx.globalAlpha = fogA(z4);
+          if (odd) {
+            if (!lowfx && z4 < 60)
+              // пятно света под фонарём — лежит на тротуаре
+              for (let s = -1; s <= 1; s += 2) {
+                const ya = SY(0, z4 + 1.3);
+                const yb = SY(0, Math.max(0.9, z4 - 1.3));
+                const l = SX(s * 4.9 - 1.6, z4);
+                ctx.drawImage(poolSp, l, ya, SX(s * 4.9 + 1.6, z4) - l, yb - ya);
+              }
+            for (let s = -1; s <= 1; s += 2) stand(lampSp, s * 4.5, z4, 0.98, 4.2);
+          } else if (z4 < 70) for (let s = -1; s <= 1; s += 2) stand(benchSp, s * 6.05, z4, 1.6, 0.9);
+        }
+        const z2 = k * BS + 2.5 - cz;
+        if (z2 > 1.2 && z2 < 80) {
+          ctx.globalAlpha = fogA(z2);
+          for (let s = -1; s <= 1; s += 2) stand(bushSp, s * 7.1, z2, 1.4, 0.85);
+        }
+        const z1 = k * BS + 1 - cz;
+        if (z1 > 1.2 && z1 < 80) {
+          ctx.globalAlpha = fogA(z1);
+          for (let s = -1; s <= 1; s += 2) stand(flowerSp[(k + (s > 0 ? 1 : 0)) & 1], s * 8.1, z1, 2.3, 0.85);
         }
         const zb = k * BS - cz;
         if (zb > 1.2 && zb < FAR) {
           ctx.globalAlpha = fogA(zb);
           for (let s = -1; s <= 1; s += 2) {
             const sp = bld[bldSeq[(k * 2 + (s > 0 ? 1 : 0)) & 63]];
-            const x = s * 11.2;
+            const x = s * 12.6;
             const l = SX(x - BLD_W / 2, zb);
             const r = SX(x + BLD_W / 2, zb);
             if (r < 0 || l > W) continue;
@@ -3263,7 +3409,7 @@ const TR = (() => {
       deposit(); // вышли посреди забега — собранные монеты всё равно в банк
       wrap.remove();
       // холсты отдаём сразу, не дожидаясь сборщика мусора
-      for (const c of [cv, sky, pl, shadowSp, lowSp, highSp, gateSp, coinSp, moldSp, lampSp, palmSp, ...ava, ...carSp, ...bld]) if (c) c.width = c.height = 0;
+      for (const c of [cv, sky, pl, shadowSp, lowSp, highSp, gateSp, coinSp, moldSp, lampSp, palmSp, treeSp, bushSp, benchSp, poolSp, ...flowerSp, ...ava, ...carSp, ...bld]) if (c) c.width = c.height = 0;
       // после выхода страница перезагружается — сначала дописываем рекорд и банк (но не дольше 1,5 с)
       await Promise.race([saving.catch(() => {}), new Promise((r) => setTimeout(r, 1500))]);
       onExit?.();

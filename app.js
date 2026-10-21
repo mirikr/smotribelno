@@ -1353,11 +1353,24 @@
         ? vstars.map((v) => ({ kind: 'v', id: v.id, star: videoFameStar(v), title: v.title || 'Видео', sub: [v.rating ? `оценка <b style="color:${TR.grade(v.rating.total).mark}">${v.rating.total}</b>` : '', esc(v.channel || '')].filter(Boolean).join(' · ') }))
         : [{ kind: 'slot', star: fameStarHtml('Любимый ролик', 'custom', 'ghost'), title: 'Здесь будет первый ролик' }]),
     ];
-    // машины в забеге за ремонтом — каналы со звёздами и те, что смотрите чаще всего
-    const racers = [...stars.map((s) => byKey.get(TR.fameKey(s.name)) || { name: s.name, icon: '' }), ...list.slice().sort((a, b) => b.views + b.rated.length - (a.views + a.rated.length))]
-      .filter((c, i, a) => c.name && a.findIndex((x) => TR.fameKey(x.name) === TR.fameKey(c.name)) === i)
-      .slice(0, 16)
-      .map((c) => ({ name: c.name, icon: c.icon || '' }));
+    // Машины в забеге за ремонтом — 48 разных каналов: 16 со звёздами, 16 лучших по оценкам, 16 самых просматриваемых
+    const used = new Set();
+    const take = (cl, tier) => {
+      const out = [];
+      for (const c of cl) {
+        if (out.length >= 16) break;
+        const k = TR.fameKey(c.name);
+        if (!c.name || used.has(k)) continue;
+        used.add(k);
+        out.push({ name: c.name, icon: c.icon || '', tier });
+      }
+      return out;
+    };
+    const racers = [
+      ...take(stars.map((s) => byKey.get(TR.fameKey(s.name)) || { name: s.name, icon: '' }), 'star'),
+      ...take(list.filter((c) => c.avg != null).sort((a, b) => (b.rated.length > 1) - (a.rated.length > 1) || b.avg - a.avg || b.rated.length - a.rated.length), 'top'),
+      ...take(list.slice().sort((a, b) => (b.min || 0) - (a.min || 0) || b.views - a.views), 'time'),
+    ];
     TR.fameWalk($('#fame-box .w3-host'), {
       items,
       racers,
