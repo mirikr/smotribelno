@@ -1533,7 +1533,9 @@
       ${best.length ? `<div class="sh-sec"><span class="sh-label">Лучшее</span>${best.map((v) => card(v, false)).join('')}</div>` : ''}
       ${notes.length ? `<div class="sh-sec"><span class="sh-label">Ваши отзывы и моменты</span>${notes.map((v) => card(v, false, v.note ? `«${v.note.slice(0, 60)}${v.note.length > 60 ? '…' : ''}»` : `моментов: ${v.moments.length}`)).join('')}</div>` : ''}
       ${later.length ? `<div class="sh-sec"><span class="sh-label">Ждёт в «Позже+»</span>${later.slice(0, 5).map((v) => card(v, false)).join('')}</div>` : ''}
+      <div class="sh-sec"><span class="sh-label">Гардероб и гараж</span><p class="muted" style="font-size:13px;margin:0 0 10px">Бегун и машина канала в «Забеге за ремонтом». Вещи — за монеты из забега, один раз для всех каналов; цвета бесплатные.</p><div class="dress-host"></div></div>
       ${c.url ? `<div class="sh-sec"><a class="btn wide" href="${esc(c.url)}" target="_blank" rel="noopener">Открыть канал на YouTube ↗</a></div>` : ''}`;
+    TR.dress.editor($('#sheet-body .dress-host'), { name: c.name, icon: c.icon }); // гардероб и гараж канала
     if (!sheetEl.open) sheetEl.showModal();
     sheetEl.scrollTop = 0;
   }

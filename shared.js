@@ -1712,6 +1712,25 @@ const TR = (() => {
     });
     return bankQ;
   }
+  // списать монеты из банка (покупка в гардеробе): вернёт остаток, или −1, если монет не хватает
+  function runSpend(cost) {
+    let left = -1;
+    bankQ = bankQ.then(async () => {
+      try {
+        const st = globalThis.chrome?.storage?.local;
+        const cur = Number(st ? (await st.get(RUN_BANK))[RUN_BANK] : localStorage.getItem('smotribelno:' + RUN_BANK)) || 0;
+        if (!(cost >= 0) || cur < cost) return cur;
+        const n = cur - Math.round(cost);
+        if (st) await st.set({ [RUN_BANK]: n });
+        else localStorage.setItem('smotribelno:' + RUN_BANK, String(n));
+        left = n;
+        return n;
+      } catch {
+        return 0;
+      }
+    });
+    return bankQ.then(() => left);
+  }
   // racers: [{ name, icon, tier, dressed }] — каналы для машин, до 48; tier — откуда канал: 'star' — со звездой на аллее,
   // 'top' — из лучших по оценкам, 'time' — из самых просматриваемых; dressed — наряженный в гараже (на будущее).
   // lowfx — слабое устройство; onExit() — вернулись на аллею
@@ -1817,40 +1836,17 @@ const TR = (() => {
       g.stroke();
       return c;
     };
-    // Машина 50-х навстречу (как на аллее): решётка, фары, на крыше — круглая табличка с аватаркой канала
+    // Машина канала навстречу — из его гаража (модель, покраска, украшения; пока не наряжена — седан своего цвета),
+    // на табличке аватарка канала. 150 единиц рисунка = ширина машины CAR_W
     const CAR_W = 2.3;
+    const CARS = RC.map((r) => DRESS.carDefault(r.name));
     const carOf = (i) => {
       const k = 256 / 150;
-      const c = mk(256, 140 * k);
+      const c = mk(256, 156 * k);
       const g = c.getContext('2d');
       g.scale(k, k);
-      g.translate(0, 30);
-      const col = PAL[i % PAL.length];
-      const r = (x, y, w, h, f) => {
-        g.fillStyle = f;
-        g.fillRect(x, y, w, h);
-      };
-      const chrome = '#dcd6ca';
-      r(14, 86, 22, 22, '#0b0a0e');
-      r(114, 86, 22, 22, '#0b0a0e');
-      poly(g, [22, 44, 128, 44, 142, 62, 8, 62], shade(col, 0.3));
-      poly(g, [6, 62, 144, 62, 146, 90, 4, 90], shade(col, -0.2));
-      r(6, 62, 138, 4, shade(col, 0.08));
-      poly(g, [6, 62, 32, 62, 28, 53, 10, 53], shade(col, 0.16));
-      poly(g, [144, 62, 118, 62, 122, 53, 140, 53], shade(col, 0.16));
-      poly(g, [30, 44, 120, 44, 106, 18, 44, 18], shade(col, -0.06));
-      poly(g, [38, 42, 112, 42, 101, 22, 49, 22], 'rgba(150,190,255,.55)');
-      poly(g, [44, 18, 106, 18, 100, 10, 50, 10], shade(col, 0.42));
-      r(2, 82, 146, 7, chrome);
-      r(6, 63, 34, 17, 'rgba(255,236,170,.45)');
-      r(110, 63, 34, 17, 'rgba(255,236,170,.45)');
-      for (const x of [10, 128]) r(x, 66, 12, 10, '#fff4cc');
-      for (const x of [25, 116]) r(x, 67, 9, 8, '#fff4cc');
-      r(44, 66, 62, 14, '#1a1720');
-      for (let x = 48; x < 104; x += 7) r(x, 67, 1.5, 12, chrome);
-      // стойка таблички и сама табличка
-      r(72, 2, 6, 9, '#2a2630');
-      g.drawImage(ava[i], 75 - 25, -26, 50, 50);
+      g.translate(0, 46);
+      DRESS.drawCar(g, CARS[i], 0, ava[i], DRESS.initials(RC[i].name));
       return c;
     };
     // Заграждение пониже — перепрыгнуть; табличка с аватаркой канала-«подрядчика» посередине
@@ -2564,6 +2560,27 @@ const TR = (() => {
       img.src = rc.icon;
     });
 
+    // Бегун — образ канала, за которого играем (выбирается в профиле канала), иначе стандартный курьер.
+    // Образы читаются из хранилища, пока идёт вступление; машины и бегун потом перерисовываются один раз.
+    let PLAYER = DRESS.DEF;
+    let PNAME = '';
+    let faceSp = null;
+    DRESS.looksGet().then((d) => {
+      if (gone) return;
+      RC.forEach((r, i) => {
+        const L = DRESS.lookOf(d, r.name);
+        CARS[i] = L.car;
+        r.dressed = L.dressed; // наряженные каналы чаще попадаются в забеге
+        carSp[i] = carOf(i);
+      });
+      bag = [];
+      if (d.player) {
+        PLAYER = { ...DRESS.DEF, ...(d.ch[d.player]?.runner || {}) };
+        PNAME = d.playerName || d.ch[d.player]?.name || '';
+        if (W) buildPlayer();
+      }
+    });
+
     // ---- экран: размеры, перспектива, небо и человечек — пересобираются при смене размера ----
     let W = 0;
     let H = 0;
@@ -2663,16 +2680,7 @@ const TR = (() => {
       // человечек — всегда на одном расстоянии от камеры, поэтому его кадры рисуются сразу в нужном размере
       PHt = (1.8 * F) / ZP;
       PW = PHt * 0.9;
-      pl = mk(PW * Q * 9, PHt * 1.1 * Q);
-      const p = pl.getContext('2d');
-      p.scale(Q, Q);
-      for (let fr = 0; fr < 9; fr++) {
-        p.save();
-        p.translate(fr * PW + PW / 2 - PHt / 2, PHt * 0.05);
-        p.scale(PHt / 100, PHt / 100);
-        runner(p, fr);
-        p.restore();
-      }
+      buildPlayer();
       shadowSp = mk(PW * Q, PHt * 0.3 * Q);
       const s = shadowSp.getContext('2d');
       s.scale(Q, Q);
@@ -2684,108 +2692,39 @@ const TR = (() => {
       hudFont = `800 ${hs}px ${FONT}`;
       hudSmall = `700 ${Math.round(hs * 0.55)}px ${FONT}`;
     };
-    // Человечек со спины (в единицах: рост 100). Кадры 0–5 — бег, 6 — прыжок, 7 — перекат, 8 — сбит
-    function runner(p, fr) {
-      const skin = '#e0a982';
-      const shirt = '#7c3aed';
-      const jeans = '#2b3a67';
-      const shoe = '#f4efe6';
-      p.lineCap = 'round';
-      p.lineJoin = 'round';
-      const limb = (x0, y0, x1, y1, w, c) => {
-        p.strokeStyle = c;
-        p.lineWidth = w;
-        p.beginPath();
-        p.moveTo(x0, y0);
-        p.lineTo(x1, y1);
-        p.stroke();
-      };
-      const dot = (x, y, r, c) => {
-        p.fillStyle = c;
-        p.beginPath();
-        p.arc(x, y, r, 0, PI2);
-        p.fill();
-      };
-      if (fr === 7) {
-        // перекат — клубком у земли
-        dot(50, 84, 20, shirt);
-        p.strokeStyle = '#a78bfa';
-        p.lineWidth = 3;
-        p.beginPath();
-        p.arc(50, 84, 13, 0.4, 2.6);
-        p.stroke();
-        dot(50, 68, 10, '#3a2418');
-        p.fillStyle = '#e9c46a';
-        p.beginPath();
-        p.arc(50, 66, 10, Math.PI, PI2);
-        p.fill();
-        limb(36, 100, 44, 102, 7, shoe);
-        limb(56, 102, 64, 100, 7, shoe);
-        return;
+    // Кадры бегуна (из гардероба: 0–5 — бег, 6 — прыжок, 7 — перекат, 8 — сбит) и его портрет для угла экрана
+    function buildPlayer() {
+      pl = mk(PW * Q * 9, PHt * 1.1 * Q);
+      const p = pl.getContext('2d');
+      p.scale(Q, Q);
+      for (let fr = 0; fr < 9; fr++) {
+        p.save();
+        p.translate(fr * PW + PW / 2 - PHt / 2, PHt * 0.05);
+        p.scale(PHt / 100, PHt / 100);
+        DRESS.runner(p, fr, PLAYER);
+        p.restore();
       }
-      const a = (fr / 6) * PI2;
-      const jump = fr === 6 || fr === 8;
-      const bob = jump ? 0 : Math.abs(Math.sin(a)) * 2.5;
-      const up = (k) => Math.max(0, k) * 16;
-      // ноги
-      if (jump) {
-        limb(44, 60, 38, 74, 9, jeans);
-        limb(38, 74, 42, 88, 9, jeans);
-        limb(56, 60, 62, 76, 9, jeans);
-        limb(62, 76, 60, 90, 9, jeans);
-        limb(39, 90, 45, 90, 8, shoe);
-        limb(57, 92, 63, 92, 8, shoe);
-      } else {
-        const lL = up(Math.sin(a));
-        const lR = up(-Math.sin(a));
-        limb(44, 60 - bob, 43, 97 - lL, 9.5, jeans);
-        limb(56, 60 - bob, 57, 97 - lR, 9.5, jeans);
-        limb(40, 99 - lL, 47, 99 - lL, lL > 4 ? 9 : 7, shoe);
-        limb(53, 99 - lR, 60, 99 - lR, lR > 4 ? 9 : 7, shoe);
-      }
-      // руки
-      const sw = jump ? 0 : Math.sin(a) * 9;
-      const ay = 30 - bob;
-      if (fr === 8) {
-        limb(37, ay + 4, 22, ay - 14, 7, shirt);
-        limb(63, ay + 4, 78, ay - 14, 7, shirt);
-        dot(21, ay - 16, 4, skin);
-        dot(79, ay - 16, 4, skin);
-      } else if (jump) {
-        limb(37, ay + 4, 25, ay - 6, 7, shirt);
-        limb(63, ay + 4, 75, ay - 6, 7, shirt);
-        dot(24, ay - 8, 4, skin);
-        dot(76, ay - 8, 4, skin);
-      } else {
-        limb(37, ay + 4, 30, ay + 22 + sw, 7, shirt);
-        limb(63, ay + 4, 70, ay + 22 - sw, 7, shirt);
-        dot(30, ay + 25 + sw, 4, skin);
-        dot(70, ay + 25 - sw, 4, skin);
-      }
-      // туловище и рюкзак
-      p.fillStyle = shirt;
-      p.beginPath();
-      p.roundRect ? p.roundRect(35, ay, 30, 34, 8) : p.rect(35, ay, 30, 34);
-      p.fill();
-      p.fillStyle = '#5b21b6';
-      p.fillRect(35, ay + 26, 30, 5);
-      p.fillStyle = '#e9c46a';
-      p.beginPath();
-      p.roundRect ? p.roundRect(41, ay + 5, 18, 20, 5) : p.rect(41, ay + 5, 18, 20);
-      p.fill();
-      p.fillStyle = '#c9963f';
-      p.fillRect(41, ay + 12, 18, 3);
-      // голова: волосы и кепка козырьком назад
-      dot(50, ay - 11, 11, '#3a2418');
-      dot(39, ay - 10, 3, skin);
-      dot(61, ay - 10, 3, skin);
-      p.fillStyle = '#e9c46a';
-      p.beginPath();
-      p.arc(50, ay - 13, 11.5, Math.PI, PI2);
-      p.fill();
-      p.fillRect(44, ay - 4, 12, 4);
+      const M = faceM();
+      faceSp = mk(M * Q, M * Q);
+      const f = faceSp.getContext('2d');
+      f.scale(Q, Q);
+      f.save();
+      f.beginPath();
+      f.arc(M / 2, M / 2, M / 2 - 2, 0, PI2);
+      f.fillStyle = '#2a1838';
+      f.fill();
+      f.clip();
+      f.translate(0, M * 0.06);
+      f.scale(M / 100, M / 100);
+      DRESS.portrait(f, { ...PLAYER, gesture: 'none' });
+      f.restore();
+      f.strokeStyle = '#f2d68a';
+      f.lineWidth = 2.5;
+      f.beginPath();
+      f.arc(M / 2, M / 2, M / 2 - 2, 0, PI2);
+      f.stroke();
     }
-
+    const faceM = () => Math.round(Math.max(40, Math.min(64, W / 16)));
     // ---- состояние игры ----
     // предметы: kind 1 — машина, 2 — низкое заграждение, 3 — шлагбаум, 4 — монетка, 5 — заграждение ремонта
     const pool = Array.from({ length: 160 }, () => ({ on: false, kind: 0, lane: 0, wz: 0, row: 0, vc: 0, len: 0, r: 0, y: 0, z: 0 }));
@@ -3233,6 +3172,16 @@ const TR = (() => {
       ctx.drawImage(coinSp, 16, 20 + fs, fs * 0.62, fs * 0.62);
       ctx.fillStyle = '#f4efe6';
       ctx.fillText(`${coins}   ·   в банке ${bank + (banked ? 0 : coins)}   ·   рекорд ${Math.max(best, 0)}`, 22 + fs * 0.62, 22 + fs);
+      if (faceSp) {
+        const M = faceM();
+        ctx.drawImage(faceSp, W - 16 - M, 56, M, M);
+        if (PNAME) {
+          ctx.textAlign = 'right';
+          ctx.fillStyle = 'rgba(244,239,230,.85)';
+          ctx.fillText(PNAME.length > 22 ? PNAME.slice(0, 21) + '…' : PNAME, W - 16, 60 + M);
+          ctx.textAlign = 'left';
+        }
+      }
       if (phase === 'intro' || tRun < 3.5) {
         const a = phase === 'intro' ? 1 : Math.max(0, 1 - (tRun - 2.5));
         if (a > 0) {
@@ -3409,7 +3358,7 @@ const TR = (() => {
       deposit(); // вышли посреди забега — собранные монеты всё равно в банк
       wrap.remove();
       // холсты отдаём сразу, не дожидаясь сборщика мусора
-      for (const c of [cv, sky, pl, shadowSp, lowSp, highSp, gateSp, coinSp, moldSp, lampSp, palmSp, treeSp, bushSp, benchSp, poolSp, ...flowerSp, ...ava, ...carSp, ...bld]) if (c) c.width = c.height = 0;
+      for (const c of [cv, sky, pl, shadowSp, lowSp, highSp, gateSp, coinSp, moldSp, lampSp, palmSp, treeSp, bushSp, benchSp, poolSp, faceSp, ...flowerSp, ...ava, ...carSp, ...bld]) if (c) c.width = c.height = 0;
       // после выхода страница перезагружается — сначала дописываем рекорд и банк (но не дольше 1,5 с)
       await Promise.race([saving.catch(() => {}), new Promise((r) => setTimeout(r, 1500))]);
       onExit?.();
@@ -3421,6 +3370,1845 @@ const TR = (() => {
     wrap.focus({ preventScroll: true });
     return { destroy, wrap };
   }
+
+  // ---- Гардероб и гараж каналов ----
+  // У каждого канала свой бегун (гардероб) и своя машина (гараж); за какого бегуна играть — выбирается в профиле
+  // канала. Вещи покупаются за монеты из банка забега, один раз — и подходят любому каналу; цвета бесплатные.
+  // Каталог, отрисовка (бегун со спины и лицом, 11 ретро-машин спереди), хранение и редактор — здесь, общие для
+  // расширения и телефона. Рисуется тем же стилем, что игра; в игре бегун и машины собираются в картинки один раз.
+  const DRESS = (() => {
+    const PI2 = Math.PI * 2;
+    const shade = (hex, k) => {
+      const n = parseInt(hex.slice(1), 16);
+      return '#' + [n >> 16, (n >> 8) & 255, n & 255].map((c) => Math.round(k < 0 ? c * (1 + k) : c + (255 - c) * k).toString(16).padStart(2, '0')).join('');
+    };
+
+    const PAL = {
+      skin: ['#f6d6bd', '#f2c9a8', '#e9b896', '#e0a982', '#c98a5c', '#a0663e', '#6e4426', '#4a2c18'],
+      hair: ['#1b1512', '#3a2418', '#5e3d24', '#8a5a2b', '#c08a4a', '#e8c26a', '#c0402e', '#6f6a70', '#a9a6ad', '#e8e2f0', '#5fe1ff', '#ff5fa2', '#7c3aed'],
+      eye: ['#3a2a22', '#6b4a2a', '#2f6b8f', '#3f7a4a', '#7a7f88'],
+      cloth: ['#7c3aed', '#e0453a', '#2a8a8f', '#e9c46a', '#b9874f', '#3f8f5a', '#2b3a67', '#f4efe6', '#8a8aa0', '#1d1a22', '#ff5fa2', '#5fe1ff'],
+      accent: ['#f4efe6', '#e9c43a', '#e0453a', '#5fe1ff', '#1d1a22', '#ff5fa2', '#5fffb0'],
+      metal: ['#2a2630', '#c9a86a', '#dcd6ca', '#e0453a', '#7c3aed', '#5fe1ff'],
+    };
+    const COLORS = {
+      skin: ['Кожа', PAL.skin],
+      hairColor: ['Волосы', PAL.hair],
+      eyeColor: ['Глаза', PAL.eye],
+      beardColor: ['Борода', PAL.hair],
+      glassesColor: ['Оправа', PAL.metal],
+      headColor: ['Убор', PAL.cloth],
+      topColor: ['Верх', PAL.cloth],
+      accent: ['Полоски и отделка', PAL.accent],
+      neckColor: ['Шарф', PAL.cloth],
+      bottomColor: ['Низ', PAL.cloth],
+      shoesColor: ['Обувь', PAL.cloth],
+      backColor: ['Вещь за спиной', PAL.cloth],
+    };
+    const GROUPS = {
+      hair: { cat: 'head', label: 'Причёска', thumb: ['face', 50, 30, 76], colors: ['hairColor', 'skin'], items: [['short', 'Короткая', 0], ['fringe', 'Чёлка набок', 0], ['long', 'Длинная', 0], ['bob', 'Каре', 30], ['wavy', 'Волнистые', 40], ['tousled', 'Взъерошен­ные', 0], ['bun', 'Пучок', 30], ['curly', 'Кудри', 40], ['mohawk', 'Ирокез', 80], ['bald', 'Налысо', 0]] },
+      brows: { cat: 'head', label: 'Брови и глаза', thumb: ['face', 50, 41, 34], colors: ['eyeColor'], items: [['normal', 'Обычные', 0], ['thick', 'Густые', 0], ['thin', 'Тонкие', 0], ['arched', 'Домиком', 20]] },
+      beard: { cat: 'head', label: 'Борода и усы', thumb: ['face', 50, 54, 50], colors: ['beardColor'], items: [['none', 'Без бороды', 0], ['stubble', 'Щетина', 0], ['short', 'Короткая', 30], ['full', 'Окладистая', 60], ['mustache', 'Усы', 20], ['goatee', 'Эспаньолка', 40]] },
+      details: { cat: 'head', label: 'Лицо', thumb: ['face', 50, 48, 46], items: [['none', 'Ничего', 0], ['freckles', 'Веснушки', 0], ['blush', 'Румянец', 0], ['mole', 'Родинка', 0], ['paint', 'Грим звезды', 60]] },
+      glasses: { cat: 'head', label: 'Очки', thumb: ['face', 50, 43, 42], colors: ['glassesColor'], items: [['none', 'Без очков', 0], ['round', 'Круглые', 40], ['wire', 'Тонкие круглые', 60], ['square', 'Квадратные', 40], ['sun', 'Солнечные', 80], ['star', 'Звёздочки', 150]] },
+      earrings: { cat: 'head', label: 'Уши', thumb: ['face', 30, 50, 34], items: [['none', 'Ничего', 0], ['stud', 'Гвоздик', 30], ['ring', 'Кольцо', 40]] },
+      head: { cat: 'head', label: 'На голове', thumb: ['face', 50, 24, 86], colors: ['headColor'], items: [['none', 'Ничего', 0], ['cap', 'Кепка', 0], ['beanie', 'Шапка', 60], ['bandana', 'Бандана', 50], ['beret', 'Берет', 70], ['headphones', 'Наушники', 90], ['headset', 'Гарнитура', 120], ['cowboy', 'Ковбойская', 160], ['tophat', 'Цилиндр', 150], ['crown', 'Корона', 400], ['helmet', 'Шлем космонавта', 300]] },
+      top: { cat: 'body', label: 'Верх', thumb: ['face', 50, 84, 60], colors: ['topColor', 'accent'], items: [['tee', 'Футболка', 0], ['stripes', 'Тельняшка', 60], ['jersey', 'Кибер­майка', 90], ['hoodie', 'Худи', 50], ['sweater', 'Свитер на молнии', 70], ['jacket', 'Куртка', 120], ['suit', 'Пиджак', 180], ['tux', 'Смокинг', 250]] },
+      neck: { cat: 'body', label: 'Шея', thumb: ['face', 50, 74, 44], colors: ['neckColor'], items: [['none', 'Ничего', 0], ['scarf', 'Шарф', 40], ['chain', 'Цепочка', 80], ['medal', 'Медаль', 200]] },
+      bottom: { cat: 'body', label: 'Низ', thumb: ['back', 50, 76, 56], colors: ['bottomColor'], items: [['jeans', 'Джинсы', 0], ['shorts', 'Шорты', 0], ['skirt', 'Юбка', 40], ['track', 'Спортивки', 70]] },
+      shoes: { cat: 'body', label: 'Обувь', thumb: ['back', 50, 95, 30], colors: ['shoesColor'], items: [['sneakers', 'Кроссовки', 0], ['kedy', 'Кеды', 30], ['boots', 'Ботинки', 60]] },
+      back: { cat: 'extra', label: 'За спиной', thumb: ['back', 50, 42, 84], colors: ['backColor'], items: [['none', 'Ничего', 0], ['backpack', 'Рюкзак', 0], ['guitar', 'Гитара', 120], ['skate', 'Скейт', 100], ['cape', 'Плащ', 200], ['wings', 'Крылья', 450], ['jetpack', 'Реактивный ранец', 500]] },
+      gesture: { cat: 'extra', label: 'Жест на финише', thumb: ['face', 50, 50, 112], items: [['none', 'Без жеста', 0], ['wave', 'Помахать', 0], ['snap', 'Щелчки пальцами', 80]] },
+    };
+    // в кружке вещь должно быть видно: у причёсок снимаем головной убор, руки жеста — только в кружках жестов
+    for (const [k, gr] of Object.entries(GROUPS)) gr.base = k === 'gesture' ? {} : k === 'hair' ? { head: 'none', gesture: 'none' } : { gesture: 'none' };
+    const CATS = [['head', 'Голова'], ['body', 'Одежда'], ['extra', 'Аксессуары']];
+    const DEF = { hair: 'short', hairColor: '#3a2418', brows: 'normal', eyeColor: '#3a2a22', beard: 'none', beardColor: '#3a2418', details: 'none', glasses: 'none', glassesColor: '#2a2630', earrings: 'none', head: 'cap', headColor: '#e9c46a', top: 'tee', topColor: '#7c3aed', accent: '#f4efe6', neck: 'none', neckColor: '#e0453a', bottom: 'jeans', bottomColor: '#2b3a67', shoes: 'sneakers', shoesColor: '#f4efe6', back: 'backpack', backColor: '#e9c46a', gesture: 'none', skin: '#e0a982' };
+    const PRESETS = [
+      ['Курьер', {}],
+      ['Седина и борода', { hair: 'tousled', hairColor: '#a9a6ad', beard: 'short', beardColor: '#5d5a5f', head: 'none', top: 'sweater', topColor: '#b9874f', back: 'none', skin: '#e9b896', brows: 'thick' }],
+      ['Каре и очки', { hair: 'bob', hairColor: '#5e3d24', glasses: 'wire', glassesColor: '#c9a86a', head: 'none', top: 'tee', topColor: '#1d1a22', bottomColor: '#1d1a22', back: 'none', skin: '#f2c9a8' }],
+      ['Смокинг', { hair: 'wavy', hairColor: '#1b1512', brows: 'thick', head: 'none', top: 'tux', topColor: '#1d1a22', bottomColor: '#1d1a22', back: 'none', gesture: 'snap', skin: '#f2c9a8', shoes: 'boots', shoesColor: '#1d1a22' }],
+      ['Киберспорт', { hair: 'fringe', hairColor: '#5e3d24', head: 'headset', headColor: '#1d1a22', top: 'jersey', topColor: '#1d1a22', accent: '#e9c43a', bottom: 'track', bottomColor: '#1d1a22', back: 'none', skin: '#f2c9a8' }],
+      ['Рокер', { hair: 'mohawk', hairColor: '#ff5fa2', head: 'none', top: 'jacket', topColor: '#1d1a22', bottomColor: '#1d1a22', back: 'guitar', backColor: '#e0453a', shoes: 'boots', shoesColor: '#1d1a22', earrings: 'ring', neck: 'chain' }],
+      ['Звезда аллеи', { hair: 'long', hairColor: '#e8c26a', head: 'crown', top: 'suit', topColor: '#e0453a', bottom: 'skirt', bottomColor: '#1d1a22', back: 'cape', backColor: '#e0453a', shoesColor: '#e9c46a', details: 'paint', glasses: 'star', glassesColor: '#e9c46a' }],
+      ['Космонавт', { head: 'helmet', top: 'hoodie', topColor: '#f4efe6', bottom: 'track', bottomColor: '#8a8aa0', back: 'jetpack', shoes: 'boots', shoesColor: '#8a8aa0' }],
+      ['Моряк', { hair: 'bun', hairColor: '#1b1512', head: 'beanie', headColor: '#e0453a', top: 'stripes', topColor: '#2b3a67', bottom: 'track', bottomColor: '#2b3a67', back: 'none', details: 'freckles' }],
+      ['Ковбой', { hair: 'short', hairColor: '#8a5a2b', beard: 'mustache', beardColor: '#6b4424', head: 'cowboy', headColor: '#8a5a2b', top: 'jacket', topColor: '#b9874f', neck: 'scarf', neckColor: '#e0453a', shoes: 'boots', shoesColor: '#5a3a1f', back: 'none' }],
+      ['Скейтер', { hair: 'curly', hairColor: '#1b1512', head: 'beret', headColor: '#e0453a', top: 'hoodie', topColor: '#3f8f5a', bottom: 'shorts', bottomColor: '#8a8aa0', shoes: 'kedy', shoesColor: '#f4efe6', back: 'skate', backColor: '#e9c46a', skin: '#a0663e' }],
+      ['Ангел', { hair: 'long', hairColor: '#e8e2f0', head: 'none', top: 'tee', topColor: '#f4efe6', bottomColor: '#f4efe6', back: 'wings', backColor: '#f4efe6', details: 'blush', shoesColor: '#f4efe6' }],
+    ];
+
+    // общие кисти
+    const kit = (p) => ({
+      limb(x0, y0, x1, y1, w, c) {
+        p.strokeStyle = c;
+        p.lineWidth = w;
+        p.beginPath();
+        p.moveTo(x0, y0);
+        p.lineTo(x1, y1);
+        p.stroke();
+      },
+      line(pts, w, c) {
+        p.strokeStyle = c;
+        p.lineWidth = w;
+        p.beginPath();
+        p.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
+        p.stroke();
+      },
+      dot(x, y, r, c) {
+        p.fillStyle = c;
+        p.beginPath();
+        p.arc(x, y, r, 0, PI2);
+        p.fill();
+      },
+      rr(x, y, w, h, r, c) {
+        p.fillStyle = c;
+        p.beginPath();
+        p.roundRect(x, y, w, h, r);
+        p.fill();
+      },
+      path(f, c) {
+        p.fillStyle = c;
+        p.beginPath();
+        f();
+        p.closePath();
+        p.fill();
+      },
+      star(x, y, r, c) {
+        p.fillStyle = c;
+        p.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI) / 5;
+          const q = i % 2 ? r * 0.42 : r;
+          p.lineTo(x + q * Math.cos(a), y + q * Math.sin(a));
+        }
+        p.closePath();
+        p.fill();
+      },
+    });
+
+    // ---------- Бегун со спины, как в игре (рост 100). fr: 0–5 — бег, 6 — прыжок, 7 — перекат, 8 — сбит ----------
+    function runner(p, fr, L) {
+      const { limb, dot, rr, path } = kit(p);
+      p.lineCap = 'round';
+      p.lineJoin = 'round';
+      const a = (fr / 6) * PI2;
+      if (fr === 7) return rollBall(p, L);
+      const jump = fr === 6 || fr === 8; // 8 — сбит: руки вверх
+      const bob = jump ? 0 : Math.abs(Math.sin(a)) * 2.5;
+      const up = (k) => Math.max(0, k) * 16;
+      const ay = 30 - bob;
+      const skin = L.skin;
+      const pants = L.bottomColor;
+      const top = L.topColor;
+      const acc = L.accent;
+      const bc = L.backColor;
+      const long = !['tee', 'stripes', 'jersey'].includes(L.top);
+      // ноги и обувь
+      const legW = L.bottom === 'skirt' ? 7 : 9.5;
+      const legC = L.bottom === 'shorts' || L.bottom === 'skirt' ? skin : pants;
+      const leg = (x0, y0, x1, y1) => {
+        limb(x0, y0, x1, y1, legW, legC);
+        if (L.bottom === 'shorts') limb(x0, y0, x0 + (x1 - x0) * 0.4, y0 + (y1 - y0) * 0.4, 10.5, pants);
+        if (L.bottom === 'track') limb(x0 + 3, y0, x1 + 3, y1, 1.6, acc);
+      };
+      const shoe = (x0, x1, y, lift) => {
+        if (L.shoes === 'boots') limb((x0 + x1) / 2 - 1, y - 9, (x0 + x1) / 2 - 1, y - 1, 9.5, L.shoesColor);
+        limb(x0, y, x1, y, lift ? 9 : 7, L.shoesColor);
+        if (L.shoes === 'kedy') limb(x0, y + 3, x1, y + 3, 2.2, '#f4efe6');
+        if (L.shoes === 'boots') limb(x0, y + 3, x1, y + 3, 2.4, '#1d1a22');
+      };
+      if (jump) {
+        leg(44, 60, 38, 76);
+        leg(38, 76, 42, 88);
+        leg(56, 60, 62, 78);
+        leg(62, 78, 60, 90);
+        shoe(39, 45, 90, true);
+        shoe(57, 63, 92, true);
+      } else {
+        const lL = up(Math.sin(a));
+        const lR = up(-Math.sin(a));
+        leg(44, 60 - bob, 43, 97 - lL);
+        leg(56, 60 - bob, 57, 97 - lR);
+        shoe(40, 47, 99 - lL, lL > 4);
+        shoe(53, 60, 99 - lR, lR > 4);
+      }
+      if (L.bottom === 'skirt')
+        path(() => {
+          p.moveTo(36, ay + 26);
+          p.lineTo(64, ay + 26);
+          p.lineTo(69, ay + 44);
+          p.lineTo(31, ay + 44);
+        }, pants);
+      // руки
+      const sw = jump ? 0 : Math.sin(a) * 9;
+      const arm = (x0, x1, y1) => {
+        if (long) limb(x0, ay + 4, x1, y1, 7, top);
+        else {
+          limb(x0, ay + 4, x1, y1, 5.5, skin);
+          limb(x0, ay + 4, x0 + (x1 - x0) * 0.35, ay + 4 + (y1 - ay - 4) * 0.35, 7.5, top);
+        }
+      };
+      if (jump) {
+        const u = fr === 8 ? 10 : 0;
+        arm(37, 25 - u / 2, ay - 6 - u);
+        arm(63, 75 + u / 2, ay - 6 - u);
+        dot(24 - u / 2, ay - 8 - u, 4, skin);
+        dot(76 + u / 2, ay - 8 - u, 4, skin);
+      } else {
+        arm(37, 30, ay + 22 + sw);
+        arm(63, 70, ay + 22 - sw);
+        dot(30, ay + 25 + sw, 4, skin);
+        dot(70, ay + 25 - sw, 4, skin);
+      }
+      // туловище
+      rr(35, ay, 30, 34, 8, top);
+      if (L.top === 'stripes') for (let y = ay + 4; y < ay + 32; y += 6) rr(35, y, 30, 2.6, 1, acc);
+      if (L.top === 'tee') rr(35, ay + 26, 30, 5, 2, shade(top, -0.2));
+      if (L.top === 'hoodie') {
+        rr(41, ay - 2, 18, 9, 4, shade(top, -0.2));
+        rr(35, ay + 26, 30, 6, 3, shade(top, -0.15));
+      }
+      if (L.top === 'sweater') {
+        rr(39, ay - 3, 22, 7, 3, shade(top, 0.12));
+        for (let y = ay + 8; y < ay + 32; y += 5) rr(36, y, 28, 1.2, 0.5, shade(top, -0.12));
+        rr(35, ay + 28, 30, 6, 3, shade(top, -0.18));
+      }
+      if (L.top === 'jacket') {
+        rr(35, ay + 26, 30, 6, 2, shade(top, 0.25));
+        rr(49, ay, 2, 30, 1, shade(top, 0.3));
+        rr(38, ay - 1, 24, 5, 2, shade(top, 0.35));
+      }
+      if (L.top === 'suit' || L.top === 'tux') {
+        rr(40, ay - 2, 20, 4, 2, '#f4efe6');
+        if (L.top === 'tux')
+          path(() => {
+            p.moveTo(40, ay + 30);
+            p.lineTo(50, ay + 30);
+            p.lineTo(45, ay + 46);
+            p.moveTo(50, ay + 30);
+            p.lineTo(60, ay + 30);
+            p.lineTo(55, ay + 46);
+          }, top);
+        else rr(35, ay + 28, 30, 4, 2, shade(top, -0.25));
+      }
+      if (L.top === 'jersey') {
+        rr(35, ay, 7, 34, 3, acc);
+        rr(58, ay, 7, 34, 3, acc);
+        p.fillStyle = acc;
+        p.font = '800 15px system-ui';
+        p.textAlign = 'center';
+        p.textBaseline = 'middle';
+        p.fillText('7', 50, ay + 18);
+      }
+      // шея
+      if (L.neck === 'scarf') {
+        rr(38, ay - 3, 24, 6, 3, L.neckColor);
+        rr(52, ay, 6, 20, 2, shade(L.neckColor, -0.12));
+      }
+      // за спиной — поверх тела: со спины мы смотрим прямо на спину
+      if (L.back === 'cape') {
+        // плащ от плеч до колен, низ колышется на бегу
+        const w = Math.sin(a) * 3;
+        path(() => {
+          p.moveTo(36, ay + 1);
+          p.lineTo(64, ay + 1);
+          p.quadraticCurveTo(68, ay + 30, 71 + w, ay + 58);
+          p.quadraticCurveTo(62, ay + 54, 56, ay + 60 - w);
+          p.quadraticCurveTo(50, ay + 55, 44, ay + 60 + w);
+          p.quadraticCurveTo(38, ay + 54, 29 - w, ay + 58);
+          p.quadraticCurveTo(32, ay + 30, 36, ay + 1);
+        }, bc);
+        for (const x of [43, 50, 57]) limb(x, ay + 8, x + (x - 50) * 0.3, ay + 54, 1.2, shade(bc, -0.25));
+        rr(37, ay - 2, 26, 6, 3, shade(bc, -0.15));
+      }
+      if (L.back === 'wings') {
+        // крылья растут из лопаток и чуть машут на бегу
+        const fl = Math.sin(a) * 4;
+        for (const s of [-1, 1]) {
+          path(() => {
+            p.moveTo(50 + s * 4, ay + 8);
+            p.quadraticCurveTo(50 + s * 36, ay - 24 - fl, 50 + s * 46, ay + 2 - fl);
+            p.quadraticCurveTo(50 + s * 36, ay + 6, 50 + s * 40, ay + 18);
+            p.quadraticCurveTo(50 + s * 26, ay + 16, 50 + s * 28, ay + 26);
+            p.quadraticCurveTo(50 + s * 14, ay + 22, 50 + s * 4, ay + 20);
+          }, bc);
+          for (let i = 0; i < 3; i++) limb(50 + s * (14 + i * 9), ay + 4 - i * 4 - fl / 2, 50 + s * (16 + i * 9), ay + 18 - i * 2, 1, shade(bc, -0.25));
+        }
+      }
+      if (L.back === 'backpack') {
+        rr(41, ay + 5, 18, 20, 5, bc);
+        rr(41, ay + 12, 18, 3, 1, shade(bc, -0.2));
+      }
+      if (L.back === 'jetpack') {
+        // два баллона на лямках, пламя из сопел — поверх ног
+        const fl = 10 + Math.abs(Math.sin(a * 2)) * 8;
+        for (const x of [40, 60]) {
+          path(() => {
+            p.moveTo(x - 4.5, ay + 33);
+            p.lineTo(x + 4.5, ay + 33);
+            p.lineTo(x, ay + 33 + fl);
+          }, '#ffae2e');
+          path(() => {
+            p.moveTo(x - 2.5, ay + 33);
+            p.lineTo(x + 2.5, ay + 33);
+            p.lineTo(x, ay + 26 + fl);
+          }, '#fff2c0');
+          rr(x - 6, ay + 1, 12, 30, 6, '#b8c0d0');
+          rr(x - 6, ay + 1, 4, 30, 3, '#dfe4ee');
+          rr(x - 6, ay + 8, 12, 3, 1, bc);
+          rr(x - 4, ay + 29, 8, 5, 2, '#5a6274');
+        }
+        rr(45, ay + 10, 10, 12, 3, '#6a7488');
+        dot(50, ay + 15, 2, '#ff3d3d');
+      }
+      if (L.back === 'guitar') {
+        // по диагонали: гриф над правым плечом, корпус у левого бедра
+        p.save();
+        p.translate(48, ay + 20);
+        p.rotate(0.55);
+        rr(-2.5, -36, 5, 30, 2, '#5a3a1f');
+        rr(-4.5, -42, 9, 8, 2, '#2a1a12');
+        p.fillStyle = bc;
+        p.beginPath();
+        p.ellipse(0, 0, 8.5, 7, 0, 0, PI2);
+        p.ellipse(0, 10, 11, 9, 0, 0, PI2);
+        p.fill();
+        dot(0, 4, 2.6, '#1d1a22');
+        p.restore();
+        limb(38, ay + 2, 60, ay + 30, 1.6, '#2a1a12'); // ремень
+      }
+      if (L.back === 'skate') {
+        rr(42, ay - 2, 16, 40, 8, bc);
+        rr(44, ay + 2, 12, 32, 6, shade(bc, -0.18));
+        for (const y of [ay + 4, ay + 30]) dot(43, y, 2.4, '#f4efe6'), dot(57, y, 2.4, '#f4efe6');
+      }
+      // голова со спины
+      const hy = ay - 11;
+      const hc = L.hairColor;
+      if (L.hair === 'long') rr(39, hy - 4, 22, 26, 8, hc);
+      if (L.hair === 'bob') rr(37, hy - 6, 26, 19, 9, hc);
+      dot(50, hy, 11, L.hair === 'bald' ? skin : hc);
+      if (L.hair === 'bald') dot(46, hy - 4, 3, shade(skin, 0.25));
+      if (L.hair !== 'bob') {
+        dot(39, hy + 1, 3, skin);
+        dot(61, hy + 1, 3, skin);
+      }
+      if (L.hair === 'curly') for (const [x, y] of [[41, hy - 6], [50, hy - 10], [59, hy - 6], [40, hy + 3], [60, hy + 3], [45, hy + 6], [55, hy + 6]]) dot(x, y, 5, hc);
+      if (L.hair === 'bun') dot(50, hy - 13, 6, hc);
+      if (L.hair === 'wavy') for (const [x, y, r] of [[40, hy + 6, 4], [46, hy + 9, 4], [54, hy + 9, 4], [60, hy + 6, 4], [43, hy - 9, 5], [52, hy - 11, 5], [59, hy - 7, 4]]) dot(x, y, r, hc);
+      if (L.hair === 'tousled')
+        path(() => {
+          p.moveTo(38, hy - 1);
+          p.quadraticCurveTo(36, hy - 10, 42, hy - 12);
+          p.quadraticCurveTo(45, hy - 17, 51, hy - 15);
+          p.quadraticCurveTo(57, hy - 17, 59, hy - 11);
+          p.quadraticCurveTo(64, hy - 9, 62, hy - 1);
+        }, hc);
+      if (L.hair === 'mohawk' && L.head !== 'helmet') rr(46, hy - 20, 8, 22, 3, hc);
+      const hcol = L.headColor;
+      if (L.head === 'cap') {
+        path(() => p.arc(50, hy - 2, 11.5, Math.PI, PI2), hcol);
+        rr(44, hy + 6, 12, 4, 1, hcol);
+      } else if (L.head === 'beanie') {
+        path(() => p.arc(50, hy - 1, 12, Math.PI, PI2), hcol);
+        rr(38, hy - 3, 24, 5, 2, shade(hcol, 0.3));
+        dot(50, hy - 14, 4.5, '#f4efe6');
+      } else if (L.head === 'bandana') {
+        rr(38, hy - 7, 24, 6, 3, hcol);
+        limb(50, hy - 3, 46, hy + 9, 3, hcol);
+        limb(50, hy - 3, 55, hy + 8, 3, hcol);
+      } else if (L.head === 'beret') {
+        p.fillStyle = hcol;
+        p.beginPath();
+        p.ellipse(51, hy - 7, 14, 6, -0.15, 0, PI2);
+        p.fill();
+      } else if (L.head === 'cowboy') {
+        p.fillStyle = shade(hcol, -0.2);
+        p.beginPath();
+        p.ellipse(50, hy - 4, 20, 5, 0, 0, PI2);
+        p.fill();
+        rr(41, hy - 18, 18, 14, 5, hcol);
+      } else if (L.head === 'headphones' || L.head === 'headset') {
+        p.strokeStyle = '#2a2630';
+        p.lineWidth = 3;
+        p.beginPath();
+        p.arc(50, hy, 13, Math.PI * 1.05, Math.PI * 1.95);
+        p.stroke();
+        rr(34, hy - 4, 6, 11, 3, hcol);
+        rr(60, hy - 4, 6, 11, 3, hcol);
+      } else if (L.head === 'tophat') {
+        rr(41, hy - 28, 18, 20, 2, '#2a2630');
+        rr(41, hy - 13, 18, 3, 1, hcol);
+        rr(36, hy - 9, 28, 4, 2, '#2a2630');
+      } else if (L.head === 'crown') {
+        path(() => {
+          p.moveTo(40, hy - 6);
+          p.lineTo(60, hy - 6);
+          p.lineTo(62, hy - 18);
+          p.lineTo(56, hy - 11);
+          p.lineTo(50, hy - 21);
+          p.lineTo(44, hy - 11);
+          p.lineTo(38, hy - 18);
+        }, '#e0b45a');
+        dot(50, hy - 12, 2, '#ff5fa2');
+      } else if (L.head === 'helmet') {
+        dot(50, hy + 1, 15, 'rgba(207,227,255,.35)');
+        p.strokeStyle = '#f4efe6';
+        p.lineWidth = 2.5;
+        p.beginPath();
+        p.arc(50, hy + 1, 15, 0, PI2);
+        p.stroke();
+        rr(40, hy + 14, 20, 4, 2, '#9aa4b8');
+      }
+    }
+
+    // перекат: клубок в цвет одежды, сверху голова с убором
+    function rollBall(p, L) {
+      const { limb, dot } = kit(p);
+      p.lineCap = 'round';
+      dot(50, 84, 20, L.topColor);
+      p.strokeStyle = shade(L.topColor, 0.35);
+      p.lineWidth = 3;
+      p.beginPath();
+      p.arc(50, 84, 13, 0.4, 2.6);
+      p.stroke();
+      if (L.back !== 'none') dot(50, 87, 8, L.backColor);
+      dot(50, 68, 10, L.hair === 'bald' ? L.skin : L.hairColor);
+      if (['cap', 'beanie', 'bandana', 'beret', 'cowboy', 'tophat', 'headphones', 'headset'].includes(L.head)) {
+        p.fillStyle = L.head === 'tophat' ? '#2a2630' : L.headColor;
+        p.beginPath();
+        p.arc(50, 66, 10, Math.PI, PI2);
+        p.fill();
+      }
+      if (L.head === 'crown') dot(50, 58, 4, '#e0b45a');
+      limb(36, 100, 44, 102, 7, L.shoesColor);
+      limb(56, 102, 64, 100, 7, L.shoesColor);
+    }
+
+    // ---------- Портрет лицом (по плечи, 100×100). blink — глаза закрыты, t — время для жестов ----------
+    function portrait(p, L, blink = false, t = 0) {
+      const { line, dot, rr, path, star } = kit(p);
+      p.lineCap = 'round';
+      p.lineJoin = 'round';
+      const skin = L.skin;
+      const hc = L.hairColor;
+      const bc = L.beardColor;
+      const top = L.topColor;
+      const acc = L.accent;
+      const shoulders = () => {
+        p.moveTo(6, 100);
+        p.quadraticCurveTo(8, 74, 34, 70);
+        p.lineTo(66, 70);
+        p.quadraticCurveTo(92, 74, 94, 100);
+      };
+      // за головой: крылья, длинные волосы, каре, капюшон
+      if (L.back === 'wings')
+        for (const s of [-1, 1])
+          path(() => {
+            p.moveTo(50 + s * 20, 78);
+            p.quadraticCurveTo(50 + s * 52, 40, 50 + s * 50, 66);
+            p.quadraticCurveTo(50 + s * 46, 80, 50 + s * 40, 90);
+          }, L.backColor);
+      if (L.hair === 'long' && L.head !== 'helmet') rr(26, 28, 48, 50, 18, hc);
+      if (L.hair === 'bob')
+        path(() => {
+          p.moveTo(25, 60);
+          p.quadraticCurveTo(20, 12, 50, 12);
+          p.quadraticCurveTo(80, 12, 75, 60);
+          p.quadraticCurveTo(70, 64, 66, 60);
+          p.lineTo(34, 60);
+          p.quadraticCurveTo(30, 64, 25, 60);
+        }, shade(hc, -0.15));
+      if (L.top === 'hoodie')
+        path(() => {
+          p.moveTo(24, 76);
+          p.quadraticCurveTo(18, 30, 50, 22);
+          p.quadraticCurveTo(82, 30, 76, 76);
+        }, shade(top, -0.18));
+      // плечи, шея, одежда
+      path(shoulders, top);
+      rr(42, 58, 16, 16, 6, shade(skin, -0.1));
+      if (L.top === 'stripes') {
+        p.save();
+        path(shoulders, top);
+        p.clip();
+        for (let y = 74; y < 100; y += 6) rr(0, y, 100, 2.6, 1, acc);
+        p.restore();
+        line([40, 71, 50, 76, 60, 71], 3, acc);
+      }
+      if (L.top === 'tee') line([40, 71, 50, 76, 60, 71], 3, shade(top, -0.2));
+      if (L.top === 'hoodie') {
+        line([40, 72, 50, 78, 60, 72], 4, shade(top, -0.25));
+        line([46, 77, 45, 92], 1.6, acc);
+        line([54, 77, 55, 92], 1.6, acc);
+      }
+      if (L.top === 'sweater') {
+        rr(37, 62, 26, 14, 6, shade(top, 0.1));
+        line([50, 63, 50, 100], 1.8, '#d8d0bf');
+        dot(50, 67, 1.8, '#d8d0bf');
+        for (let x = 14; x < 90; x += 6) line([x, 84, x, 100], 0.8, shade(top, -0.12));
+      }
+      if (L.top === 'jersey') {
+        line([40, 71, 50, 78, 60, 71], 3.2, acc);
+        path(() => {
+          p.moveTo(8, 94);
+          p.quadraticCurveTo(13, 76, 30, 72);
+          p.lineTo(33, 78);
+          p.quadraticCurveTo(19, 82, 15, 98);
+        }, acc);
+        path(() => {
+          p.moveTo(92, 94);
+          p.quadraticCurveTo(87, 76, 70, 72);
+          p.lineTo(67, 78);
+          p.quadraticCurveTo(81, 82, 85, 98);
+        }, acc);
+        rr(58, 84, 10, 8, 2, acc);
+      }
+      if (L.top === 'jacket') {
+        line([50, 72, 50, 100], 2, acc);
+        path(() => {
+          p.moveTo(36, 70);
+          p.lineTo(46, 70);
+          p.lineTo(42, 82);
+        }, shade(top, 0.3));
+        path(() => {
+          p.moveTo(64, 70);
+          p.lineTo(54, 70);
+          p.lineTo(58, 82);
+        }, shade(top, 0.3));
+      }
+      if (L.top === 'suit' || L.top === 'tux') {
+        const tux = L.top === 'tux';
+        path(() => {
+          p.moveTo(40, 70);
+          p.lineTo(60, 70);
+          p.lineTo(50, tux ? 99 : 94);
+        }, '#f4efe6');
+        if (tux) {
+          dot(50, 86, 1.2, '#c8c2b4');
+          dot(50, 93, 1.2, '#c8c2b4');
+        } else
+          path(() => {
+            p.moveTo(48, 74);
+            p.lineTo(52, 74);
+            p.lineTo(53, 90);
+            p.lineTo(50, 94);
+            p.lineTo(47, 90);
+          }, acc);
+        path(() => {
+          p.moveTo(34, 71);
+          p.lineTo(42, 70);
+          p.lineTo(50, 100);
+          p.lineTo(38, 86);
+        }, shade(top, 0.22));
+        path(() => {
+          p.moveTo(66, 71);
+          p.lineTo(58, 70);
+          p.lineTo(50, 100);
+          p.lineTo(62, 86);
+        }, shade(top, 0.22));
+        if (tux) {
+          const bow = acc === '#f4efe6' ? '#0d0b10' : acc; // бабочка — цвет отделки (белая отделка — чёрная бабочка)
+          path(() => {
+            p.moveTo(50, 75);
+            p.lineTo(40, 70);
+            p.lineTo(40, 80);
+          }, bow);
+          path(() => {
+            p.moveTo(50, 75);
+            p.lineTo(60, 70);
+            p.lineTo(60, 80);
+          }, bow);
+          rr(47.5, 72.5, 5, 5, 1.5, shade(bow, 0.2));
+        }
+      }
+      // шея: шарф, цепочка, медаль
+      if (L.neck === 'scarf') {
+        rr(35, 62, 30, 11, 5, L.neckColor);
+        rr(52, 66, 8, 24, 3, shade(L.neckColor, -0.12));
+        for (let y = 80; y < 90; y += 3) line([52, y, 60, y], 0.8, shade(L.neckColor, 0.3));
+      }
+      if (L.neck === 'chain' || L.neck === 'medal') {
+        p.strokeStyle = '#e0b45a';
+        p.lineWidth = 1.6;
+        p.beginPath();
+        p.moveTo(40, 69);
+        p.quadraticCurveTo(50, L.neck === 'medal' ? 86 : 82, 60, 69);
+        p.stroke();
+        if (L.neck === 'medal') {
+          dot(50, 87, 6, '#e0b45a');
+          star(50, 87, 4, L.neckColor);
+        } else star(50, 79, 2.8, '#e0b45a');
+      }
+      if (L.back === 'backpack' || L.back === 'jetpack') {
+        rr(14, 74, 6, 26, 3, L.back === 'jetpack' ? '#6a7488' : shade(L.backColor, -0.2));
+        rr(80, 74, 6, 26, 3, L.back === 'jetpack' ? '#6a7488' : shade(L.backColor, -0.2));
+      }
+      if (L.back === 'cape') {
+        rr(30, 68, 40, 5, 2, L.backColor);
+        dot(36, 71, 3, '#e9c46a');
+      }
+      if (L.back === 'guitar') line([18, 100, 82, 66], 3, '#5a3a1f');
+      if (L.back === 'skate') line([10, 96, 26, 64], 5, L.backColor);
+      // жест: руки вверх и щелчки пальцами, как дирижёр, или машет рукой
+      if (L.gesture === 'snap' || L.gesture === 'wave') {
+        const bare = ['tee', 'stripes', 'jersey'].includes(L.top);
+        const cuff = L.top === 'tux' || L.top === 'suit';
+        const arm = (sx, ex, ey) => {
+          line([sx, 86, sx + (ex - sx) * 0.4, 64, ex, ey + 8], 11, bare ? skin : top);
+          if (bare) line([sx, 86, sx + (ex - sx) * 0.15, 78], 12, top);
+          if (cuff) line([ex, ey + 15, ex, ey + 10], 11, '#f4efe6');
+        };
+        if (L.gesture === 'snap') {
+          const k = Math.floor(t * 3) % 2;
+          for (const [sx, ex, on] of [[17, 12, k === 0], [83, 88, k === 1]]) {
+            arm(sx, ex, 34);
+            dot(ex, 33, 6.5, skin);
+            dot(ex + (ex < 50 ? 3.5 : -3.5), 27.5, 3, skin);
+            if (on) for (const [dx, dy] of [[-8, -7], [0, -10], [8, -7]]) line([ex + dx * 0.55, 23 + dy * 0.55, ex + dx, 23 + dy], 1.6, '#f2d68a');
+          }
+        } else {
+          arm(83, 86, 34);
+          p.save();
+          p.translate(86, 38);
+          p.rotate(Math.sin(t * 7) * 0.35);
+          rr(-6, -12, 12, 14, 5, skin);
+          for (const x of [-5.5, -2.3, 0.9, 4.1]) rr(x, -19, 2.6, 9, 1.3, skin);
+          p.restore();
+        }
+      }
+      // уши, серьги, лицо
+      dot(29, 46, 5, skin);
+      dot(71, 46, 5, skin);
+      if (L.earrings === 'stud') dot(29, 51, 1.8, '#e0b45a'), dot(71, 51, 1.8, '#e0b45a');
+      if (L.earrings === 'ring') {
+        p.strokeStyle = '#e0b45a';
+        p.lineWidth = 1.4;
+        for (const x of [29, 71]) {
+          p.beginPath();
+          p.arc(x, 54, 3, 0, PI2);
+          p.stroke();
+        }
+      }
+      p.fillStyle = skin;
+      p.beginPath();
+      p.ellipse(50, 44, 21, 25, 0, 0, PI2);
+      p.fill();
+      // детали лица
+      if (L.details === 'freckles') for (const [x, y] of [[36, 50], [39, 52], [35, 54], [41, 55], [64, 50], [61, 52], [65, 54], [59, 55]]) dot(x, y, 0.9, shade(skin, -0.35));
+      if (L.details === 'blush') {
+        p.fillStyle = 'rgba(255,110,130,.35)';
+        for (const x of [36, 64]) {
+          p.beginPath();
+          p.ellipse(x, 53, 5, 3, 0, 0, PI2);
+          p.fill();
+        }
+      }
+      if (L.details === 'mole') dot(59, 56, 1.3, shade(skin, -0.5));
+      if (L.details === 'paint') {
+        star(64, 50, 5, '#ff5fa2');
+        dot(36, 52, 1.3, '#e9c46a');
+        dot(33, 49, 1, '#e9c46a');
+      }
+      // борода — под чертами лица
+      if (L.beard === 'stubble') {
+        p.globalAlpha = 0.38;
+        path(() => {
+          p.moveTo(30, 44);
+          p.quadraticCurveTo(31, 70, 50, 70);
+          p.quadraticCurveTo(69, 70, 70, 44);
+          p.quadraticCurveTo(66, 58, 50, 58);
+          p.quadraticCurveTo(34, 58, 30, 44);
+        }, bc);
+        p.globalAlpha = 1;
+      } else if (L.beard === 'short' || L.beard === 'full') {
+        const d = L.beard === 'full' ? 8 : 0;
+        path(() => {
+          p.moveTo(29, 42);
+          p.quadraticCurveTo(29, 72 + d, 50, 72 + d);
+          p.quadraticCurveTo(71, 72 + d, 71, 42);
+          p.quadraticCurveTo(68, 56, 60, 56);
+          p.quadraticCurveTo(50, 52, 40, 56);
+          p.quadraticCurveTo(32, 56, 29, 42);
+        }, bc);
+        p.globalAlpha = 0.35;
+        for (const [x, y] of [[36, 62], [44, 66], [56, 66], [64, 62], [50, 70 + d / 2]]) line([x, y, x + 1, y + 4], 1, shade(bc, 0.45));
+        p.globalAlpha = 1;
+      } else if (L.beard === 'goatee') {
+        path(() => {
+          p.moveTo(44, 61);
+          p.quadraticCurveTo(50, 74, 56, 61);
+          p.quadraticCurveTo(50, 64, 44, 61);
+        }, bc);
+      }
+      // брови, глаза, нос
+      const br = L.hair === 'bald' ? bc : shade(hc, -0.2);
+      const bw = { thick: 4, thin: 1.4, arched: 2.4 }[L.brows] || 2.6;
+      const arch = L.brows === 'arched' ? 3 : 1;
+      line([36, 37.5, 41, 37 - arch, 46, 36.5], bw, br);
+      line([54, 36.5, 59, 37 - arch, 64, 37.5], bw, br);
+      if (blink) {
+        line([38, 43, 46, 43], 1.8, '#3a2418');
+        line([54, 43, 62, 43], 1.8, '#3a2418');
+      } else
+        for (const x of [42, 58]) {
+          p.fillStyle = '#fff';
+          p.beginPath();
+          p.ellipse(x, 43, 4.2, 2.8, 0, 0, PI2);
+          p.fill();
+          dot(x, 43, 2, L.eyeColor);
+          dot(x + 0.8, 42.2, 0.7, '#fff');
+        }
+      line([50, 45, 48, 53, 51.5, 54], 1.6, shade(skin, -0.3));
+      // усы и рот
+      if (['mustache', 'short', 'full', 'goatee'].includes(L.beard))
+        path(() => {
+          p.moveTo(42, 59);
+          p.quadraticCurveTo(46, 54, 50, 57);
+          p.quadraticCurveTo(54, 54, 58, 59);
+          p.quadraticCurveTo(50, 58, 42, 59);
+        }, bc);
+      p.strokeStyle = '#8a3f3f';
+      p.lineWidth = 1.8;
+      p.beginPath();
+      p.arc(50, 58, 5, 0.2 * Math.PI, 0.8 * Math.PI);
+      p.stroke();
+      // причёска спереди
+      if (L.hair === 'short' || L.hair === 'long' || L.hair === 'bun') {
+        path(() => {
+          p.moveTo(29, 42);
+          p.quadraticCurveTo(27, 14, 50, 14);
+          p.quadraticCurveTo(73, 14, 71, 42);
+          p.lineTo(67, 32);
+          p.quadraticCurveTo(50, 24, 33, 32);
+        }, hc);
+        if (L.hair === 'long') {
+          rr(25, 32, 8, 42, 4, hc);
+          rr(67, 32, 8, 42, 4, hc);
+        }
+        if (L.hair === 'bun') dot(50, 11, 8, hc);
+      } else if (L.hair === 'fringe') {
+        path(() => {
+          p.moveTo(29, 42);
+          p.quadraticCurveTo(27, 14, 50, 13);
+          p.quadraticCurveTo(73, 14, 71, 42);
+          p.quadraticCurveTo(68, 30, 62, 26);
+          p.quadraticCurveTo(48, 30, 33, 36);
+        }, hc);
+        path(() => {
+          p.moveTo(68, 22);
+          p.quadraticCurveTo(50, 20, 33, 34);
+          p.quadraticCurveTo(44, 30, 62, 28);
+        }, shade(hc, -0.15));
+      } else if (L.hair === 'bob') {
+        path(() => {
+          p.moveTo(28, 50);
+          p.quadraticCurveTo(24, 16, 50, 14);
+          p.quadraticCurveTo(76, 16, 72, 50);
+          p.quadraticCurveTo(70, 36, 66, 30);
+          p.quadraticCurveTo(62, 25, 59, 21);
+          p.quadraticCurveTo(50, 30, 34, 34);
+          p.quadraticCurveTo(30, 40, 28, 50);
+        }, hc);
+        path(() => {
+          p.moveTo(24, 34);
+          p.quadraticCurveTo(26, 54, 32, 62);
+          p.quadraticCurveTo(33, 48, 31, 36);
+        }, hc);
+        path(() => {
+          p.moveTo(76, 34);
+          p.quadraticCurveTo(74, 54, 68, 62);
+          p.quadraticCurveTo(67, 48, 69, 36);
+        }, hc);
+        p.globalAlpha = 0.35;
+        line([59, 18, 44, 30], 1.2, shade(hc, 0.35));
+        line([62, 20, 68, 34], 1.2, shade(hc, 0.35));
+        p.globalAlpha = 1;
+      } else if (L.hair === 'wavy') {
+        path(() => {
+          p.moveTo(27, 48);
+          p.quadraticCurveTo(19, 22, 31, 12);
+          p.quadraticCurveTo(41, 3, 53, 6);
+          p.quadraticCurveTo(66, 3, 72, 13);
+          p.quadraticCurveTo(81, 25, 73, 48);
+          p.quadraticCurveTo(70, 32, 63, 27);
+          p.quadraticCurveTo(52, 21, 41, 26);
+          p.quadraticCurveTo(31, 31, 27, 48);
+        }, hc);
+        for (const [x, y, r] of [[26, 50, 4], [74, 50, 4], [24, 43, 3.5], [76, 43, 3.5], [29, 56, 3], [71, 56, 3]]) dot(x, y, r, hc);
+        p.globalAlpha = 0.4;
+        p.strokeStyle = shade(hc, 0.45);
+        p.lineWidth = 1.3;
+        for (const [x0, y0, x1, y1] of [[34, 15, 46, 21], [48, 10, 60, 16], [62, 11, 70, 22]]) {
+          p.beginPath();
+          p.moveTo(x0, y0);
+          p.quadraticCurveTo((x0 + x1) / 2, y0 - 4, x1, y1);
+          p.stroke();
+        }
+        p.globalAlpha = 1;
+      } else if (L.hair === 'tousled') {
+        path(() => {
+          p.moveTo(28, 44);
+          p.quadraticCurveTo(21, 26, 29, 17);
+          p.quadraticCurveTo(29, 7, 39, 9);
+          p.quadraticCurveTo(43, 2, 51, 5);
+          p.quadraticCurveTo(59, 1, 64, 8);
+          p.quadraticCurveTo(73, 8, 73, 18);
+          p.quadraticCurveTo(79, 30, 72, 44);
+          p.lineTo(68, 31);
+          p.quadraticCurveTo(58, 33, 53, 25);
+          p.quadraticCurveTo(45, 33, 32, 31);
+        }, hc);
+        path(() => {
+          p.moveTo(54, 22);
+          p.quadraticCurveTo(46, 30, 38, 34);
+          p.quadraticCurveTo(44, 26, 48, 20);
+        }, shade(hc, -0.12));
+        p.globalAlpha = 0.5;
+        for (const [x0, y0, x1, y1] of [[36, 12, 42, 26], [48, 8, 50, 22], [58, 10, 60, 24], [66, 16, 68, 30]]) line([x0, y0, x1, y1], 1.4, shade(hc, 0.35));
+        p.globalAlpha = 1;
+      } else if (L.hair === 'curly') {
+        for (const [x, y] of [[32, 30], [30, 22], [36, 15], [44, 11], [52, 10], [60, 12], [66, 17], [70, 25], [69, 33], [40, 20], [50, 18], [60, 21]]) dot(x, y, 6.5, hc);
+      } else if (L.hair === 'mohawk') {
+        rr(45, 2, 10, 26, 4, hc);
+      } else if (L.hair === 'bald') {
+        dot(44, 26, 4, shade(skin, 0.3));
+      }
+      // очки
+      if (L.glasses !== 'none') {
+        const wire = L.glasses === 'wire';
+        const fr = L.glassesColor;
+        const w = wire ? 1.1 : 2;
+        for (const x of [42, 58]) {
+          p.fillStyle = L.glasses === 'sun' ? 'rgba(20,16,26,.9)' : 'rgba(207,227,255,.12)';
+          p.strokeStyle = fr;
+          p.lineWidth = w;
+          p.beginPath();
+          if (L.glasses === 'star') {
+            star(x, 43, 9, fr);
+            star(x, 43, 6, 'rgba(255,240,200,.35)');
+            continue;
+          }
+          if (L.glasses === 'round' || wire) p.arc(x, 43, wire ? 7 : 6.5, 0, PI2);
+          else p.roundRect(x - 7.5, 38, 15, 10, L.glasses === 'sun' ? 3 : 1.5);
+          p.fill();
+          p.stroke();
+        }
+        line([wire ? 49 : 48.5, 42, wire ? 51 : 51.5, 42], w, fr);
+        line([29, 41, 35, 42], w, fr);
+        line([71, 41, 65, 42], w, fr);
+      }
+      // головной убор
+      const hcol = L.headColor;
+      if (L.head === 'cap') {
+        path(() => p.arc(50, 31, 22, Math.PI, PI2), hcol);
+        p.fillStyle = shade(hcol, -0.2);
+        p.beginPath();
+        p.ellipse(50, 31, 27, 5, 0, 0, Math.PI);
+        p.fill();
+        dot(50, 9, 2.5, shade(hcol, -0.3));
+      } else if (L.head === 'beanie') {
+        path(() => p.arc(50, 33, 23, Math.PI, PI2), hcol);
+        rr(26, 26, 48, 10, 4, shade(hcol, 0.3));
+        dot(50, 8, 6, '#f4efe6');
+      } else if (L.head === 'bandana') {
+        rr(28, 20, 44, 9, 4, hcol);
+        for (const x of [34, 42, 50, 58, 66]) dot(x, 24.5, 1.2, '#f4efe6');
+        path(() => {
+          p.moveTo(70, 22);
+          p.lineTo(80, 16);
+          p.lineTo(78, 28);
+        }, shade(hcol, -0.15));
+      } else if (L.head === 'beret') {
+        p.fillStyle = hcol;
+        p.beginPath();
+        p.ellipse(54, 20, 26, 10, -0.12, 0, PI2);
+        p.fill();
+        rr(52, 6, 3, 6, 1.5, shade(hcol, -0.3));
+      } else if (L.head === 'cowboy') {
+        p.fillStyle = shade(hcol, -0.15);
+        p.beginPath();
+        p.ellipse(50, 24, 36, 7, 0, 0, PI2);
+        p.fill();
+        path(() => {
+          p.moveTo(34, 24);
+          p.quadraticCurveTo(32, 2, 44, 4);
+          p.quadraticCurveTo(50, 9, 56, 4);
+          p.quadraticCurveTo(68, 2, 66, 24);
+        }, hcol);
+        rr(34, 18, 32, 4, 1.5, shade(hcol, -0.4));
+      } else if (L.head === 'headphones' || L.head === 'headset') {
+        p.strokeStyle = '#2a2630';
+        p.lineWidth = 3.5;
+        p.beginPath();
+        p.arc(50, 42, 27, Math.PI * 1.08, Math.PI * 1.92);
+        p.stroke();
+        rr(20, 36, 10, 18, 4, hcol);
+        rr(70, 36, 10, 18, 4, hcol);
+        if (L.head === 'headset') {
+          p.strokeStyle = '#2a2630';
+          p.lineWidth = 2.2;
+          p.beginPath();
+          p.moveTo(24, 53);
+          p.quadraticCurveTo(26, 66, 40, 64);
+          p.stroke();
+          dot(41.5, 64, 3.8, '#2a2630');
+        }
+      } else if (L.head === 'tophat') {
+        rr(36, -4, 28, 28, 2, '#2a2630');
+        rr(36, 16, 28, 4, 1, hcol);
+        rr(27, 21, 46, 6, 3, '#2a2630');
+      } else if (L.head === 'crown') {
+        path(() => {
+          p.moveTo(34, 20);
+          p.lineTo(66, 20);
+          p.lineTo(70, 2);
+          p.lineTo(60, 11);
+          p.lineTo(50, -2);
+          p.lineTo(40, 11);
+          p.lineTo(30, 2);
+        }, '#e0b45a');
+        dot(50, 13, 2.5, '#ff5fa2');
+        dot(38, 15, 1.8, '#5fe1ff');
+        dot(62, 15, 1.8, '#5fffb0');
+      } else if (L.head === 'helmet') {
+        p.fillStyle = 'rgba(207,227,255,.22)';
+        p.beginPath();
+        p.arc(50, 44, 33, 0, PI2);
+        p.fill();
+        p.strokeStyle = '#f4efe6';
+        p.lineWidth = 3;
+        p.stroke();
+        p.strokeStyle = 'rgba(255,255,255,.6)';
+        p.lineWidth = 2;
+        p.beginPath();
+        p.arc(50, 44, 27, Math.PI * 1.15, Math.PI * 1.4);
+        p.stroke();
+        rr(32, 74, 36, 7, 3, '#9aa4b8');
+      }
+    }
+
+    // ---------- Гараж: машина навстречу, как в игре ----------
+    // Силуэты — по мотивам легендарных ретро-машин (вид спереди, 150×110, земля — y 108). У каждой модели:
+    // колёса, кузов (body), кабина (cab — стекло и крыша; open — где кончается ветровое стекло у кабриолета),
+    // где капот (hoodY — фигурка, полосы), где начинается морда (faceY — шашечки, пламя), где табличка канала (sy).
+    const MODELS = {
+      sedan: {
+        name: 'Седан 50-х', price: 0, wheels: [[14, 86, 22, 22], [114, 86, 22, 22]], hoodY: 44, faceY: 62, sy: 10, open: 30,
+        cab: [[30, 44, 120, 44, 106, 18, 44, 18], [38, 42, 112, 42, 101, 22, 49, 22], [44, 18, 106, 18, 100, 10, 50, 10]],
+        body(K) {
+          K.poly([22, 44, 128, 44, 142, 62, 8, 62], K.light);
+          K.poly([6, 62, 144, 62, 146, 90, 4, 90], K.dark);
+          K.r(6, 62, 138, 4, K.mid);
+          K.r(2, 82, 146, 7, K.bumper);
+          K.r(6, 63, 34, 17, K.halo);
+          K.r(110, 63, 34, 17, K.halo);
+          for (const x of [10, 128]) K.r(x, 66, 12, 10, K.lamp);
+          for (const x of [25, 116]) K.r(x, 67, 9, 8, K.lamp);
+          K.r(44, 66, 62, 14, '#1a1720');
+          for (let x = 48; x < 104; x += 7) K.r(x, 67, 1.5, 12, K.chrome);
+        },
+      },
+      cruiser: {
+        name: 'Круизёр с панорамным стеклом', price: 220, wheels: [[10, 88, 24, 20], [116, 88, 24, 20]], hoodY: 48, faceY: 60, sy: 18, open: 34,
+        cab: [[24, 48, 126, 48, 114, 24, 36, 24], [28, 46, 122, 46, 111, 27, 39, 27], [36, 24, 114, 24, 108, 18, 42, 18]],
+        body(K) {
+          K.poly([16, 48, 134, 48, 148, 60, 2, 60], K.light);
+          K.poly([0, 60, 150, 60, 150, 84, 0, 84], K.dark);
+          K.r(0, 60, 150, 3, K.mid);
+          K.r(34, 64, 82, 14, '#1a1720');
+          for (let x = 36; x < 116; x += 5) K.r(x, 64, 1.4, 14, K.chrome);
+          K.r(34, 70, 82, 1.4, K.chrome);
+          for (const x of [12, 24, 126, 138]) K.hl(x, 70, 5);
+          K.r(-2, 80, 154, 8, K.bumper);
+          K.dot(52, 84, 4.5, '#f4f1ea');
+          K.dot(98, 84, 4.5, '#f4f1ea');
+        },
+      },
+      coupe: {
+        name: 'Купе с хромом', price: 180, wheels: [[14, 86, 22, 22], [114, 86, 22, 22]], hoodY: 46, faceY: 62, sy: 17, open: 32,
+        cab: [[32, 46, 118, 46, 104, 24, 46, 24], [38, 44, 112, 44, 101, 27, 49, 27], [46, 24, 104, 24, 99, 17, 51, 17]],
+        body(K) {
+          K.poly([20, 46, 130, 46, 144, 62, 6, 62], K.light);
+          for (const x of [56, 94]) K.poly([x - 2.5, 46, x + 2.5, 46, x, 39], K.chrome);
+          K.poly([4, 62, 146, 62, 146, 88, 4, 88], K.dark);
+          K.r(4, 62, 142, 3, K.mid);
+          K.r(32, 66, 86, 14, '#e0b45a');
+          for (let x = 34; x < 116; x += 6) K.r(x, 66, 1.2, 14, '#8a6a2a');
+          for (const x of [18, 132]) {
+            K.dot(x, 70, 9, K.chrome);
+            K.hl(x, 71, 5.5);
+          }
+          K.r(0, 84, 150, 6, K.bumper);
+          K.dot(40, 87, 3.5, '#f4f1ea');
+          K.dot(110, 87, 3.5, '#f4f1ea');
+        },
+      },
+      muscle: {
+        name: 'Маслкар', price: 300, wheels: [[6, 84, 28, 24], [116, 84, 28, 24]], hoodY: 45, faceY: 64, sy: 29, open: 42,
+        cab: [[36, 52, 114, 52, 104, 34, 46, 34], [42, 50, 108, 50, 100, 37, 50, 37], [46, 34, 104, 34, 100, 29, 50, 29]],
+        body(K) {
+          K.poly([12, 52, 138, 52, 146, 64, 4, 64], K.light);
+          K.rr(60, 45, 30, 9, 2, K.darker);
+          K.r(63, 47, 24, 3, '#141218');
+          K.poly([4, 64, 146, 64, 146, 86, 4, 86], K.dark);
+          K.r(8, 66, 134, 15, '#141218');
+          for (const x of [20, 32, 118, 130]) K.hl(x, 73.5, 5);
+          K.r(48, 72, 54, 2, K.chrome);
+          K.r(2, 84, 146, 4, K.bumper);
+        },
+      },
+      roadster: {
+        name: 'Родстер', price: 260, wheels: [[12, 88, 22, 20], [116, 88, 22, 20]], hoodY: 46, faceY: 60, sy: 38, open: 38, alwaysOpen: true,
+        body(K) {
+          K.ell(75, 56, 52, 10, K.light);
+          K.rr(4, 58, 142, 30, 14, K.dark);
+          for (const x of [24, 126]) {
+            K.ell(x, 66, 12, 7, K.chrome);
+            K.ell(x, 66, 10, 5.5, K.lamp);
+          }
+          K.ell(75, 75, 17, 8, '#1a1720');
+          K.r(58, 74, 34, 1.6, K.chrome);
+          K.r(4, 86, 142, 4, K.bumper);
+          K.poly([44, 50, 106, 50, 100, 38, 50, 38], K.glass);
+          K.r(44, 48, 62, 2, K.chrome);
+        },
+      },
+      sov: {
+        name: 'Советский седан 70-х', price: 120, wheels: [[16, 88, 20, 20], [114, 88, 20, 20]], hoodY: 48, faceY: 60, sy: 15, open: 34,
+        cab: [[28, 48, 122, 48, 114, 20, 36, 20], [34, 46, 116, 46, 109, 24, 41, 24], [36, 20, 114, 20, 110, 15, 40, 15]],
+        body(K) {
+          K.poly([14, 48, 136, 48, 142, 60, 8, 60], K.light);
+          K.r(6, 60, 138, 26, K.dark);
+          K.r(6, 60, 138, 3, K.mid);
+          K.r(32, 63, 86, 18, K.chrome);
+          for (let x = 34; x < 116; x += 5) K.r(x, 65, 2, 14, '#2a2630');
+          for (const x of [19, 131]) K.hl(x, 72, 8);
+          K.r(2, 86, 146, 5, K.bumper);
+        },
+      },
+      kopeyka: {
+        name: '«Копейка»', price: 80, wheels: [[22, 88, 18, 20], [110, 88, 18, 20]], hoodY: 50, faceY: 60, sy: 17,
+        cab: [[34, 50, 116, 50, 108, 22, 42, 22], [40, 48, 110, 48, 103, 26, 47, 26], [42, 22, 108, 22, 104, 17, 46, 17]],
+        body(K) {
+          K.poly([22, 50, 128, 50, 134, 60, 16, 60], K.light);
+          K.r(16, 60, 118, 26, K.dark);
+          K.r(16, 60, 118, 3, K.mid);
+          K.r(20, 64, 38, 15, '#2a2630');
+          K.r(92, 64, 38, 15, '#2a2630');
+          for (const x of [29, 47, 103, 121]) K.hl(x, 71.5, 5.5);
+          K.r(60, 65, 30, 13, K.chrome);
+          for (const y of [67, 71, 75]) K.r(61, y, 28, 1.6, '#2a2630');
+          K.r(14, 86, 122, 4, K.bumper);
+        },
+      },
+      pickup: {
+        name: 'Пикап 50-х', price: 160, wheels: [[16, 90, 20, 18], [114, 90, 20, 18]], hoodY: 46, faceY: 60, sy: 7,
+        cab: [[40, 48, 110, 48, 104, 12, 46, 12], [48, 40, 102, 40, 99, 16, 51, 16], [46, 12, 104, 12, 100, 7, 50, 7]],
+        body(K) {
+          K.ell(26, 72, 22, 18, K.col);
+          K.ell(124, 72, 22, 18, K.col);
+          K.hl(26, 64, 7);
+          K.hl(124, 64, 7);
+          K.rr(44, 48, 62, 40, 10, K.dark);
+          K.rr(44, 46, 62, 14, 6, K.light);
+          for (const y of [64, 70, 76]) K.r(48, y, 54, 3, K.chrome);
+          K.dot(75, 57, 4, K.chrome);
+          K.r(6, 88, 138, 6, K.bumper);
+        },
+        after(K) {
+          K.r(74, 16, 2, 24, shade(K.col, -0.06)); // стекло из двух половинок
+        },
+      },
+      mini: {
+        name: '«Малютка»', price: 140, wheels: [[30, 90, 16, 18], [104, 90, 16, 18]], hoodY: 48, faceY: 58, sy: 17,
+        body(K) {
+          K.rr(36, 22, 78, 28, 6, shade(K.col, -0.06));
+          K.rr(42, 26, 66, 20, 4, K.glass);
+          K.rr(38, 17, 74, 6, 3, K.roofCol);
+          K.poly([30, 48, 120, 48, 126, 58, 24, 58], K.light);
+          K.rr(22, 56, 106, 34, 10, K.dark);
+          for (const x of [36, 114]) K.hl(x, 68, 7);
+          K.rr(56, 63, 38, 14, 6, K.chrome);
+          for (let x = 60; x < 92; x += 6) K.r(x, 65, 1.6, 10, '#2a2630');
+          K.r(24, 88, 102, 4, K.bumper);
+        },
+      },
+      bus: {
+        name: 'Микроавтобус хиппи', price: 240, wheels: [[18, 92, 20, 16], [112, 92, 20, 16]], hoodY: 50, faceY: 52, sy: 0,
+        body(K) {
+          K.rr(12, 0, 126, 56, 14, K.roofCol);
+          K.rr(20, 8, 52, 30, 7, K.glass);
+          K.rr(78, 8, 52, 30, 7, K.glass);
+          K.rr(10, 50, 130, 42, 8, K.col);
+          K.poly([44, 50, 106, 50, 75, 78], K.roofCol);
+          K.dot(75, 60, 7.5, K.chrome);
+          K.dot(75, 60, 5.5, K.roofCol);
+          K.line([71, 57, 75, 64, 79, 57], 1.4, K.chrome);
+          for (const x of [26, 124]) K.hl(x, 70, 7.5);
+          K.r(6, 90, 138, 6, K.bumper);
+        },
+      },
+      beetle: {
+        name: '«Жук»', price: 200, wheels: [[22, 90, 18, 18], [110, 90, 18, 18]], hoodY: 54, faceY: 70, sy: 18,
+        body(K) {
+          K.ell(75, 44, 36, 26, shade(K.col, -0.06));
+          K.rr(52, 30, 46, 20, 9, K.glass);
+          K.ell(75, 22, 22, 6, K.roofCol);
+          K.ell(32, 76, 22, 16, K.col);
+          K.ell(118, 76, 22, 16, K.col);
+          for (const x of [32, 118]) {
+            K.ell(x, 62, 8, 9, K.chrome);
+            K.ell(x, 62, 6.5, 7.5, K.lamp);
+          }
+          K.ell(75, 74, 30, 20, K.light);
+          K.rr(70, 70, 10, 3, 1.5, K.chrome);
+          K.r(12, 90, 126, 4, K.bumper);
+          K.r(46, 84, 3, 10, K.bumper);
+          K.r(101, 84, 3, 10, K.bumper);
+        },
+      },
+    };
+    const CPAL = ['#b8323f', '#e0453a', '#e9a23a', '#d9c48f', '#3f8f5a', '#2a8a8f', '#9fc8c0', '#5a7fbf', '#2b3a67', '#8c4a9c', '#ff5fa2', '#f4efe6', '#3a3342'];
+    const CAR_COLORS = {
+      color: ['Кузов', CPAL],
+      color2: ['Крыша и верх', ['#f4efe6', '#1d1a22', '#e9c46a', '#5fe1ff', '#ff5fa2', '#3f8f5a']],
+      stripeColor: ['Полосы', ['#f4efe6', '#1d1a22', '#e9c43a', '#e0453a', '#5fe1ff']],
+      glowColor: ['Подсветка', ['#5fe1ff', '#ff5fa2', '#5fffb0', '#b28bff', '#ffae2e']],
+      avaColor: ['Табличка', ['#2a8a8f', '#b8323f', '#5a7fbf', '#8c4a9c', '#3f8f5a']],
+    };
+    const CAR = {
+      model: { cat: 'body', label: 'Модель', thumb: ['car', 75, 54, 176], items: Object.entries(MODELS).map(([id, m]) => [id, m.name, m.price]) },
+      top: { cat: 'body', label: 'Крыша', thumb: ['car', 75, 30, 120], items: [['hard', 'Жёсткая', 0], ['open', 'Кабриолет', 150]] },
+      paint: { cat: 'body', label: 'Покраска', thumb: ['car', 75, 54, 176], colors: ['color', 'color2'], items: [['one', 'Один цвет', 0], ['two', 'Двухцветная', 60], ['gold', 'Золото', 600]] },
+      stripes: { cat: 'decor', label: 'Полосы', thumb: ['car', 75, 66, 120], colors: ['stripeColor'], items: [['none', 'Без полос', 0], ['race', 'Гоночные', 80], ['flames', 'Пламя', 160], ['checker', 'Шашечки', 90]] },
+      glow: { cat: 'decor', label: 'Подсветка снизу', thumb: ['car', 75, 92, 110], colors: ['glowColor'], items: [['none', 'Нет', 0], ['on', 'Неон', 120]] },
+      roof: { cat: 'decor', label: 'На крыше', thumb: ['car', 75, 0, 120], colors: ['avaColor'], items: [['sign', 'Табличка канала', 0], ['taxi', 'Такси', 100], ['flag', 'И флажок', 50], ['siren', 'И мигалка', 90]] },
+      wheels: { cat: 'parts', label: 'Колёса', thumb: ['car', 25, 96, 34], items: [['white', 'Белые боковины', 0], ['black', 'Чёрные', 0], ['chrome', 'Хром', 70], ['gold', 'Золотые', 200]] },
+      lights: { cat: 'parts', label: 'Фары', thumb: ['car', 30, 70, 60], items: [['warm', 'Тёплые', 0], ['white', 'Белые', 0], ['blue', 'Ледяные', 60], ['pink', 'Розовые', 60]] },
+      mascot: { cat: 'parts', label: 'На капоте', thumb: ['car', 75, 46, 70], items: [['classic', 'Фигурка', 0], ['none', 'Ничего', 0], ['star', 'Звезда', 80], ['wings', 'Крылья', 150]] },
+    };
+    const CCATS = [['body', 'Кузов'], ['decor', 'Украшения'], ['parts', 'Детали']];
+    const CAR_DEF0 = { model: 'sedan', top: 'hard', paint: 'one', stripes: 'none', glow: 'none', roof: 'sign', wheels: 'white', lights: 'warm', mascot: 'classic', color: '#b8323f', color2: '#f4efe6', stripeColor: '#f4efe6', glowColor: '#5fe1ff', avaColor: '#2a8a8f' };
+    function drawCar(p, C, t = 0, ava = null, label = '') {
+      const { dot, star, line } = kit(p);
+      const M = MODELS[C.model] || MODELS.sedan;
+      const poly = (pts, fill) => {
+        p.beginPath();
+        p.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
+        p.closePath();
+        p.fillStyle = fill;
+        p.fill();
+      };
+      const r = (x, y, w, h, f) => {
+        p.fillStyle = f;
+        p.fillRect(x, y, w, h);
+      };
+      const gold = C.paint === 'gold';
+      const col = gold ? '#e0b45a' : C.color;
+      const lamp = { warm: '#fff4cc', white: '#f4f8ff', blue: '#9fd8ff', pink: '#ffc4e6' }[C.lights];
+      const K = {
+        poly,
+        r,
+        dot,
+        line,
+        col,
+        light: shade(col, 0.3),
+        mid: shade(col, 0.08),
+        dark: shade(col, -0.2),
+        darker: shade(col, -0.38),
+        roofCol: C.paint === 'two' ? C.color2 : gold ? '#ffe08a' : shade(col, 0.42),
+        chrome: '#dcd6ca',
+        bumper: gold ? '#fff2c0' : '#dcd6ca',
+        glass: 'rgba(150,190,255,.55)',
+        lamp,
+        halo: lamp + '73',
+        rr(x, y, w, h, rad, f) {
+          p.fillStyle = f;
+          p.beginPath();
+          p.roundRect(x, y, w, h, rad);
+          p.fill();
+        },
+        ell(x, y, rx, ry, f) {
+          p.fillStyle = f;
+          p.beginPath();
+          p.ellipse(x, y, rx, ry, 0, 0, PI2);
+          p.fill();
+        },
+        hl(x, y, rad) {
+          dot(x, y, rad + 2, '#dcd6ca');
+          dot(x, y, rad, lamp);
+          dot(x - rad * 0.3, y - rad * 0.3, rad * 0.3, '#fff');
+        },
+      };
+      if (C.glow === 'on') {
+        const gl = p.createRadialGradient(75, 104, 4, 75, 104, 90);
+        gl.addColorStop(0, C.glowColor + 'cc');
+        gl.addColorStop(1, 'rgba(0,0,0,0)');
+        p.fillStyle = gl;
+        p.fillRect(-20, 80, 190, 40);
+      }
+      for (const [x, y, w, h] of M.wheels) {
+        r(x, y, w, h, '#0b0a0e');
+        const cx = x + w / 2;
+        const cy = y + h * 0.55;
+        if (C.wheels === 'white') r(x + 3, cy, w - 6, 3, '#cfc8bb');
+        if (C.wheels === 'chrome' || C.wheels === 'gold') {
+          const a = C.wheels === 'gold' ? ['#e0b45a', '#ffe08a'] : ['#dcd6ca', '#8a8494'];
+          r(cx - w * 0.32, cy - 4, w * 0.64, 9, a[0]);
+          r(cx - 3, cy - 2, 6, 5, a[1]);
+        }
+      }
+      // открытая машина: водитель виден — человечек в нашем стиле, в солнечных очках и рубашке цвета канала;
+      // рисуется до кузова, капот закрывает его ниже плеч
+      const open = M.alwaysOpen || (C.top === 'open' && M.open);
+      if (open) {
+        const s = 0.36;
+        p.save();
+        p.translate(75 - 50 * s, M.hoodY + 6 - 100 * s);
+        p.scale(s, s);
+        portrait(p, { ...DEF, hair: 'wavy', hairColor: '#3a2418', head: 'none', glasses: 'sun', glassesColor: '#1d1a22', top: 'tee', topColor: C.avaColor, back: 'none', gesture: 'none' }, false, t);
+        p.restore();
+      }
+      M.body(K);
+      // кабина: жёсткая крыша или кабриолет (у кого бывает)
+      let sy = M.sy;
+      if (M.cab) {
+        const [cab, glass, roofPts] = M.cab;
+        if (open) {
+          p.save();
+          p.beginPath();
+          p.rect(-50, M.open, 250, 200);
+          p.clip();
+          poly(glass, 'rgba(150,190,255,.45)');
+          p.restore();
+          const xs = glass.filter((_, i) => i % 2 === 0);
+          r(Math.min(...xs) + 4, M.open - 2, Math.max(...xs) - Math.min(...xs) - 8, 3, K.chrome); // рамка стекла
+          sy = M.open;
+        } else {
+          poly(cab, shade(col, -0.06));
+          poly(glass, K.glass);
+          poly(roofPts, K.roofCol);
+        }
+      }
+      M.after?.(K);
+      // полосы, шашечки, пламя
+      const sc = C.stripeColor;
+      const fy = M.faceY;
+      if (C.stripes === 'race') {
+        r(62, M.hoodY, 8, fy - M.hoodY, sc);
+        r(80, M.hoodY, 8, fy - M.hoodY, sc);
+        r(63, fy, 6, 24, sc);
+        r(81, fy, 6, 24, sc);
+      } else if (C.stripes === 'flames') {
+        for (const s of [-1, 1]) {
+          p.save();
+          p.translate(75, fy - 62);
+          p.scale(s, 1);
+          poly([-70, 70, -50, 64, -56, 72, -36, 66, -44, 76, -26, 74, -40, 84, -70, 84], '#ffae2e');
+          poly([-70, 74, -56, 70, -58, 76, -44, 74, -52, 82, -70, 82], sc === '#f4efe6' ? '#e0453a' : sc);
+          p.restore();
+        }
+      }
+      if (C.stripes === 'checker' || C.roof === 'taxi') for (let i = 0; i < 8; i++) r(39 + i * 9, fy - 7, 9, 5, i % 2 ? '#1d1a22' : C.stripes === 'checker' ? sc : '#f4efe6');
+      // фигурка на капоте
+      const hy = M.hoodY;
+      if (C.mascot === 'classic') poly([72, hy, 78, hy, 75, hy - 7], K.chrome);
+      if (C.mascot === 'star') star(75, hy - 7, 7, '#e0b45a');
+      if (C.mascot === 'wings') {
+        poly([75, hy, 60, hy - 8, 66, hy], K.chrome);
+        poly([75, hy, 90, hy - 8, 84, hy], K.chrome);
+        dot(75, hy - 3, 3, '#e0b45a');
+      }
+      if (C.roof === 'taxi') {
+        r(88, sy - 9, 26, 9, '#ffd56a');
+        p.fillStyle = '#1d1a22';
+        p.font = '800 6.5px system-ui';
+        p.textAlign = 'center';
+        p.textBaseline = 'middle';
+        p.fillText('ТАКСИ', 101, sy - 4.5);
+      }
+      // табличка с аватаркой канала (у открытой машины — на стойке сбоку, чтобы не закрывать водителя)
+      const ax = open ? 118 : 75;
+      const ay = open ? M.hoodY - 4 : sy;
+      r(ax - 3, ay - 10, 6, 10, '#2a2630');
+      if (ava) p.drawImage(ava, ax - 15, ay - 39, 30, 30);
+      else {
+        dot(ax, ay - 24, 15, C.avaColor);
+        p.strokeStyle = '#f4efe6';
+        p.lineWidth = 2.5;
+        p.beginPath();
+        p.arc(ax, ay - 24, 15, 0, PI2);
+        p.stroke();
+        p.fillStyle = '#fff';
+        p.font = '800 12px system-ui';
+        p.textAlign = 'center';
+        p.textBaseline = 'middle';
+        p.fillText(label || '★', ax, ay - 23);
+      }
+      if (C.roof === 'flag') {
+        r(132, sy - 30, 2, 40, '#9a958c');
+        poly([134, sy - 30, 154, sy - 22 + Math.sin(t * 6) * 3, 134, sy - 14], '#e9c46a');
+      }
+      if (C.roof === 'siren') {
+        const on = Math.floor(t * 4) % 2;
+        r(40, sy - 8, 14, 8, on ? '#ff3d3d' : '#5a1010');
+        r(96, sy - 8, 14, 8, on ? '#10205a' : '#3d6bff');
+      }
+    }
+
+    // ---------- Хранение: образы каналов, купленные вещи, за кого играем ----------
+    // 'fameLooks' = { player: ключ канала | null, playerName, ch: { ключ: { name, runner: {отличия}, car: {отличия}, at } } }
+    // 'fameOwned' = { 'runner.head.crown': когда куплено, … } — вещь покупается один раз и подходит любому каналу.
+    // В расширении — chrome.storage.local, на телефоне — localStorage (как рекорд и банк монет).
+    const LOOKS = 'fameLooks';
+    const OWNED = 'fameOwned';
+    async function stGet(k, def) {
+      try {
+        const st = globalThis.chrome?.storage?.local;
+        const v = st ? (await st.get(k))[k] : JSON.parse(localStorage.getItem('smotribelno:' + k) || 'null');
+        return v && typeof v === 'object' ? v : def;
+      } catch {
+        return def;
+      }
+    }
+    async function stSet(k, v) {
+      try {
+        const st = globalThis.chrome?.storage?.local;
+        if (st) await st.set({ [k]: v });
+        else localStorage.setItem('smotribelno:' + k, JSON.stringify(v));
+      } catch {
+        // хранилище недоступно — изменения живут до закрытия
+      }
+    }
+    let saveQ = Promise.resolve();
+    const looksGet = () => stGet(LOOKS, { player: null, ch: {} }).then((d) => ({ player: d.player || null, playerName: d.playerName || null, ch: d.ch || {} }));
+    // изменить и записать по очереди, чтобы два сохранения подряд не потеряли друг друга
+    const looksSave = (mut) =>
+      (saveQ = saveQ.then(async () => {
+        const d = await looksGet();
+        mut(d);
+        await stSet(LOOKS, d);
+        return d;
+      }));
+    const ownedGet = () => stGet(OWNED, {});
+    const ownedAdd = (id) =>
+      (saveQ = saveQ.then(async () => {
+        const o = await ownedGet();
+        o[id] = Date.now();
+        await stSet(OWNED, o);
+        return o;
+      }));
+    const diffOf = (state, defs) => Object.fromEntries(Object.entries(state).filter(([k, v]) => v !== defs[k]));
+    // машина канала по умолчанию — седан своего цвета (по имени), чтобы и ненаряженные каналы различались
+    const carDefault = (name) => {
+      let h = 0;
+      for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      return { ...CAR_DEF0, color: CPAL[h % CPAL.length], avaColor: ['#2a8a8f', '#b8323f', '#5a7fbf', '#8c4a9c', '#3f8f5a'][h % 5] };
+    };
+    // образ канала для игры: бегун и машина с учётом нарядов
+    const lookOf = (d, name) => {
+      const c = d?.ch?.[fameKey(name)];
+      return { runner: { ...DEF, ...(c?.runner || {}) }, car: { ...carDefault(name), ...(c?.car || {}) }, dressed: !!(c && (Object.keys(c.runner || {}).length || Object.keys(c.car || {}).length)) };
+    };
+    // аватарка канала — круг с картинкой (или инициалами); картинку дорисует, когда загрузится
+    const initials = (name) =>
+      String(name || '?')
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((w) => w[0] || '')
+        .join('')
+        .toUpperCase() || '?';
+    function avatar(name, icon, color = '#2a8a8f') {
+      const c = document.createElement('canvas');
+      c.width = c.height = 96;
+      const g = c.getContext('2d');
+      const paint = (img) => {
+        g.clearRect(0, 0, 96, 96);
+        g.save();
+        g.beginPath();
+        g.arc(48, 48, 45, 0, PI2);
+        g.fillStyle = color;
+        g.fill();
+        g.clip();
+        if (img) {
+          const s = Math.max(90 / img.naturalWidth, 90 / img.naturalHeight);
+          g.drawImage(img, 48 - (img.naturalWidth * s) / 2, 48 - (img.naturalHeight * s) / 2, img.naturalWidth * s, img.naturalHeight * s);
+        } else {
+          const t = initials(name);
+          g.fillStyle = '#fff';
+          g.font = `800 ${t.length > 1 ? 36 : 46}px Manrope, system-ui, sans-serif`;
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          g.fillText(t, 48, 51);
+        }
+        g.restore();
+        g.lineWidth = 5;
+        g.strokeStyle = '#f4efe6';
+        g.beginPath();
+        g.arc(48, 48, 45, 0, PI2);
+        g.stroke();
+      };
+      paint(null);
+      if (icon) {
+        const img = new Image();
+        img.referrerPolicy = 'no-referrer';
+        img.onload = () => img.naturalWidth && paint(img);
+        img.src = icon;
+      }
+      return c;
+    }
+
+    // ---------- Кружки гардероба и код образа ----------
+    function thumbDraw(c, spec, draw) {
+      const p = c.getContext('2d');
+      const S = c.width;
+      const [, cx, cy, size] = spec;
+      p.setTransform(1, 0, 0, 1, 0, 0);
+      p.clearRect(0, 0, S, S);
+      p.save();
+      p.beginPath();
+      p.arc(S / 2, S / 2, S / 2, 0, PI2);
+      p.clip();
+      p.fillStyle = '#2c2638';
+      p.fillRect(0, 0, S, S);
+      const k = S / size;
+      p.translate(S / 2 - cx * k, S / 2 - cy * k);
+      p.scale(k, k);
+      draw(p);
+      p.restore();
+    }
+    // Код: «СМБ1-»/«СМК1-» + по 3 знака на каждое отличие от стандарта (номер свойства, i — вещь по номеру,
+    // p — цвет из палитры, h — свой цвет и ещё 6 знаков)
+    const B36 = (n) => n.toString(36);
+    function encode(prefix, state, defs, groups, colors) {
+      return (
+        prefix +
+        Object.keys(defs)
+          .map((k, i) => {
+            const v = state[k];
+            if (v === defs[k]) return '';
+            if (groups[k]) return B36(i) + 'i' + B36(groups[k].items.findIndex(([id]) => id === v));
+            const pi = colors[k]?.[1].indexOf(v);
+            return B36(i) + (pi >= 0 ? 'p' + B36(pi) : 'h' + String(v).slice(1).toLowerCase());
+          })
+          .join('')
+      );
+    }
+    function decode(prefix, raw, defs, groups, colors) {
+      const at = raw.indexOf(prefix);
+      if (at < 0) return null;
+      const keys = Object.keys(defs);
+      const body = raw.slice(at + prefix.length).replace(/\s+/g, '');
+      const out = {};
+      let bad = 0;
+      for (let i = 0; i < body.length; ) {
+        const k = keys[parseInt(body[i], 36)];
+        const t = body[i + 1];
+        const val = body.slice(i + 2, i + 2 + (t === 'h' ? 6 : 1));
+        i += 2 + (t === 'h' ? 6 : 1);
+        let v = null;
+        if (k && t === 'i' && groups[k]) v = groups[k].items[parseInt(val, 36)]?.[0];
+        if (k && t === 'p' && colors[k]) v = colors[k][1][parseInt(val, 36)];
+        if (k && t === 'h' && colors[k] && /^[0-9a-f]{6}$/i.test(val)) v = '#' + val.toLowerCase();
+        if (v) out[k] = v;
+        else bad++;
+      }
+      return bad && bad * 3 >= body.length ? null : out;
+    }
+
+    // ---------- Редактор гардероба и гаража канала (в профиле канала) ----------
+    // host — куда; channel: { name, icon }. Сохраняется само; «Играть за этот канал» выбирает бегуна для забега.
+    // Вернёт { el, mount(host) } — профиль перерисовывается целиком, а редактор переносится в новую разметку
+    // со всем состоянием (вкладки, примерка).
+    const KINDS = {
+      runner: { groups: GROUPS, cats: CATS, colors: COLORS, prefix: 'СМБ1-', noun: 'образа' },
+      car: { groups: CAR, cats: CCATS, colors: CAR_COLORS, prefix: 'СМК1-', noun: 'машины' },
+    };
+    function editor(host, channel) {
+      const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+      const key = fameKey(channel.name);
+      const defs = { runner: DEF, car: carDefault(channel.name) };
+      const S = { kind: 'runner', view: 'run', cat: { runner: 'head', car: 'body' }, runner: { ...DEF }, car: { ...defs.car }, owned: {}, bank: 0, player: null, pending: null };
+      const ava = avatar(channel.name, channel.icon, defs.car.avaColor);
+      const root = document.createElement('div');
+      root.className = 'le';
+      root.innerHTML = `<div class="le-top"><div class="le-seg le-kind" role="tablist"><button type="button" data-kind="runner" aria-pressed="true">Бегун</button><button type="button" data-kind="car" aria-pressed="false">Машина</button></div><button type="button" class="btn small le-play" aria-pressed="false">▶ Играть за этот канал</button></div>
+        <div class="le-studio">
+          <div class="le-stage">
+            <div class="le-seg le-view"><button type="button" data-view="run" aria-pressed="true">На бегу</button><button type="button" data-view="face" aria-pressed="false">Лицом</button></div>
+            <canvas class="le-cv" width="560" height="440" aria-label="Образ канала"></canvas>
+            <div class="le-bank">В банке <b class="le-coins">…</b> монет<span class="le-cost"></span></div>
+            <div class="le-buy" hidden></div>
+            <div class="le-share"><button type="button" class="btn small" data-copy>Скопировать код</button><input type="text" spellcheck="false" placeholder="Вставьте код" aria-label="Код образа"><button type="button" class="btn small" data-apply>Применить</button><small aria-live="polite"></small></div>
+          </div>
+          <div class="le-side"><div class="le-seg le-cats"></div><div class="le-inv"></div><div class="le-presets-box"><h4>Готовые образы</h4><div class="le-presets"></div></div></div>
+        </div>`;
+      host.appendChild(root);
+      const $ = (s) => root.querySelector(s);
+      const cv = $('.le-cv');
+      const g = cv.getContext('2d');
+      const say = (t, cls = '') => {
+        const m = $('.le-share small');
+        m.textContent = t;
+        m.className = cls;
+      };
+      const itemId = (kind, k, v) => `${kind}.${k}.${v}`;
+      const priceOf = (kind, k, v) => KINDS[kind].groups[k]?.items.find(([id]) => id === v)?.[2] || 0;
+      const owns = (kind, k, v) => !priceOf(kind, k, v) || !!S.owned[itemId(kind, k, v)];
+      // что сохраняем: примерка (ещё не купленная вещь) не сохраняется
+      const saved = (kind) => (S.pending?.kind === kind ? { ...S[kind], [S.pending.k]: S.pending.prev } : S[kind]);
+      let saveT = 0;
+      const save = () => {
+        clearTimeout(saveT);
+        saveT = setTimeout(
+          () =>
+            looksSave((d) => {
+              const r = diffOf(saved('runner'), DEF);
+              const c = diffOf(saved('car'), defs.car);
+              if (Object.keys(r).length || Object.keys(c).length) d.ch[key] = { name: channel.name, runner: r, car: c, at: Date.now() };
+              else delete d.ch[key];
+            }),
+          250
+        );
+      };
+      const cancelTry = () => {
+        if (!S.pending) return;
+        S[S.pending.kind][S.pending.k] = S.pending.prev;
+        S.pending = null;
+      };
+      // ---- разметка гардероба ----
+      const render = () => {
+        const K = KINDS[S.kind];
+        const st = S[S.kind];
+        root.querySelectorAll('.le-kind [data-kind]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === S.kind)));
+        $('.le-view').hidden = S.kind !== 'runner';
+        root.querySelectorAll('.le-view [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
+        $('.le-play').setAttribute('aria-pressed', String(S.player === key));
+        $('.le-play').textContent = S.player === key ? '✓ Вы играете за этот канал' : '▶ Играть за этот канал';
+        $('.le-coins').textContent = S.bank;
+        $('.le-cats').innerHTML = K.cats.map(([id, name]) => `<button type="button" data-cat="${id}" aria-pressed="${S.cat[S.kind] === id}">${esc(name)}</button>`).join('');
+        $('.le-inv').innerHTML = Object.entries(K.groups)
+          .filter(([, gr]) => gr.cat === S.cat[S.kind])
+          .map(
+            ([k, gr]) => `<div><h4>${esc(gr.label)}</h4><div class="le-slots">${gr.items
+              .map(([id, name, pr]) => {
+                const own = owns(S.kind, k, id);
+                return `<button type="button" class="le-slot${own ? '' : ' locked'}" data-k="${k}" data-v="${id}" aria-pressed="${st[k] === id}" title="${esc(name)}${pr ? (own ? ' · куплено' : ` · ${pr} монет`) : ''}"><canvas width="112" height="112"></canvas>${pr && !own ? `<span class="le-coin">${pr}</span>` : ''}<span class="le-nm">${esc(name)}</span></button>`;
+              })
+              .join('')}</div>${(gr.colors || [])
+              .map(
+                (ck) => `<div class="le-colors"><small>${esc(K.colors[ck][0])}</small>${K.colors[ck][1]
+                  .map((col) => `<button type="button" class="le-sw" data-c="${ck}" data-v="${col}" aria-pressed="${st[ck] === col}" aria-label="${esc(K.colors[ck][0])} ${col}" style="background:${col}"></button>`)
+                  .join('')}<label class="le-sw le-pick" title="Свой цвет" aria-pressed="${!K.colors[ck][1].includes(st[ck])}"><input type="color" data-c="${ck}" value="${st[ck]}" aria-label="${esc(K.colors[ck][0])}: свой цвет"></label></div>`
+              )
+              .join('')}</div>`
+          )
+          .join('');
+        root.querySelectorAll('.le-inv .le-slot').forEach((b) => {
+          const gr = K.groups[b.dataset.k];
+          thumbDraw(b.querySelector('canvas'), gr.thumb, (p) =>
+            S.kind === 'runner' ? drawPerson(p, gr.thumb[0], { ...st, ...(gr.base || {}), [b.dataset.k]: b.dataset.v }) : drawCar(p, { ...st, [b.dataset.k]: b.dataset.v }, 0, ava, initials(channel.name))
+          );
+        });
+        $('.le-presets-box').hidden = S.kind !== 'runner';
+        if (S.kind === 'runner' && !$('.le-presets').childElementCount) {
+          $('.le-presets').innerHTML = PRESETS.map(([name], i) => `<button type="button" class="le-slot" data-p="${i}"><canvas width="112" height="112"></canvas><span class="le-nm">${esc(name)}</span></button>`).join('');
+          root.querySelectorAll('[data-p]').forEach((b, i) => thumbDraw(b.querySelector('canvas'), ['face', 50, 46, 92], (p) => portrait(p, { ...DEF, ...PRESETS[i][1] }, false, 0.1)));
+        }
+        const buy = $('.le-buy');
+        if (S.pending) {
+          const P = S.pending;
+          const short = P.price > S.bank;
+          buy.hidden = false;
+          buy.innerHTML = `<span>Примерка: <b>${esc(P.name)}</b> — ${P.price} монет${short ? ` · не хватает ${P.price - S.bank}` : ''}</span><button type="button" class="btn small primary" data-buy ${short ? 'disabled' : ''}>Купить</button><button type="button" class="btn small" data-unbuy>Снять</button>`;
+        } else buy.hidden = true;
+      };
+      // применить набор вещей и цветов (код, готовый образ): некупленные вещи пропускаем
+      const applySet = (kind, set) => {
+        const st = S[kind];
+        const need = [];
+        for (const [k, v] of Object.entries(set)) {
+          if (KINDS[kind].groups[k]) {
+            if (owns(kind, k, v)) st[k] = v;
+            else need.push(KINDS[kind].groups[k].items.find(([id]) => id === v)?.[1] || v);
+          } else if (KINDS[kind].colors[k]) st[k] = v;
+        }
+        return need;
+      };
+      root.addEventListener('click', async (e) => {
+        const t = e.target;
+        const kb = t.closest('[data-kind]');
+        if (kb) {
+          cancelTry();
+          S.kind = kb.dataset.kind;
+          say('');
+          return render();
+        }
+        const vb = t.closest('[data-view]');
+        if (vb) {
+          S.view = vb.dataset.view;
+          return render();
+        }
+        const cb = t.closest('[data-cat]');
+        if (cb) {
+          S.cat[S.kind] = cb.dataset.cat;
+          return render();
+        }
+        if (t.closest('.le-play')) {
+          S.player = S.player === key ? null : key;
+          looksSave((d) => {
+            d.player = S.player;
+            d.playerName = S.player ? channel.name : null;
+          });
+          return render();
+        }
+        const pb = t.closest('[data-p]');
+        if (pb) {
+          cancelTry();
+          S.runner = { ...DEF };
+          const need = applySet('runner', PRESETS[+pb.dataset.p][1]);
+          say(need.length ? 'Ещё нужно купить: ' + need.join(', ') : 'Готовый образ надет', need.length ? '' : 'ok');
+          save();
+          return render();
+        }
+        const slot = t.closest('.le-slot[data-k]');
+        if (slot) {
+          const { k, v } = slot.dataset;
+          cancelTry();
+          if (owns(S.kind, k, v)) {
+            S[S.kind][k] = v;
+            save();
+          } else {
+            const it = KINDS[S.kind].groups[k].items.find(([id]) => id === v);
+            S.pending = { kind: S.kind, k, v, prev: S[S.kind][k], price: it[2], name: it[1], id: itemId(S.kind, k, v) };
+            S[S.kind][k] = v;
+          }
+          return render();
+        }
+        const sw = t.closest('button.le-sw');
+        if (sw) {
+          S[S.kind][sw.dataset.c] = sw.dataset.v;
+          save();
+          return render();
+        }
+        if (t.closest('[data-unbuy]')) {
+          cancelTry();
+          return render();
+        }
+        if (t.closest('[data-buy]') && S.pending) {
+          const P = S.pending;
+          const left = await runSpend(P.price);
+          if (left < 0) {
+            say('Не хватает монет — забег за ремонтом в конце аллеи их принесёт', 'bad');
+            return;
+          }
+          S.bank = left;
+          S.owned = await ownedAdd(P.id);
+          S.pending = null;
+          say('Куплено: ' + P.name, 'ok');
+          save();
+          return render();
+        }
+        if (t.closest('[data-copy]')) {
+          const inp = $('.le-share input');
+          const K = KINDS[S.kind];
+          inp.value = encode(K.prefix, saved(S.kind), defs[S.kind], K.groups, K.colors);
+          try {
+            await navigator.clipboard.writeText(inp.value);
+            say('Код скопирован — отправьте его другу', 'ok');
+          } catch {
+            inp.select();
+            say('Код в поле — скопируйте его (Ctrl+C)');
+          }
+          return;
+        }
+        if (t.closest('[data-apply]')) applyCode();
+      });
+      const applyCode = () => {
+        const raw = $('.le-share input').value.trim();
+        const kind = raw.includes('СМК1-') ? 'car' : raw.includes('СМБ1-') ? 'runner' : null;
+        if (!kind) return say(raw ? 'Это не код образа или машины' : 'Вставьте код', 'bad');
+        const K = KINDS[kind];
+        const set = decode(K.prefix, raw, defs[kind], K.groups, K.colors);
+        if (!set) return say('Код повреждён — скопируйте его ещё раз', 'bad');
+        cancelTry();
+        S.kind = kind;
+        S[kind] = { ...defs[kind] };
+        const need = applySet(kind, set);
+        say(need.length ? 'Применено; ещё нужно купить: ' + need.join(', ') : (kind === 'car' ? 'Машина' : 'Образ') + ' применён', need.length ? '' : 'ok');
+        save();
+        render();
+      };
+      $('.le-share input').addEventListener('keydown', (e) => e.key === 'Enter' && applyCode());
+      root.addEventListener('input', (e) => {
+        const i = e.target.closest('input[type=color]');
+        if (i) S[S.kind][i.dataset.c] = i.value;
+      });
+      root.addEventListener('change', (e) => {
+        if (!e.target.closest('input[type=color]')) return;
+        save();
+        render();
+      });
+      // ---- сцена: бегун на дороге (или лицом), машина в гараже ----
+      const t0 = performance.now();
+      let jumpAt = -9;
+      cv.addEventListener('click', () => (jumpAt = (performance.now() - t0) / 1000));
+      let raf = 0;
+      const frame = (now) => {
+        raf = 0;
+        if (!root.isConnected) return;
+        const t = (now - t0) / 1000;
+        const W = cv.width;
+        const H = cv.height;
+        if (S.kind === 'car') drawGarage(g, W, H, S.car, t, ava, initials(channel.name));
+        else drawStage(g, W, H, S.runner, t, S.view, jumpAt);
+        raf = requestAnimationFrame(frame);
+      };
+      const start = () => !raf && (raf = requestAnimationFrame(frame));
+      // ---- данные ----
+      render();
+      Promise.all([looksGet(), ownedGet(), runBank()]).then(([d, owned, bank]) => {
+        const c = d.ch[key];
+        S.runner = { ...DEF, ...(c?.runner || {}) };
+        S.car = { ...defs.car, ...(c?.car || {}) };
+        S.owned = owned;
+        S.bank = bank;
+        S.player = d.player;
+        render();
+      });
+      start();
+      return {
+        el: root,
+        mount(h) {
+          if (root.parentNode !== h) h.appendChild(root);
+          start();
+          runBank().then((b) => {
+            S.bank = b;
+            $('.le-coins').textContent = b;
+          });
+        },
+      };
+    }
+    // сцена бегуна: дорога и бегун со спины (с медальоном-лицом) или портрет лицом
+    function drawStage(g, W, H, look, t, view, jumpAt) {
+      const blink = t % 3.4 < 0.13;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      if (view === 'face') {
+        const bg = g.createRadialGradient(W / 2, H * 0.4, 20, W / 2, H * 0.5, W * 0.7);
+        bg.addColorStop(0, '#3d2152');
+        bg.addColorStop(1, '#120e18');
+        g.fillStyle = bg;
+        g.fillRect(0, 0, W, H);
+        const S = H / 102;
+        g.save();
+        g.translate(W / 2 - 50 * S, H - 100 * S);
+        g.scale(S, S);
+        portrait(g, look, blink, t);
+        g.restore();
+        return;
+      }
+      const hy = H * 0.42;
+      const sky = g.createLinearGradient(0, 0, 0, hy);
+      sky.addColorStop(0, '#0b0816');
+      sky.addColorStop(1, '#4a2550');
+      g.fillStyle = sky;
+      g.fillRect(0, 0, W, hy);
+      g.fillStyle = '#1c1722';
+      g.fillRect(0, hy, W, H - hy);
+      g.fillStyle = '#251a31';
+      for (let i = 0, x = 0; x < W; i++) {
+        const w = 40 + ((i * 37) % 50);
+        const h = 40 + ((i * 53) % 100);
+        g.fillRect(x, hy - h, w, h);
+        x += w + 6;
+      }
+      const hx = W / 2;
+      g.fillStyle = '#2b2531';
+      g.beginPath();
+      g.moveTo(hx - 30, hy);
+      g.lineTo(hx + 30, hy);
+      g.lineTo(W * 1.1, H);
+      g.lineTo(-W * 0.1, H);
+      g.fill();
+      g.fillStyle = '#3b2d3c';
+      g.beginPath();
+      g.moveTo(hx - 8, hy);
+      g.lineTo(hx + 8, hy);
+      g.lineTo(W * 0.72, H);
+      g.lineTo(W * 0.28, H);
+      g.fill();
+      g.strokeStyle = 'rgba(0,0,0,.3)';
+      g.lineWidth = 2;
+      for (let k = 0; k < 14; k++) {
+        const z = ((k + ((t * 3) % 1)) / 14) ** 2;
+        const y = hy + (H - hy) * z;
+        const half = 8 + (W * 0.22 - 8) * z;
+        g.beginPath();
+        g.moveTo(hx - half, y);
+        g.lineTo(hx + half, y);
+        g.stroke();
+      }
+      const jt = t - jumpAt;
+      const jy = jt < 0.7 ? Math.sin((jt / 0.7) * Math.PI) * H * 0.17 : 0;
+      const fr = jt < 0.7 ? 6 : Math.floor(t * 11) % 6;
+      const S = H / 150;
+      g.fillStyle = 'rgba(0,0,0,.35)';
+      g.beginPath();
+      g.ellipse(W / 2, H * 0.92, 20 * S - jy * 0.05, 3.6 * S, 0, 0, PI2);
+      g.fill();
+      g.save();
+      g.translate(W / 2 - 50 * S, H * 0.92 - 100 * S - jy);
+      g.scale(S, S);
+      runner(g, fr, look);
+      g.restore();
+      const R = H * 0.13;
+      g.save();
+      g.beginPath();
+      g.arc(R + 14, R + 14, R, 0, PI2);
+      g.fillStyle = '#2a1838';
+      g.fill();
+      g.clip();
+      g.translate(14, 14 + R * 0.08);
+      g.scale((2 * R) / 100, (2 * R) / 100);
+      portrait(g, look, blink, t);
+      g.restore();
+      g.strokeStyle = '#f2d68a';
+      g.lineWidth = 4;
+      g.beginPath();
+      g.arc(R + 14, R + 14, R, 0, PI2);
+      g.stroke();
+    }
+    function drawGarage(g, W, H, car, t, ava, label) {
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.fillStyle = '#16121c';
+      g.fillRect(0, 0, W, H);
+      const fl = g.createLinearGradient(0, H * 0.62, 0, H);
+      fl.addColorStop(0, '#231f2d');
+      fl.addColorStop(1, '#2c2638');
+      g.fillStyle = fl;
+      g.fillRect(0, H * 0.62, W, H);
+      const sp = g.createRadialGradient(W / 2, 0, 10, W / 2, H * 0.5, H * 0.7);
+      sp.addColorStop(0, 'rgba(255,230,170,.18)');
+      sp.addColorStop(1, 'rgba(255,230,170,0)');
+      g.fillStyle = sp;
+      g.fillRect(0, 0, W, H);
+      const S = Math.min(W / 190, H / 165);
+      g.save();
+      g.translate(W / 2 - 75 * S, H * 0.92 - 108 * S);
+      g.scale(S, S);
+      drawCar(g, car, t, ava, label);
+      g.restore();
+    }
+    const drawPerson = (p, kind, L) => (kind === 'back' ? runner(p, 1, L) : portrait(p, L, false, 0.1));
+
+    return { DEF, carDefault, runner, portrait, drawCar, avatar, initials, looksGet, looksSave, lookOf, ownedGet, editor };
+  })();
 
   // Блок ролика в карточке звезды: крупное превью (ведёт на YouTube) и плитки с цифрами.
   // stats: { views, likes, date } или null — тогда плитки «загружаются»; note — строка вместо плиток.
@@ -3817,6 +5605,7 @@ const TR = (() => {
     fameWalk,
     fameRun,
     fameBank: runBank,
+    dress: DRESS,
     thumbHQ,
     thumbFallback,
     watchThumbFallback,

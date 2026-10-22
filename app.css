@@ -5525,3 +5525,270 @@ body {
   transform: none !important;
   animation: none !important;
 }
+
+/* Гардероб и гараж канала (TR.dress.editor): бегун и машина для «Забега за ремонтом» */
+.le {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.le-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.le-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--surface-2, #231f2d);
+}
+.le-seg[hidden] {
+  display: none;
+}
+.le-seg button {
+  min-height: 32px;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-2, #b8b0c9);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.le-seg button[aria-pressed='true'] {
+  background: var(--surface-3, #2c2638);
+  color: #f2d68a;
+  box-shadow: inset 0 0 0 1px rgba(233, 196, 106, 0.4);
+}
+.le-play[aria-pressed='true'] {
+  border-color: rgba(233, 196, 106, 0.6);
+  background: rgba(233, 196, 106, 0.14);
+  color: #f2d68a;
+}
+.le-studio {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.le-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.le-cv {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  background: #16121c;
+  cursor: pointer;
+}
+.le-bank {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--surface-2, #231f2d);
+  color: var(--text-2, #b8b0c9);
+  font-size: 13.5px;
+}
+.le-bank b {
+  color: #f2d68a;
+  font-size: 15px;
+}
+.le-buy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(233, 196, 106, 0.45);
+  border-radius: 12px;
+  background: rgba(233, 196, 106, 0.08);
+  color: var(--text, #f4f1fa);
+  font-size: 13.5px;
+}
+.le-buy[hidden] {
+  display: none;
+}
+.le-buy span {
+  flex: 1 1 160px;
+}
+.le-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.le-share input {
+  flex: 1 1 120px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border, #2f2a3b);
+  border-radius: 10px;
+  background: #15121c;
+  color: var(--text, #f4f1fa);
+  font: 600 12.5px ui-monospace, Consolas, monospace;
+}
+.le-share small {
+  flex-basis: 100%;
+  min-height: 1.2em;
+  color: var(--muted, #8e86a0);
+  font-size: 12.5px;
+}
+.le-share small.ok {
+  color: #6ee7b7;
+}
+.le-share small.bad {
+  color: #fca5a5;
+}
+.le-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.le-inv,
+.le-presets-box {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--border, #2f2a3b);
+  border-radius: 16px;
+  background: #15121c;
+}
+.le-presets-box[hidden] {
+  display: none;
+}
+.le-inv h4,
+.le-presets-box h4 {
+  margin: 0 0 8px;
+  color: var(--muted, #8e86a0);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.le-presets-box h4 {
+  margin: 0;
+}
+.le-slots,
+.le-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 10px 6px;
+}
+.le-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2, #b8b0c9);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+}
+.le-slot canvas {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--surface-3, #2c2638);
+  box-shadow: inset 0 0 0 2px var(--border, #2f2a3b);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.le-slot:hover canvas {
+  box-shadow: inset 0 0 0 2px #c4b5fd;
+  transform: translateY(-1px);
+}
+.le-slot.locked canvas {
+  opacity: 0.8;
+}
+.le-slot[aria-pressed='true'] {
+  color: var(--text, #f4f1fa);
+}
+.le-slot[aria-pressed='true'] canvas {
+  box-shadow: 0 0 0 3px #f2d68a, 0 0 12px rgba(233, 196, 106, 0.45);
+}
+.le-coin {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #2a2230;
+  color: #f2d68a;
+  font-size: 10.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 1px rgba(233, 196, 106, 0.5);
+}
+.le-coin::before {
+  content: '● ';
+  color: #e0b45a;
+}
+.le-nm {
+  max-width: 80px;
+  margin-top: 3px;
+}
+.le-colors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+}
+.le-colors small {
+  margin-right: 2px;
+  color: var(--muted, #8e86a0);
+  font-size: 12px;
+  font-weight: 700;
+}
+.le-sw {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.le-sw[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--bg, #110f16), 0 0 0 4px #f2d68a;
+}
+.le-pick {
+  overflow: hidden;
+  background: conic-gradient(#ff5f5f, #ffc85f, #5fffb0, #5fe1ff, #b28bff, #ff5fa2, #ff5f5f);
+}
+.le-pick input {
+  position: absolute;
+  inset: -6px;
+  width: 38px;
+  height: 38px;
+  opacity: 0;
+  cursor: pointer;
+}
+@media (max-width: 760px) {
+  .le-studio {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
