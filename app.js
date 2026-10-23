@@ -2172,8 +2172,12 @@
       if (json.data.settings?.criteria) db.settings.criteria = json.data.settings.criteria;
       if (json.data.settings?.customSets) db.settings.customSets = TR.mergeSets(db.settings.customSets, json.data.settings.customSets);
       if (json.data.settings?.autoWatchedPct) db.settings.autoWatchedPct = json.data.settings.autoWatchedPct;
+      // гардероб и банк монет из копии компьютера — слиянием (номер устройства fameDev не берём)
+      const d = json.data;
+      if (d.fameLooks || d.fameOwned || d.fameWallet) await TR.wardrobeApply({ looks: d.fameLooks, owned: d.fameOwned, wallet: d.fameWallet, best: d.fameRunBest });
     } else if (json?.app === TR.MOBILE_APP && json.videos) {
       incoming = json.videos;
+      if (json.wardrobe) await TR.wardrobeApply(json.wardrobe);
     } else {
       throw new Error('Это не файл «Смотрибельно»');
     }
@@ -2193,10 +2197,12 @@
     return { added, changed };
   }
 
-  function exportFile() {
+  async function exportFile() {
     const videos = {};
     for (const [id, v] of Object.entries(db.videos)) if (worthKeeping(v)) videos[id] = slim(v);
-    const body = JSON.stringify({ app: TR.MOBILE_APP, version: 1, exportedAt: new Date().toISOString(), videos });
+    // гардероб, гараж каналов и банк монет — компьютер сольёт их (монеты по устройствам, без задвоения)
+    const wardrobe = await TR.wardrobeGet();
+    const body = JSON.stringify({ app: TR.MOBILE_APP, version: 1, exportedAt: new Date().toISOString(), videos, wardrobe });
     const name = `smotribelno-phone-${TR.dateKey()}.json`;
     return new File([body], name, { type: 'application/json' });
   }
@@ -2217,7 +2223,7 @@
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-export]');
     if (!b) return;
-    const file = exportFile();
+    const file = await exportFile();
     try {
       if (b.dataset.export === 'share' && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: 'Смотрибельно — с телефона' });
@@ -2257,6 +2263,9 @@
   };
   let driveTimer = null;
   let driveBusy = false;
+  let wardApplying = false;
+  // гардероб, покупка или забег записали своё (TR.wardrobe… / банк монет) — тоже на Диск
+  addEventListener('smotribelno:wardrobe', () => !wardApplying && scheduleDrive());
 
   function scheduleDrive(ms = 8000) {
     if (!drive.on) return;
@@ -2302,17 +2311,27 @@
     }
     driveBusy = true;
     try {
-      const r = await TR.driveSync(drive.token, db.videos, { settings: db.settings, playlists: plStore(), fame: fameStore() });
+      const r = await TR.driveSync(drive.token, db.videos, { settings: db.settings, playlists: plStore(), fame: fameStore(), wardrobe: await TR.wardrobeGet() });
       for (const [id, v] of Object.entries(r.changes)) db.videos[id] = TR.slimVideo(v);
       if (r.playlists) db.playlists = r.playlists; // плейлисты с компьютера (или их переименование, удаление)
       if (r.fame) db.fame = r.fame; // аллея славы с компьютера
       if (r.remoteCriteria) db.settings.criteria = r.remoteCriteria;
       if (r.customSets) db.settings.customSets = r.customSets; // свои наборы с компьютера
       if (r.remoteStats) db.stats = r.remoteStats; // время по дням и каналам — с компьютера
+      // гардероб, гараж и монеты с компьютера — слиянием с тем, что здесь сейчас; эта запись не зовёт новую синхронизацию
+      let ward = false;
+      if (r.wardrobe) {
+        wardApplying = true;
+        try {
+          ward = await TR.wardrobeApply(r.wardrobe);
+        } finally {
+          wardApplying = false;
+        }
+      }
       save(false);
       drive = { ...drive, needLogin: false, error: '', at: Date.now(), received: Object.keys(r.changes).length, total: r.total };
       sessionStorage.removeItem('smotribelno:silent');
-      if (Object.keys(r.changes).length || r.playlists || r.fame) render();
+      if (Object.keys(r.changes).length || r.playlists || r.fame || ward) render();
     } catch (e) {
       drive = { ...drive, error: e.message, at: Date.now(), needLogin: !!e.auth };
       if (e.auth) drive.token = null;

@@ -1692,44 +1692,188 @@ const TR = (() => {
     }
     return n || 0;
   }
-  // Банк монет: всё, что собрано во всех забегах (потом — валюта для нарядов каналам). add — сколько положить,
-  // без add — прочитать. Хранится там же, где рекорд; записи идут по очереди, чтобы две подряд не потеряли друг друга.
+  // ---- Банк монет, гардероб и гараж — на всех устройствах ----
+  // Банк не хранит одно число (два устройства задвоили бы его при слиянии):
+  // 'fameWallet' = { earned: { устройство: сколько всего собрано там }, bought: { вещь: { item, cost, at } } },
+  // баланс = Σearned − Σcost. Каждое устройство растит только свой счётчик, поэтому слияние — максимум по устройству.
+  // 'fameDev' — номер этого устройства, на другие устройства не уезжает. Старое число 'fameRunCoins' один раз
+  // становится earned['old…'] с номером из самих старых данных: если переезд одновременно сделают две части
+  // расширения (вкладка и фон), они запишут одно и то же, а не два счётчика.
+  // Хранится там же, где рекорд: chrome.storage.local, на телефоне — localStorage.
   const RUN_BANK = 'fameRunCoins';
-  let bankQ = Promise.resolve(0);
-  function runBank(add = 0) {
-    bankQ = bankQ.then(async () => {
-      try {
-        const st = globalThis.chrome?.storage?.local;
-        const cur = Number(st ? (await st.get(RUN_BANK))[RUN_BANK] : localStorage.getItem('smotribelno:' + RUN_BANK)) || 0;
-        if (!(add > 0)) return cur;
-        const n = cur + Math.round(add);
-        if (st) await st.set({ [RUN_BANK]: n });
-        else localStorage.setItem('smotribelno:' + RUN_BANK, String(n));
-        return n;
-      } catch {
-        return 0; // хранилище недоступно (приватное окно) — монеты этого забега не сохранятся
-      }
-    });
-    return bankQ;
+  const WALLET = 'fameWallet';
+  const RUN_DEV = 'fameDev';
+  const LOOKS_KEY = 'fameLooks';
+  const OWNED_KEY = 'fameOwned';
+  async function wardRead(k) {
+    try {
+      const st = globalThis.chrome?.storage?.local;
+      return st ? (await st.get(k))[k] : JSON.parse(localStorage.getItem('smotribelno:' + k) || 'null');
+    } catch {
+      return null;
+    }
   }
-  // списать монеты из банка (покупка в гардеробе): вернёт остаток, или −1, если монет не хватает
-  function runSpend(cost) {
-    let left = -1;
-    bankQ = bankQ.then(async () => {
-      try {
-        const st = globalThis.chrome?.storage?.local;
-        const cur = Number(st ? (await st.get(RUN_BANK))[RUN_BANK] : localStorage.getItem('smotribelno:' + RUN_BANK)) || 0;
-        if (!(cost >= 0) || cur < cost) return cur;
-        const n = cur - Math.round(cost);
-        if (st) await st.set({ [RUN_BANK]: n });
-        else localStorage.setItem('smotribelno:' + RUN_BANK, String(n));
-        left = n;
-        return n;
-      } catch {
-        return 0;
+  async function wardWrite(k, v) {
+    try {
+      const st = globalThis.chrome?.storage?.local;
+      if (st) return await st.set({ [k]: v });
+      localStorage.setItem('smotribelno:' + k, JSON.stringify(v));
+      // на телефоне — знак «гардероб поменялся»: приложение отправит его на Диск
+      globalThis.dispatchEvent?.(new CustomEvent('smotribelno:wardrobe', { detail: k }));
+    } catch {
+      // хранилище недоступно (приватное окно) — изменения живут до закрытия
+    }
+  }
+  // все записи банка и гардероба идут по очереди, чтобы две подряд не потеряли друг друга
+  let wardQ = Promise.resolve();
+  const wardDo = (fn) => {
+    const p = wardQ.then(fn);
+    wardQ = p.catch(() => {});
+    return p;
+  };
+  // номер устройства — один на страницу (повторные вызовы ждут первый)
+  let devP = null;
+  const runDevice = () =>
+    (devP ||= (async () => {
+      const v = await wardRead(RUN_DEV);
+      if (typeof v === 'string' && /^[\w-]{4,40}$/.test(v)) return v;
+      const id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      await wardWrite(RUN_DEV, id);
+      return id;
+    })());
+  const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
+  const okKey = (k) => !!k && k.length <= 200 && k !== '__proto__';
+  function walletOf(w) {
+    const out = { earned: {}, bought: {} };
+    if (!isObj(w)) return out;
+    for (const [d, n] of Object.entries(isObj(w.earned) ? w.earned : {})) if (okKey(d) && Number.isFinite(n) && n > 0) out.earned[d] = Math.round(n);
+    for (const [id, b] of Object.entries(isObj(w.bought) ? w.bought : {})) {
+      if (okKey(id) && isObj(b) && Number.isFinite(b.cost) && b.cost >= 0) out.bought[id] = { item: String(b.item || id).slice(0, 200), cost: Math.round(b.cost), at: Number(b.at) || 0 };
+    }
+    return out;
+  }
+  function walletBalance(w) {
+    const x = walletOf(w);
+    let n = 0;
+    for (const e of Object.values(x.earned)) n += e;
+    for (const b of Object.values(x.bought)) n -= b.cost;
+    return Math.max(0, n);
+  }
+  // слияние банков: собранное — максимум по устройству, покупки — объединение (одна вещь — одна покупка, ранняя)
+  function mergeWallet(a, b) {
+    const x = walletOf(a);
+    const y = walletOf(b);
+    const out = { earned: { ...x.earned }, bought: { ...x.bought } };
+    for (const [d, n] of Object.entries(y.earned)) out.earned[d] = Math.max(out.earned[d] || 0, n);
+    for (const [id, p] of Object.entries(y.bought)) {
+      const q = out.bought[id];
+      if (!q || p.at < q.at || (p.at === q.at && stableJson(p) < stableJson(q))) out.bought[id] = p;
+    }
+    return out;
+  }
+  // банк этого устройства; при первом чтении старое число монет переезжает в earned['old' + номер старых данных]
+  async function walletLoad() {
+    const w = await wardRead(WALLET);
+    if (isObj(w)) return walletOf(w);
+    const old = Math.round(Number(await wardRead(RUN_BANK)) || 0);
+    let h = 2166136261;
+    for (const c of `${old}|${Number(await wardRead(RUN_BEST)) || 0}|${stableJson(await wardRead(OWNED_KEY))}`) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+    const out = { earned: old > 0 ? { ['old' + h.toString(36)]: old } : {}, bought: {} };
+    await wardWrite(WALLET, out);
+    return out;
+  }
+  // Банк монет: всё, что собрано во всех забегах, минус покупки. add — сколько положить, без add — прочитать баланс.
+  function runBank(add = 0) {
+    return wardDo(async () => {
+      const w = await walletLoad();
+      if (add > 0) {
+        const d = await runDevice();
+        w.earned[d] = (w.earned[d] || 0) + Math.round(add);
+        await wardWrite(WALLET, w);
       }
+      return walletBalance(w);
     });
-    return bankQ.then(() => left);
+  }
+  // списать монеты за вещь item (покупка в гардеробе): вернёт остаток, или −1, если монет не хватает.
+  // Вещь, уже купленная здесь или на другом устройстве, второй раз не оплачивается.
+  function runSpend(cost, item) {
+    return wardDo(async () => {
+      const w = await walletLoad();
+      const id = String(item || 'x' + Date.now().toString(36));
+      if (w.bought[id]) return walletBalance(w);
+      if (!(cost >= 0) || walletBalance(w) < cost) return -1;
+      w.bought[id] = { item: id, cost: Math.round(cost), at: Date.now() };
+      await wardWrite(WALLET, w);
+      return walletBalance(w);
+    });
+  }
+  // из двух записей — с более новым at; при равном — одна и та же на обоих устройствах
+  const newerOf = (l, r) => {
+    const a = Number(l.at) || 0;
+    const b = Number(r.at) || 0;
+    return b > a || (b === a && stableJson(r) > stableJson(l)) ? r : l;
+  };
+  // Образы каналов: по каналу — где at новее; за кого играем — что выбрано позже (playerAt)
+  function cleanLook(o) {
+    const out = {};
+    for (const [k, v] of Object.entries(isObj(o) ? o : {})) if (okKey(k) && ['string', 'number', 'boolean'].includes(typeof v)) out[k] = v;
+    return out;
+  }
+  function mergeLooks(a, b) {
+    const x = isObj(a) ? a : {};
+    const y = isObj(b) ? b : {};
+    // при равном времени (у образов до синхронизации его нет) — выбранный канал, а не «никто»; дальше — по имени,
+    // чтобы оба устройства выбрали одно и то же
+    const pk = (o) => [Number(o.playerAt) || 0, typeof o.player === 'string' ? 1 : 0, String(o.player || '')];
+    const [ax, bx] = [pk(x), pk(y)];
+    const p = bx[0] !== ax[0] ? (bx[0] > ax[0] ? y : x) : bx[1] !== ax[1] ? (bx[1] > ax[1] ? y : x) : bx[2] > ax[2] ? y : x;
+    const player = typeof p.player === 'string' && okKey(p.player) ? p.player : null;
+    const out = { player, playerName: player && typeof p.playerName === 'string' ? p.playerName.slice(0, 200) : null, playerAt: Number(p.playerAt) || 0, ch: {} };
+    const cx = isObj(x.ch) ? x.ch : {};
+    const cy = isObj(y.ch) ? y.ch : {};
+    for (const k of new Set([...Object.keys(cx), ...Object.keys(cy)])) {
+      if (!okKey(k)) continue;
+      const l = isObj(cx[k]) ? cx[k] : null;
+      const r = isObj(cy[k]) ? cy[k] : null;
+      const w = !l ? r : !r ? l : newerOf(l, r);
+      if (w) out.ch[k] = { name: String(w.name || k).slice(0, 200), runner: cleanLook(w.runner), car: cleanLook(w.car), at: Number(w.at) || 0 };
+    }
+    return out;
+  }
+  // купленные вещи — объединение, время покупки — раннее
+  function mergeOwned(a, b) {
+    const out = {};
+    for (const o of [a, b]) for (const [k, t] of Object.entries(isObj(o) ? o : {})) if (okKey(k) && Number.isFinite(t)) out[k] = k in out ? Math.min(out[k], t) : t;
+    return out;
+  }
+  // Всё вместе — для Диска и файла обмена: { looks, owned, wallet, best }
+  function mergeWardrobe(a, b) {
+    return {
+      looks: mergeLooks(a?.looks, b?.looks),
+      owned: mergeOwned(a?.owned, b?.owned),
+      wallet: mergeWallet(a?.wallet, b?.wallet),
+      best: Math.max(Math.round(Number(a?.best) || 0), Math.round(Number(b?.best) || 0)),
+    };
+  }
+  const wardrobeRead = async () => ({ looks: await wardRead(LOOKS_KEY), owned: await wardRead(OWNED_KEY), wallet: await walletLoad(), best: Number(await wardRead(RUN_BEST)) || 0 });
+  // гардероб этого устройства целиком (для Диска и файла обмена)
+  const wardrobeGet = () => wardDo(async () => mergeWardrobe(await wardrobeRead(), null));
+  // пришло с другого устройства: слить с тем, что лежит здесь прямо сейчас, и записать изменившееся.
+  // Вернёт true, если здесь что-то поменялось.
+  function wardrobeApply(inc) {
+    if (!isObj(inc)) return Promise.resolve(false);
+    return wardDo(async () => {
+      const cur = await wardrobeRead();
+      const was = mergeWardrobe(cur, null);
+      const m = mergeWardrobe(cur, inc);
+      const put = [];
+      if (stableJson(m.looks) !== stableJson(was.looks)) put.push(wardWrite(LOOKS_KEY, m.looks));
+      if (stableJson(m.owned) !== stableJson(was.owned)) put.push(wardWrite(OWNED_KEY, m.owned));
+      if (stableJson(m.wallet) !== stableJson(was.wallet)) put.push(wardWrite(WALLET, m.wallet));
+      if (m.best > was.best) put.push(runBest(m.best));
+      await Promise.all(put);
+      return put.length > 0;
+    });
   }
   // racers: [{ name, icon, tier, dressed }] — каналы для машин, до 48; tier — откуда канал: 'star' — со звездой на аллее,
   // 'top' — из лучших по оценкам, 'time' — из самых просматриваемых; dressed — наряженный в гараже (на будущее).
@@ -4662,47 +4806,32 @@ const TR = (() => {
     }
 
     // ---------- Хранение: образы каналов, купленные вещи, за кого играем ----------
-    // 'fameLooks' = { player: ключ канала | null, playerName, ch: { ключ: { name, runner: {отличия}, car: {отличия}, at } } }
+    // 'fameLooks' = { player: ключ канала | null, playerName, playerAt, ch: { ключ: { name, runner: {отличия}, car: {отличия}, at } } }
     // 'fameOwned' = { 'runner.head.crown': когда куплено, … } — вещь покупается один раз и подходит любому каналу.
-    // В расширении — chrome.storage.local, на телефоне — localStorage (как рекорд и банк монет).
-    const LOOKS = 'fameLooks';
-    const OWNED = 'fameOwned';
-    async function stGet(k, def) {
-      try {
-        const st = globalThis.chrome?.storage?.local;
-        const v = st ? (await st.get(k))[k] : JSON.parse(localStorage.getItem('smotribelno:' + k) || 'null');
-        return v && typeof v === 'object' ? v : def;
-      } catch {
-        return def;
-      }
-    }
-    async function stSet(k, v) {
-      try {
-        const st = globalThis.chrome?.storage?.local;
-        if (st) await st.set({ [k]: v });
-        else localStorage.setItem('smotribelno:' + k, JSON.stringify(v));
-      } catch {
-        // хранилище недоступно — изменения живут до закрытия
-      }
-    }
-    let saveQ = Promise.resolve();
-    const looksGet = () => stGet(LOOKS, { player: null, ch: {} }).then((d) => ({ player: d.player || null, playerName: d.playerName || null, ch: d.ch || {} }));
+    // Хранится как банк монет (wardRead/wardWrite, общая очередь wardDo) и так же уезжает на другие устройства
+    // (mergeWardrobe). Сброшенный образ остаётся с пустыми отличиями и новым at — чтобы сброс тоже доехал.
+    const looksGet = () => wardRead(LOOKS_KEY).then((d) => mergeLooks(d, null));
     // изменить и записать по очереди, чтобы два сохранения подряд не потеряли друг друга
     const looksSave = (mut) =>
-      (saveQ = saveQ.then(async () => {
+      wardDo(async () => {
         const d = await looksGet();
         mut(d);
-        await stSet(LOOKS, d);
+        await wardWrite(LOOKS_KEY, d);
         return d;
-      }));
-    const ownedGet = () => stGet(OWNED, {});
+      });
+    // своё: купленное здесь и покупки из банка (в том числе с других устройств)
+    const ownedGet = async () => {
+      const o = mergeOwned(await wardRead(OWNED_KEY), null);
+      for (const [id, b] of Object.entries(walletOf(await wardRead(WALLET)).bought)) if (!(id in o)) o[id] = b.at;
+      return o;
+    };
     const ownedAdd = (id) =>
-      (saveQ = saveQ.then(async () => {
-        const o = await ownedGet();
-        o[id] = Date.now();
-        await stSet(OWNED, o);
-        return o;
-      }));
+      wardDo(async () => {
+        const o = mergeOwned(await wardRead(OWNED_KEY), null);
+        if (!(id in o)) o[id] = Date.now();
+        await wardWrite(OWNED_KEY, o);
+        return ownedGet();
+      });
     const diffOf = (state, defs) => Object.fromEntries(Object.entries(state).filter(([k, v]) => v !== defs[k]));
     // машина канала по умолчанию — седан своего цвета (по имени), чтобы и ненаряженные каналы различались
     const carDefault = (name) => {
@@ -4871,8 +5000,8 @@ const TR = (() => {
             looksSave((d) => {
               const r = diffOf(saved('runner'), DEF);
               const c = diffOf(saved('car'), defs.car);
-              if (Object.keys(r).length || Object.keys(c).length) d.ch[key] = { name: channel.name, runner: r, car: c, at: Date.now() };
-              else delete d.ch[key];
+              // сброшенный образ остаётся пустым с новым временем — так сброс доедет до других устройств
+              if (Object.keys(r).length || Object.keys(c).length || d.ch[key]) d.ch[key] = { name: channel.name, runner: r, car: c, at: Date.now() };
             }),
           250
         );
@@ -4965,6 +5094,7 @@ const TR = (() => {
           looksSave((d) => {
             d.player = S.player;
             d.playerName = S.player ? channel.name : null;
+            d.playerAt = Date.now();
           });
           return render();
         }
@@ -5003,7 +5133,7 @@ const TR = (() => {
         }
         if (t.closest('[data-buy]') && S.pending) {
           const P = S.pending;
-          const left = await runSpend(P.price);
+          const left = await runSpend(P.price, P.id);
           if (left < 0) {
             say('Не хватает монет — забег за ремонтом в конце аллеи их принесёт', 'bad');
             return;
@@ -5381,6 +5511,25 @@ const TR = (() => {
     return data ? historyItems(data) : null;
   }
 
+  // Страница «Смотреть позже» YouTube (/playlist?list=WL) → [{ id, title, channel, … }] в порядке списка или null
+  function parseWatchLaterPage(html) {
+    const data = initialDataFrom(html);
+    if (!data) return null;
+    const out = [];
+    const seen = new Set();
+    (function walk(o) {
+      if (!o || typeof o !== 'object') return;
+      if (Array.isArray(o)) return o.forEach(walk);
+      const it = o.playlistVideoRenderer?.videoId ? fromVideoRenderer(o.playlistVideoRenderer) : o.lockupViewModel?.contentId ? fromLockup(o.lockupViewModel) : undefined;
+      if (it !== undefined) {
+        if (it?.id && /^[\w-]{11}$/.test(it.id) && !seen.has(it.id)) seen.add(it.id), out.push(it);
+        return;
+      }
+      for (const k in o) walk(o[k]);
+    })(data.contents || data);
+    return out;
+  }
+
   // ---- Синхронизация через Google Drive (расширение ↔ телефон) ----
   // Один файл smotribelno.json в скрытой папке приложения на Диске пользователя (appDataFolder):
   // приложению виден только он. Вход — OAuth 2.0 (токен на час), клиент «Веб-приложение» из Google Cloud
@@ -5454,7 +5603,7 @@ const TR = (() => {
   // local — { id: видео }. Возвращает { changes: { id: видео }, uploaded, total }.
   // stats — сводка статистики с компьютера (время по дням и каналам, иконки каналов): телефон её только читает
   // и при записи файла сохраняет как есть.
-  async function driveSync(token, local, { settings, stats, playlists, fame, fetchFn = fetch } = {}) {
+  async function driveSync(token, local, { settings, stats, playlists, fame, wardrobe, fetchFn = fetch } = {}) {
     const api = 'https://www.googleapis.com/drive/v3/files';
     const list = await (await driveFetch(token, `${api}?spaces=appDataFolder&fields=files(id,modifiedTime)&q=${encodeURIComponent(`name='${DRIVE_FILE}'`)}`, {}, fetchFn)).json();
     const fileId = list.files?.[0]?.id || null;
@@ -5489,11 +5638,15 @@ const TR = (() => {
     const outFame = fame || remote.fame ? mergeFame(fame, remote.fame) : null;
     if (outFame && stableJson(outFame) !== stableJson(remote.fame || null)) remoteChanged = true;
     const fameChanged = !!(outFame && fame !== undefined && stableJson(outFame) !== stableJson(fame || { stars: {} }));
+    // Гардероб, гараж каналов и банк монет забега (mergeWardrobe): монеты — по устройствам, поэтому не задваиваются
+    const outWard = wardrobe || remote.wardrobe ? mergeWardrobe(wardrobe, remote.wardrobe) : null;
+    if (outWard && stableJson(outWard) !== stableJson(remote.wardrobe || null)) remoteChanged = true;
+    const wardChanged = !!(outWard && wardrobe && stableJson(outWard) !== stableJson(mergeWardrobe(wardrobe, null)));
     // Свой набор критериев с другого устройства — подписи для старых оценок
     const remoteCriteria = remote.settings?.criteria || null;
     const outStats = stats || remote.stats || null;
     if (remoteChanged) {
-      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA, ...(outSets ? { customSets: outSets } : {}) }, stats: outStats, playlists: outPlaylists, fame: outFame, videos: next });
+      const body = JSON.stringify({ app: DRIVE_APP, version: 1, updatedAt: Date.now(), settings: { criteria: settings?.criteria || remoteCriteria || DEFAULT_CRITERIA, ...(outSets ? { customSets: outSets } : {}) }, stats: outStats, playlists: outPlaylists, fame: outFame, ...(outWard ? { wardrobe: outWard } : {}), videos: next });
       if (fileId) {
         await driveFetch(token, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }, fetchFn);
       } else {
@@ -5503,7 +5656,7 @@ const TR = (() => {
         await driveFetch(token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart }, fetchFn);
       }
     }
-    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria, customSets: outSets, remoteStats: outStats, playlists: playlistsChanged ? outPlaylists : null, fame: fameChanged ? outFame : null };
+    return { changes, uploaded: remoteChanged, total: Object.keys(next).length, remoteCriteria, customSets: outSets, remoteStats: outStats, playlists: playlistsChanged ? outPlaylists : null, fame: fameChanged ? outFame : null, wardrobe: wardChanged ? outWard : null };
   }
 
   // Отправка операции в background (он сериализует все записи)
@@ -5598,6 +5751,7 @@ const TR = (() => {
     fameVideoExtra,
     fameVideoTiles,
     parseHistoryPage,
+    parseWatchLaterPage,
     fameSceneHtml,
     FAME_LAMP,
     fameBoulevard,
@@ -5605,6 +5759,12 @@ const TR = (() => {
     fameWalk,
     fameRun,
     fameBank: runBank,
+    fameSpend: runSpend,
+    mergeWallet,
+    walletBalance,
+    mergeWardrobe,
+    wardrobeGet,
+    wardrobeApply,
     dress: DRESS,
     thumbHQ,
     thumbFallback,
