@@ -2121,6 +2121,241 @@ const TR = (() => {
       g.stroke();
       return c;
     })();
+    // ---- новые преграды, события и бонусы (картинки рисуются один раз) ----
+    // фанаты и фотографы — человечки в нашем стиле (как в гардеробе), образы случайные
+    const FAN = {
+      hair: ['short', 'fringe', 'long', 'bob', 'wavy', 'tousled', 'bun', 'curly', 'mohawk'],
+      hairColor: ['#1b1512', '#3a2418', '#5e3d24', '#8a5a2b', '#c08a4a', '#e8c26a', '#c0402e', '#ff5fa2', '#5fe1ff'],
+      top: ['tee', 'stripes', 'jersey', 'hoodie', 'sweater', 'jacket'],
+      cloth: ['#7c3aed', '#e0453a', '#2a8a8f', '#e9c46a', '#3f8f5a', '#2b3a67', '#f4efe6', '#ff5fa2', '#5fe1ff'],
+      head: ['none', 'none', 'cap', 'beanie', 'bandana', 'none', 'headphones'],
+      skin: ['#f6d6bd', '#f2c9a8', '#e9b896', '#e0a982', '#c98a5c', '#a0663e', '#6e4426'],
+    };
+    const pickR = (a) => a[rint(a.length)];
+    const fanLook = (gesture) => ({
+      ...DRESS.DEF,
+      hair: pickR(FAN.hair),
+      hairColor: pickR(FAN.hairColor),
+      top: pickR(FAN.top),
+      topColor: pickR(FAN.cloth),
+      accent: pickR(FAN.cloth),
+      bottomColor: pickR(FAN.cloth),
+      head: pickR(FAN.head),
+      headColor: pickR(FAN.cloth),
+      back: 'none',
+      skin: pickR(FAN.skin),
+      gesture,
+    });
+    // толпа фанатов на полосе: 2,5 м шириной, два ряда, руки вверх
+    const CROWD_W = 2.5;
+    const crowdSp = [0, 1, 2].map(() => {
+      const c = mk(300, 270);
+      const g = c.getContext('2d');
+      const k = 2.05; // 100 единиц роста ≈ 1,7 м
+      const man = (cx, by, sc, L) => {
+        g.save();
+        g.translate(cx - 50 * k * sc, by - 100 * k * sc);
+        g.scale(k * sc, k * sc);
+        DRESS.front(g, L, rnd() * 3);
+        g.restore();
+      };
+      for (const x of [95, 205]) man(x, 228, 0.92, fanLook(pickR(['wave', 'snap', 'none'])));
+      for (const x of [48, 150, 252]) man(x, 268, 1, fanLook(pickR(['wave', 'snap', 'snap', 'none'])));
+      return c;
+    });
+    // фотограф: человечек с фотоаппаратом у лица
+    const photogSp = [0, 1].map((i) => {
+      const c = mk(120, 220);
+      const g = c.getContext('2d');
+      const k = 2.1;
+      g.translate(60 - 50 * k, 220 - 100 * k);
+      g.scale(k, k);
+      DRESS.front(g, { ...fanLook('none'), head: i ? 'beret' : 'cap', headColor: '#1d1a22', top: 'jacket', topColor: i ? '#2b3a67' : '#1d1a22', bottomColor: '#1d1a22' }, 0.4);
+      g.fillStyle = '#1d1a22';
+      g.beginPath();
+      g.roundRect(40, 9, 20, 13, 2);
+      g.fill();
+      g.fillStyle = '#c9ced8';
+      g.fillRect(43, 6, 7, 4);
+      g.fillStyle = '#5a6274';
+      g.beginPath();
+      g.arc(50, 15.5, 4.2, 0, PI2);
+      g.fill();
+      g.fillStyle = '#9fb6d6';
+      g.beginPath();
+      g.arc(50, 15.5, 2, 0, PI2);
+      g.fill();
+      return c;
+    });
+    const glowOf = (r, c0, c1) => {
+      const c = mk(r * 2, r * 2);
+      const g = c.getContext('2d');
+      const gr = g.createRadialGradient(r, r, 0, r, r, r);
+      gr.addColorStop(0, c0);
+      gr.addColorStop(1, c1);
+      g.fillStyle = gr;
+      g.fillRect(0, 0, r * 2, r * 2);
+      return c;
+    };
+    const flashSp = glowOf(64, 'rgba(255,255,255,.95)', 'rgba(255,255,255,0)');
+    const auraSp = glowOf(96, 'rgba(255,214,102,.75)', 'rgba(255,214,102,0)');
+    // открытый люк: крышка сдвинута, рядом конус. Ширина 2 м, высота картинки 0,9 м, земля внизу
+    const HOLE_W = 2;
+    const holeSp = (() => {
+      const c = mk(240, 108);
+      const g = c.getContext('2d');
+      g.fillStyle = '#121016';
+      g.beginPath();
+      g.ellipse(112, 92, 82, 15, 0, 0, PI2);
+      g.fill();
+      g.strokeStyle = '#6a6470';
+      g.lineWidth = 4;
+      g.stroke();
+      g.fillStyle = '#ff7a1a';
+      g.beginPath();
+      g.ellipse(112, 95, 56, 7, 0, 0, Math.PI);
+      g.fill();
+      // крышка стоит на ребре
+      g.fillStyle = '#5d5866';
+      g.beginPath();
+      g.ellipse(28, 70, 12, 34, -0.15, 0, PI2);
+      g.fill();
+      g.strokeStyle = '#3a3640';
+      g.lineWidth = 2;
+      for (const d of [-16, -6, 4, 14]) {
+        g.beginPath();
+        g.moveTo(20, 70 + d);
+        g.lineTo(36, 68 + d);
+        g.stroke();
+      }
+      // конус
+      poly(g, [200, 104, 236, 104, 224, 30, 212, 30], '#ff7a1a');
+      poly(g, [207, 76, 229, 76, 227, 64, 209, 64], '#f4efe6');
+      poly(g, [211, 52, 225, 52, 224, 44, 212, 44], '#f4efe6');
+      g.fillStyle = '#2a2630';
+      g.fillRect(196, 102, 44, 6);
+      return c;
+    })();
+    // растяжка на одну полосу: два столба и полотнище от 1 до 1,75 м — только прокатиться
+    const BAN_W = 2.4;
+    const BAN_AVA = 1 - 1.375 / 2.2; // середина полотнища — доля высоты картинки сверху
+    const banSp = (() => {
+      const c = mk(260, 238);
+      const g = c.getContext('2d');
+      const m = 238 / 2.2; // точек на метр
+      g.fillStyle = '#8a5a2b';
+      g.fillRect(4, 0, 9, 238);
+      g.fillRect(247, 0, 9, 238);
+      const top = 238 - 1.75 * m;
+      const bot = 238 - 1.0 * m;
+      g.fillStyle = '#7c3aed';
+      g.beginPath();
+      g.moveTo(10, top);
+      g.lineTo(250, top);
+      g.lineTo(250, bot);
+      for (let x = 250; x > 10; x -= 20) g.quadraticCurveTo(x - 10, bot + 9, x - 20, bot);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = '#e9c46a';
+      g.lineWidth = 4;
+      g.strokeRect(14, top + 3, 232, bot - top - 6);
+      g.fillStyle = '#f2d68a';
+      g.font = `800 22px ${FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('★', 45, (top + bot) / 2);
+      g.fillText('★', 215, (top + bot) / 2);
+      return c;
+    })();
+    // растяжка через всю улицу — «С юбилеем, канал!»; рисуется, когда понадобится, и запоминается
+    const BANW_W = 8.6;
+    const banWide = new Map();
+    const banWideOf = (r) => {
+      if (banWide.has(r)) return banWide.get(r);
+      const c = mk(860, 240);
+      const g = c.getContext('2d');
+      const m = 240 / 2.4;
+      g.fillStyle = '#5a3a1f';
+      g.fillRect(6, 0, 12, 240);
+      g.fillRect(842, 0, 12, 240);
+      const top = 240 - 1.8 * m;
+      const bot = 240 - 1.02 * m;
+      const col = PAL[r % PAL.length];
+      g.fillStyle = col;
+      g.beginPath();
+      g.moveTo(14, top);
+      g.quadraticCurveTo(430, top + 14, 846, top);
+      g.lineTo(846, bot);
+      g.quadraticCurveTo(430, bot + 16, 14, bot);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = '#f2d68a';
+      g.lineWidth = 5;
+      g.stroke();
+      // флажки по верху
+      for (let x = 30; x < 830; x += 36) poly(g, [x, top + 2, x + 22, top + 2, x + 11, top + 22], ['#ffd166', '#5fe1ff', '#ff5fa2'][(x / 36) % 3 | 0]);
+      let name = RC[r].name;
+      g.font = `800 40px ${FONT}`;
+      while (g.measureText(`С юбилеем, ${name}!`).width > 640 && name.length > 4) name = name.slice(0, -2) + '…';
+      g.fillStyle = '#fff';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(`С юбилеем, ${name}!`, 430, (top + bot) / 2 + 8);
+      banWide.set(r, c);
+      return c;
+    };
+    // бонусы: звезда (неуязвимость) и магнит (монеты сами летят)
+    const starSp = (() => {
+      const c = mk(96, 96);
+      const g = c.getContext('2d');
+      g.drawImage(glowOf(48, 'rgba(255,214,102,.8)', 'rgba(255,214,102,0)'), 0, 0);
+      g.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const q = i % 2 ? 14 : 32;
+        g.lineTo(48 + q * Math.cos(a), 50 + q * Math.sin(a));
+      }
+      g.closePath();
+      g.fillStyle = '#ffd166';
+      g.fill();
+      g.lineWidth = 3;
+      g.strokeStyle = '#fff3c4';
+      g.stroke();
+      return c;
+    })();
+    const wallStarSp = (() => {
+      const c = mk(64, 64);
+      const g = c.getContext('2d');
+      g.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const q = i % 2 ? 11 : 27;
+        g.lineTo(32 + q * Math.cos(a), 34 + q * Math.sin(a));
+      }
+      g.closePath();
+      g.fillStyle = 'rgba(233,196,106,.85)';
+      g.fill();
+      return c;
+    })();
+    const magSp = (() => {
+      const c = mk(96, 96);
+      const g = c.getContext('2d');
+      g.drawImage(glowOf(48, 'rgba(95,225,255,.6)', 'rgba(95,225,255,0)'), 0, 0);
+      g.lineCap = 'butt';
+      g.lineWidth = 16;
+      g.strokeStyle = '#e0453a';
+      g.beginPath();
+      g.arc(48, 44, 20, Math.PI, 0, true);
+      g.moveTo(28, 44);
+      g.lineTo(28, 64);
+      g.moveTo(68, 44);
+      g.lineTo(68, 64);
+      g.stroke();
+      g.fillStyle = '#dcd6ca';
+      g.fillRect(20, 60, 16, 12);
+      g.fillRect(60, 60, 16, 12);
+      return c;
+    })();
     const lampSp = (() => {
       const c = mk(96, 400);
       const g = c.getContext('2d');
@@ -2709,8 +2944,10 @@ const TR = (() => {
     let PLAYER = DRESS.DEF;
     let PNAME = '';
     let faceSp = null;
+    let LOOKS = null; // образы каналов — для красной дорожки после проигрыша
     DRESS.looksGet().then((d) => {
       if (gone) return;
+      LOOKS = d;
       RC.forEach((r, i) => {
         const L = DRESS.lookOf(d, r.name);
         CARS[i] = L.car;
@@ -2719,7 +2956,7 @@ const TR = (() => {
       });
       bag = [];
       if (d.player) {
-        PLAYER = { ...DRESS.DEF, ...(d.ch[d.player]?.runner || {}) };
+        PLAYER = { ...DRESS.DEF, ...DRESS.upLook(d.ch[d.player]?.runner) };
         PNAME = d.playerName || d.ch[d.player]?.name || '';
         if (W) buildPlayer();
       }
@@ -2870,8 +3107,20 @@ const TR = (() => {
     }
     const faceM = () => Math.round(Math.max(40, Math.min(64, W / 16)));
     // ---- состояние игры ----
-    // предметы: kind 1 — машина, 2 — низкое заграждение, 3 — шлагбаум, 4 — монетка, 5 — заграждение ремонта
-    const pool = Array.from({ length: 160 }, () => ({ on: false, kind: 0, lane: 0, wz: 0, row: 0, vc: 0, len: 0, r: 0, y: 0, z: 0 }));
+    // предметы: kind 1 — машина, 2 — низкое заграждение, 3 — шлагбаум, 4 — монетка, 5 — заграждение ремонта,
+    // 6 — фанаты (ряд толпы), 7 — открытый люк, 8 — растяжка (m: 1 — на полосу, 2 — через улицу, 3 — её невидимая часть),
+    // 9 — папарацци (x — где стоит, выходит с тротуара на полосу), 10 — звезда, 11 — магнит
+    const pool = Array.from({ length: 220 }, () => ({ on: false, kind: 0, lane: 0, wz: 0, row: 0, vc: 0, len: 0, r: 0, y: 0, z: 0, m: 0, x: 0 }));
+    // красная дорожка у обочины: s — сторона, z0…z1 — ковёр на тротуаре, c0…c1 — толпа на дороге
+    const evs = Array.from({ length: 3 }, () => ({ on: false, s: 1, z0: 0, z1: 0, c0: 0, c1: 0, lanes: [0, 1], passed: false }));
+    const pops = Array.from({ length: 4 }, () => ({ on: false, text: '', t: 0, c: '' }));
+    const fw = Array.from({ length: lowfx ? 40 : 90 }, () => ({ on: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, c: '' }));
+    const conf = Array.from({ length: lowfx ? 24 : 60 }, () => ({ on: false, x: 0, y: 0, vx: 0, vy: 0, a: 0, va: 0, life: 0, c: '' }));
+    const FWC = ['#ffd166', '#5fe1ff', '#ff5fa2', '#7cf29a', '#c4b5fd', '#ff7a1a'];
+    let star = 0; // секунд неуязвимости
+    let magnet = 0; // секунд магнита
+    let killKind = 1;
+    const seenK = new Set(); // о какой новой преграде уже подсказали в этом забеге
     const bits = Array.from({ length: 20 }, () => ({ on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, a: 0, va: 0, w: 0, h: 0, c: '' }));
     const act = new Array(pool.length); // видимые в этом кадре, по удалению
     let phase = 'intro'; // intro → run → hit → over; paused — отдельным флагом
@@ -2925,8 +3174,10 @@ const TR = (() => {
       o.wz = o.row = wz;
       o.r = r;
       o.vc = kind === 1 ? extra : 0;
-      o.y = kind === 4 ? extra : 0;
-      o.len = kind === 1 ? 3.9 : kind === 4 ? 0.6 : 0.4;
+      o.y = kind === 4 || kind >= 10 ? extra : 0;
+      o.len = { 1: 3.9, 4: 0.6, 6: 2, 7: 1.1, 9: 0.5, 10: 0.8, 11: 0.8 }[kind] || 0.4;
+      o.m = kind === 8 ? 1 : 0;
+      o.x = (ln - 1) * LANE;
       return o;
     };
     const diff = () => Math.min(1, Math.max(0, (v - V0) / (VMAX - V0)));
@@ -2934,7 +3185,54 @@ const TR = (() => {
     function spawnRow(wz) {
       const d = diff();
       const r = nextRacer;
-      const bar = (ln) => put(rnd() < 0.5 ? 2 : 3, ln, wz, r());
+      // заграждения: низкое и люк — прыгать, шлагбаум и растяжка — катиться
+      const bar = (ln) => {
+        const q = rnd();
+        return put(tRun < 10 ? (q < 0.5 ? 2 : 3) : q < 0.34 ? 2 : q < 0.66 ? 3 : q < 0.83 ? 7 : 8, ln, wz, r());
+      };
+      const busy = evs.some((e) => e.on && e.z1 > wz - 30);
+      // красная дорожка: толпа фанатов занимает две полосы у своей обочины — бежать только по третьей
+      if (tRun > 12 && !busy && rnd() < 0.09) {
+        const e = evs.find((x) => !x.on);
+        if (e) {
+          const sd = rnd() < 0.5 ? -1 : 1;
+          const lanes = sd < 0 ? [0, 1] : [1, 2];
+          const fl = sd < 0 ? 2 : 0;
+          const rr = r();
+          const rows = 5;
+          for (const ln of lanes)
+            for (let i = 0; i < rows; i++) {
+              const o = put(6, ln, wz + i * 2.2, rr);
+              if (o) o.m = (i + ln) % 3;
+            }
+          for (let i = 0; i < 6; i++) put(4, fl, wz - 1 + i * 2.2, 0, 0.75);
+          Object.assign(e, { on: true, s: sd, z0: wz - 18, z1: wz + rows * 2.2 + 14, c0: wz - 1.2, c1: wz + rows * 2.2, lanes, passed: false });
+          return rows * 2.2 + 8;
+        }
+      }
+      // растяжка через всю улицу — катиться по любой полосе; под ней низко — монетки
+      if (tRun > 14 && d > 0.15 && rnd() < 0.06) {
+        const rr = r();
+        for (let ln = 0; ln < 3; ln++) {
+          const o = put(8, ln, wz, rr);
+          if (o) o.m = ln === 1 ? 2 : 3;
+        }
+        banWideOf(rr);
+        const fl = rint(3);
+        for (let i = 0; i < 3; i++) put(4, fl, wz - 0.8 + i * 0.8, 0, 0.35);
+        return 4;
+      }
+      // папарацци выходит с тротуара на крайнюю полосу, когда до него остаётся ~22 м
+      if (tRun > 9 && rnd() < 0.08) {
+        const sd = rnd() < 0.5 ? -1 : 1;
+        const o = put(9, sd < 0 ? 0 : 2, wz, r());
+        if (o) o.x = sd * 5.3;
+        if (rnd() < 0.5) bar(1);
+        for (let i = 0; i < 4; i++) put(4, sd < 0 ? 2 : 0, wz + 2 + i * 2.4, 0, 0.75);
+        return 0;
+      }
+      // бонус — на свободной полосе перед рядом
+      if (tRun > 15 && rnd() < 0.07 && !star && !magnet) put(rnd() < 0.5 ? 10 : 11, rint(3), wz - 7, 0, 1.1);
       const road = (ln) => (rnd() < 0.6 + 0.25 * d ? put(1, ln, wz, r(), 5 + 9 * d + rnd() * 3) : bar(ln));
       const block = (ln) => (ln === 1 ? bar(ln) : road(ln));
       const free = rint(3);
@@ -2951,9 +3249,53 @@ const TR = (() => {
       } else block((free + 1 + rint(2)) % 3);
       if (rnd() < 0.55) for (let i = 0; i < 5; i++) put(4, free, wz + 3 + i * 2.4, 0, 0.75);
     }
+    function pop(text, c) {
+      const p = pops.find((x) => !x.on) || pops[0];
+      Object.assign(p, { on: true, text, t: 0, c });
+    }
+    // фейерверк в небе: n залпов, точки в пикселях экрана
+    function fireworks(n) {
+      for (let k = 0; k < n; k++) {
+        const cx = W * (0.15 + rnd() * 0.7);
+        const cy = hy * (0.2 + rnd() * 0.55);
+        const c = FWC[rint(FWC.length)];
+        const m = lowfx ? 12 : 26;
+        for (let i = 0; i < m; i++) {
+          const p = fw.find((x) => !x.on);
+          if (!p) return;
+          const a = (i / m) * PI2;
+          const sp = H * (0.12 + rnd() * 0.1);
+          Object.assign(p, { on: true, x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.1 + k * 0.25 + rnd() * 0.3, c });
+        }
+      }
+    }
+    function confetti() {
+      for (const p of conf) Object.assign(p, { on: true, x: rnd() * W, y: -rnd() * H * 0.3, vx: (rnd() - 0.5) * 60, vy: H * (0.25 + rnd() * 0.25), a: rnd() * PI2, va: (rnd() - 0.5) * 10, life: 2.4, c: FWC[rint(FWC.length)] });
+    }
+    function stepFx(dt) {
+      for (const p of pops) if (p.on && (p.t += dt) > 2.2) p.on = false;
+      for (const p of fw) {
+        if (!p.on) continue;
+        p.vy += H * 0.18 * dt;
+        p.vx *= 1 - dt * 1.5;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        if ((p.life -= dt) <= 0) p.on = false;
+      }
+      for (const p of conf) {
+        if (!p.on) continue;
+        p.x += (p.vx + Math.sin(p.a) * 40) * dt;
+        p.y += p.vy * dt;
+        p.a += p.va * dt;
+        if ((p.life -= dt) <= 0 || p.y > H) p.on = false;
+      }
+    }
     function reset() {
       for (const o of pool) o.on = false;
       for (const b of bits) b.on = false;
+      for (const x of [...evs, ...pops, ...fw, ...conf]) x.on = false;
+      star = magnet = 0;
+      seenK.clear();
       phase = 'intro';
       t = tRun = dist = v = px = py = vy = roll = camX = coins = shake = 0;
       lane = 1;
@@ -2988,6 +3330,7 @@ const TR = (() => {
       phase = 'hit';
       hitT = 0;
       killer = o.r;
+      killKind = o.kind;
       shake = lowfx ? 0 : 0.45;
       vy = 6;
     }
@@ -3021,22 +3364,55 @@ const TR = (() => {
       camX += (px * 0.55 - camX) * Math.min(1, dt * 7);
       shake = Math.max(0, shake - dt);
       if (phase === 'run') while (nextRow < dist + 120) {
-        spawnRow(nextRow);
+        const extra = spawnRow(nextRow) || 0;
         const d = diff();
-        nextRow += Math.max(14, v * lerp(1.7, 0.85, d) + rnd() * v * 0.35);
+        nextRow += Math.max(14, v * lerp(1.7, 0.85, d) + rnd() * v * 0.35) + extra;
       }
+      if (star > 0) star = Math.max(0, star - dt);
+      if (magnet > 0) magnet = Math.max(0, magnet - dt);
+      // прошли красную дорожку целыми — фанаты в восторге
+      for (const e of evs) {
+        if (!e.on) continue;
+        if (!e.passed && dist > e.c1 + 0.5) {
+          e.passed = true;
+          coins += 5;
+          pop('+5 · Фанаты в восторге!', '#ffd166');
+          fireworks(3);
+          confetti();
+        }
+        if (dist > e.z1 + 12) e.on = false;
+      }
+      stepFx(dt);
       const p0 = dist - 0.35;
       const p1 = dist + 0.35;
       for (const o of pool) {
         if (!o.on) continue;
         // машина подъезжает к своему ряду ровно тогда, когда до него добегает человечек
         if (o.kind === 1) o.wz = o.row + (o.vc * (o.row - dist)) / Math.max(v, 1);
+        // папарацци шагает с тротуара на свою полосу
+        if (o.kind === 9 && o.wz - dist < 22) {
+          const tx = (o.lane - 1) * LANE;
+          const st = 4.2 * dt;
+          o.x = Math.abs(tx - o.x) <= st ? tx : o.x + Math.sign(tx - o.x) * st;
+        }
+        // впервые видим новую преграду — подсказка
+        if (o.kind >= 6 && !seenK.has(o.kind) && o.wz - dist < 42) {
+          seenK.add(o.kind);
+          const tip = { 6: 'Фанаты! Беги по свободной полосе', 7: 'Открытый люк — прыгай!', 8: 'Растяжка — катись под ней!', 9: 'Папарацци выходит на дорогу!', 10: 'Звезда: 6 с неуязвимости', 11: 'Магнит: монеты летят сами' }[o.kind];
+          if (tip) pop(tip, '#f4efe6');
+        }
+        // магнит: монеты с соседних полос рядом с человечком
+        if (o.kind === 4 && magnet > 0 && o.wz < dist + 2.5 && o.wz > dist - 1 && Math.abs(px - o.x) < LANE * 1.7) {
+          o.on = false;
+          coins++;
+          continue;
+        }
         if (o.wz < dist - ZP - 6) {
           o.on = false;
           continue;
         }
         if (o.wz > p1 || o.wz + o.len < p0) continue;
-        const lx = (o.lane - 1) * LANE;
+        const lx = o.kind === 9 ? o.x : (o.lane - 1) * LANE;
         if (o.kind === 4) {
           if (Math.abs(px - lx) < LANE * 0.5 && Math.abs(py + 0.9 - o.y) < 1.3) {
             o.on = false;
@@ -3044,7 +3420,21 @@ const TR = (() => {
           }
           continue;
         }
-        if (Math.abs(px - lx) > LANE * 0.62) continue;
+        if (o.kind === 10 || o.kind === 11) {
+          if (Math.abs(px - lx) < LANE * 0.6 && Math.abs(py + 0.9 - o.y) < 1.6) {
+            o.on = false;
+            for (const p of pops) if (p.on && /^(Звезда|Магнит):/.test(p.text)) p.on = false; // подсказка больше не нужна
+            if (o.kind === 10) {
+              star = 6;
+              pop('★ Звезда! Ничто не остановит', '#ffd166');
+            } else {
+              magnet = 8;
+              pop('Магнит! Монеты летят сами', '#5fe1ff');
+            }
+          }
+          continue;
+        }
+        if (Math.abs(px - lx) > LANE * (o.kind === 9 ? 0.5 : 0.62)) continue;
         if (o.kind === 5) {
           smash(o);
           broke = true;
@@ -3052,6 +3442,16 @@ const TR = (() => {
         }
         if (o.kind === 2 && py > 1.0) continue;
         if (o.kind === 3 && roll > 0) continue;
+        if (o.kind === 8 && roll > 0) continue;
+        if (o.kind === 7 && py > 0.35) continue;
+        if (star > 0) {
+          // со звездой всё разлетается, а фанаты и люк просто пропускают
+          if (o.kind !== 6 && o.kind !== 7 && o.m !== 3) {
+            smash(o);
+            coins++;
+          }
+          continue;
+        }
         return crash(o);
       }
       for (const b of bits) {
@@ -3095,6 +3495,13 @@ const TR = (() => {
       ctx.fillStyle = '#16121c';
       ctx.fillRect(-20, -20, W + 40, H + 40);
       ctx.drawImage(sky, 0, 0, sky.width, sky.height, skyX - camX * 6, 0, sky.width / Q, sky.height / Q);
+      for (const p of fw) {
+        if (!p.on) continue;
+        ctx.globalAlpha = Math.min(1, p.life * 1.5);
+        ctx.fillStyle = p.c;
+        ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+      }
+      ctx.globalAlpha = 1;
       // земля: полосы улицы трапециями от ближнего края до горизонта
       // улица поперёк: дорога | бордюр | тротуар из плитки | бортовой камень | газон с садом | площадь у домов
       band(-30, 30, '#1c1722');
@@ -3148,6 +3555,27 @@ const TR = (() => {
         ctx.drawImage(moldSp, SX(0, z) - w / 2, ya, w, yb - ya);
       }
       ctx.globalAlpha = 1;
+      // красная дорожка: ковёр на тротуаре и под толпой на дороге
+      const quad = (x0, x1, za, zb, col) => {
+        za = Math.max(ZN, za);
+        zb = Math.min(FAR, zb);
+        if (zb <= za) return;
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(SX(x0, za), SY(0, za));
+        ctx.lineTo(SX(x1, za), SY(0, za));
+        ctx.lineTo(SX(x1, zb), SY(0, zb));
+        ctx.lineTo(SX(x0, zb), SY(0, zb));
+        ctx.fill();
+      };
+      for (const e of evs) {
+        if (!e.on) continue;
+        const a = e.s;
+        quad(a * 4.2, a * 6.5, e.z0 - cz, e.z1 - cz, '#c9a86a');
+        quad(a * 4.32, a * 6.38, e.z0 - cz + 0.15, e.z1 - cz - 0.15, '#a3202f');
+        const lx0 = (Math.min(...e.lanes) - 1) * LANE - LANE / 2;
+        quad(lx0, lx0 + LANE * 2, e.c0 - cz, e.c1 - cz + 0.6, '#8f1d2c');
+      }
       ctx.fillStyle = haze;
       ctx.fillRect(0, hy - H * 0.04, W, H * 0.18);
       // обочины, по дальности: дальний дом, фонарь/пальма, дом поближе…
@@ -3163,13 +3591,72 @@ const TR = (() => {
         const top = SY(h, z);
         ctx.drawImage(sp, l, top, r - l, SY(0, z) - top);
       };
+      // сторона с красной дорожкой: вместо сада — столбики с канатами, пресс-стена и фотографы со вспышками
+      const evAt = (sd, wz) => evs.some((e) => e.on && e.s === sd && wz > e.z0 - 2 && wz < e.z1 + 2);
+      const carpetSide = (sd, k) => {
+        const z0 = k * BS - cz;
+        if (z0 + BS < 1.2 || z0 > 90) return;
+        ctx.globalAlpha = fogA(z0);
+        // пресс-стена вдоль тротуара
+        const za = Math.max(1.2, z0);
+        const zb = z0 + BS;
+        if (zb > za) {
+          ctx.fillStyle = '#1e2347';
+          ctx.beginPath();
+          ctx.moveTo(SX(sd * 8.4, za), SY(0, za));
+          ctx.lineTo(SX(sd * 8.4, za), SY(3.2, za));
+          ctx.lineTo(SX(sd * 8.4, zb), SY(3.2, zb));
+          ctx.lineTo(SX(sd * 8.4, zb), SY(0, zb));
+          ctx.fill();
+          ctx.fillStyle = '#c9a86a';
+          ctx.fillRect(Math.min(SX(sd * 8.4, za), SX(sd * 8.4, zb)), SY(3.2, za) - 2, Math.abs(SX(sd * 8.4, za) - SX(sd * 8.4, zb)), 3);
+        }
+        for (let i = 3; i >= 0; i--) {
+          const z = z0 + i * 2;
+          if (z < 1.2) continue;
+          const sc = F / z;
+          // звёздочки на стене
+          const a = 0.5 * sc;
+          ctx.drawImage(wallStarSp, SX(sd * 8.4, z) - a / 2, SY(2.1 + (i & 1) * 0.6, z) - a / 2, a, a);
+          // столбик и канат до следующего
+          const x = SX(sd * 4.45, z);
+          ctx.fillStyle = '#e9c46a';
+          ctx.fillRect(x - 0.05 * sc, SY(0.9, z), 0.1 * sc, SY(0, z) - SY(0.9, z));
+          ctx.beginPath();
+          ctx.arc(x, SY(0.95, z), 0.09 * sc, 0, PI2);
+          ctx.fill();
+          const z2 = z + 2;
+          ctx.strokeStyle = '#b01e32';
+          ctx.lineWidth = Math.max(1, 0.07 * sc);
+          ctx.beginPath();
+          ctx.moveTo(x, SY(0.85, z));
+          ctx.quadraticCurveTo((x + SX(sd * 4.45, z2)) / 2, SY(0.55, z + 1), SX(sd * 4.45, z2), SY(0.85, z2));
+          ctx.stroke();
+          // фотографы, иногда вспышка
+          if (i === 1 || i === 3) {
+            const pz = z + 0.4;
+            const sp = photogSp[(k + i) & 1];
+            stand(sp, sd * 6.9, pz, 0.98, 1.8);
+            if (!lowfx && (t * 2.6 + k * 1.37 + i) % 2.1 < 0.09) {
+              const f = 2.2 * (F / pz);
+              ctx.drawImage(flashSp, SX(sd * 6.9, pz) - f / 2, SY(1.55, pz) - f / 2, f, f);
+            }
+          }
+        }
+      };
       for (let k = kF; k >= kN - 1; k--) {
         const odd = k & 1;
+        const evL = evAt(-1, k * BS + 4);
+        const evR = evAt(1, k * BS + 4);
+        if (evL) carpetSide(-1, k);
+        if (evR) carpetSide(1, k);
+        const skip = (sd) => (sd < 0 ? evL : evR);
         // в каждом отрезке 8 м, от дальнего к ближнему: пальма/дерево, фонарь/скамейка, куст, клумба, дом
         const z6 = k * BS + 6 - cz;
         if (z6 > 1.2 && z6 < FAR) {
           ctx.globalAlpha = fogA(z6);
           for (let s = -1; s <= 1; s += 2) {
+            if (skip(s)) continue;
             if (odd) stand(palmSp, s * 7.9, z6, 3.2, 6);
             else stand(treeSp, s * 8, z6, 3.4, 5.2);
           }
@@ -3186,18 +3673,18 @@ const TR = (() => {
                 const l = SX(s * 4.9 - 1.6, z4);
                 ctx.drawImage(poolSp, l, ya, SX(s * 4.9 + 1.6, z4) - l, yb - ya);
               }
-            for (let s = -1; s <= 1; s += 2) stand(lampSp, s * 4.5, z4, 0.98, 4.2);
-          } else if (z4 < 70) for (let s = -1; s <= 1; s += 2) stand(benchSp, s * 6.05, z4, 1.6, 0.9);
+            for (let s = -1; s <= 1; s += 2) if (!skip(s)) stand(lampSp, s * 4.5, z4, 0.98, 4.2);
+          } else if (z4 < 70) for (let s = -1; s <= 1; s += 2) if (!skip(s)) stand(benchSp, s * 6.05, z4, 1.6, 0.9);
         }
         const z2 = k * BS + 2.5 - cz;
         if (z2 > 1.2 && z2 < 80) {
           ctx.globalAlpha = fogA(z2);
-          for (let s = -1; s <= 1; s += 2) stand(bushSp, s * 7.1, z2, 1.4, 0.85);
+          for (let s = -1; s <= 1; s += 2) if (!skip(s)) stand(bushSp, s * 7.1, z2, 1.4, 0.85);
         }
         const z1 = k * BS + 1 - cz;
         if (z1 > 1.2 && z1 < 80) {
           ctx.globalAlpha = fogA(z1);
-          for (let s = -1; s <= 1; s += 2) stand(flowerSp[(k + (s > 0 ? 1 : 0)) & 1], s * 8.1, z1, 2.3, 0.85);
+          for (let s = -1; s <= 1; s += 2) if (!skip(s)) stand(flowerSp[(k + (s > 0 ? 1 : 0)) & 1], s * 8.1, z1, 2.3, 0.85);
         }
         const zb = k * BS - cz;
         if (zb > 1.2 && zb < FAR) {
@@ -3234,7 +3721,7 @@ const TR = (() => {
           manDrawn = true;
         }
         const z = o.z;
-        const lx = (o.lane - 1) * LANE;
+        const lx = o.kind === 9 ? o.x : (o.lane - 1) * LANE;
         const sc = F / z;
         const bot = SY(0, z);
         const xc = SX(lx, z);
@@ -3259,6 +3746,61 @@ const TR = (() => {
           ctx.drawImage(highSp, xc - w / 2, bot - h, w, h);
           const a = 0.62 * sc;
           ctx.drawImage(ava[o.r], xc - a / 2, bot - h * HIGH_AVA - a / 2, a, a);
+        } else if (o.kind === 6) {
+          // ряд фанатов подпрыгивает; у каждого второго ряда — табличка с аватаркой канала
+          const sp = crowdSp[o.m];
+          const w = CROWD_W * sc;
+          const h = (w * sp.height) / sp.width;
+          const jy = Math.abs(Math.sin(t * 7 + o.row * 1.7 + o.lane)) * 0.12 * sc;
+          ctx.drawImage(sp, xc - w / 2, bot - h - jy, w, h);
+          if (o.m === 0) {
+            const a = 0.5 * sc;
+            const sy = SY(2.05, z) - jy;
+            ctx.fillStyle = '#f4efe6';
+            ctx.fillRect(xc - a * 0.75, sy - a * 0.6, a * 1.5, a * 1.2);
+            ctx.fillRect(xc - 0.02 * sc, sy + a * 0.6, 0.04 * sc, 0.5 * sc);
+            ctx.drawImage(ava[o.r], xc - a / 2, sy - a / 2, a, a);
+          }
+        } else if (o.kind === 7) {
+          const w = HOLE_W * sc;
+          const h = (w * holeSp.height) / holeSp.width;
+          ctx.drawImage(holeSp, xc - w / 2 - 0.1 * sc, bot - h, w, h);
+          // пар из люка
+          if (!lowfx)
+            for (let i = 0; i < 3; i++) {
+              const ph = (t * 0.7 + i / 3 + o.row * 0.1) % 1;
+              ctx.globalAlpha = fogA(z) * 0.45 * (1 - ph) * Math.min(1, ph * 5);
+              ctx.fillStyle = '#f4f0fa';
+              ctx.beginPath();
+              ctx.arc(xc - 0.1 * sc + Math.sin(ph * 5 + i) * 0.15 * sc, SY(0.2 + ph * 1.4, z), (0.25 + ph * 0.35) * sc, 0, PI2);
+              ctx.fill();
+            }
+        } else if (o.kind === 8) {
+          if (o.m === 1) {
+            const w = BAN_W * sc;
+            const h = (w * banSp.height) / banSp.width;
+            ctx.drawImage(banSp, xc - w / 2, bot - h, w, h);
+            const a = 0.55 * sc;
+            ctx.drawImage(ava[o.r], xc - a / 2, bot - h + h * BAN_AVA - a / 2, a, a);
+          } else if (o.m === 2) {
+            const sp = banWideOf(o.r);
+            const w = BANW_W * sc;
+            const h = (w * sp.height) / sp.width;
+            ctx.drawImage(sp, SX(0, z) - w / 2, bot - h, w, h);
+          }
+        } else if (o.kind === 9) {
+          const sp = photogSp[o.r & 1];
+          const w = 0.98 * sc;
+          const h = (w * sp.height) / sp.width;
+          ctx.drawImage(sp, xc - w / 2, bot - h, w, h);
+          if (!lowfx && Math.abs(o.x - (o.lane - 1) * LANE) > 0.05 && (t * 3) % 1 < 0.12) {
+            const f = 2.4 * sc;
+            ctx.drawImage(flashSp, xc - f / 2, SY(1.55, z) - f / 2, f, f);
+          }
+        } else if (o.kind === 10 || o.kind === 11) {
+          const a = 0.95 * sc * (1 + Math.sin(t * 5) * 0.06);
+          const bob = Math.sin(t * 3 + o.row) * 0.12;
+          ctx.drawImage(o.kind === 10 ? starSp : magSp, xc - a / 2, SY(o.y + bob, z) - a / 2, a, a);
         } else {
           const a = 0.6 * sc;
           const bob = Math.sin(t * 6 + o.row) * 0.08;
@@ -3292,6 +3834,10 @@ const TR = (() => {
       else if (v > 0.5) fr = Math.floor(t * (5 + v * 0.55)) % 6;
       const yb = SY(py, ZP);
       const sw = pl.width / 9;
+      if (star > 0 && (star > 1.5 || (t * 8) % 1 < 0.6)) {
+        const a = PHt * 1.6;
+        ctx.drawImage(auraSp, x - a / 2, yb - PHt * 0.55 - a / 2, a, a);
+      }
       if (phase === 'hit') {
         ctx.save();
         ctx.translate(x, yb - PHt * 0.5);
@@ -3325,6 +3871,46 @@ const TR = (() => {
           ctx.fillText(PNAME.length > 22 ? PNAME.slice(0, 21) + '…' : PNAME, W - 16, 60 + M);
           ctx.textAlign = 'left';
         }
+      }
+      // активные бонусы — плашки сверху посередине
+      const chips = [star > 0 ? ['★ ' + star.toFixed(1), '#ffd166'] : null, magnet > 0 ? ['Магнит ' + magnet.toFixed(1), '#5fe1ff'] : null].filter(Boolean);
+      if (chips.length) {
+        ctx.font = hudSmall;
+        ctx.textAlign = 'center';
+        let x = W / 2 - (chips.length - 1) * fs * 2.4;
+        for (const [txt, c] of chips) {
+          const tw = ctx.measureText(txt).width + 20;
+          ctx.fillStyle = 'rgba(17,15,22,.72)';
+          ctx.fillRect(x - tw / 2, 14, tw, fs * 0.95);
+          ctx.fillStyle = c;
+          ctx.fillText(txt, x, 14 + fs * 0.2);
+          x += fs * 4.8;
+        }
+      }
+      // всплывающие надписи: подсказки и «фанаты в восторге»
+      let py0 = 18 + fs * (chips.length ? 1.2 : 0.2); // сверху посередине — не закрывает то, что едет навстречу
+      for (const p of pops) {
+        if (!p.on) continue;
+        ctx.globalAlpha = Math.min(1, (2.2 - p.t) * 2) * Math.min(1, p.t * 6);
+        ctx.font = hudSmall;
+        ctx.textAlign = 'center';
+        const y = py0 - p.t * 10;
+        const tw = ctx.measureText(p.text).width + 26;
+        ctx.fillStyle = 'rgba(17,15,22,.78)';
+        ctx.fillRect(W / 2 - tw / 2, y, tw, fs * 1.1);
+        ctx.fillStyle = p.c;
+        ctx.fillText(p.text, W / 2, y + fs * 0.27);
+        py0 += fs * 1.3;
+      }
+      ctx.globalAlpha = 1;
+      for (const p of conf) {
+        if (!p.on) continue;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.a);
+        ctx.fillStyle = p.c;
+        ctx.fillRect(-4, -2.5, 8, 5);
+        ctx.restore();
       }
       if (phase === 'intro' || tRun < 3.5) {
         const a = phase === 'intro' ? 1 : Math.max(0, 1 - (tRun - 2.5));
@@ -3374,6 +3960,55 @@ const TR = (() => {
       acc = 0;
       raf = requestAnimationFrame(frame);
     };
+    // Красная дорожка: наряженные бегуны каналов (и стандартный курьер); выбранный — первым
+    function carpetHtml() {
+      const d = LOOKS;
+      if (!d) return '';
+      const list = Object.entries(d.ch)
+        .filter(([k, c]) => k === d.player || Object.keys(c.runner || {}).length)
+        .sort((a, b) => (b[0] === d.player) - (a[0] === d.player) || (b[1].at || 0) - (a[1].at || 0))
+        .slice(0, 12)
+        .map(([k, c]) => ({ k, name: c.name || k }));
+      if (!list.length) return '<span class="wr-tip">Наряжайте бегунов в профилях каналов — они выйдут сюда, на красную дорожку</span>';
+      list.push({ k: '', name: 'Курьер' });
+      const cur = d.player || '';
+      return `<div class="wr-carpet"><span class="wr-carpet-t">Красная дорожка · за кого бежать</span><div class="wr-rail" role="group" aria-label="За кого бежать">${list
+        .map(
+          (it) =>
+            `<button type="button" class="wr-star" data-pk="${escH(it.k)}" aria-pressed="${it.k === cur}" title="${it.k ? 'Образ канала «' + escH(it.name) + '»' : 'Стандартный бегун'}"><canvas></canvas><b>${escH(it.name)}</b><small>${it.k ? 'образ канала' : 'без канала'}</small></button>`
+        )
+        .join('')}</div></div>`;
+    }
+    function paintCarpet() {
+      const q = Math.min(devicePixelRatio || 1, 2);
+      over.querySelectorAll('.wr-star').forEach((b) => {
+        const c = b.querySelector('canvas');
+        c.width = 64 * q;
+        c.height = 92 * q;
+        const p = c.getContext('2d');
+        p.scale(q, q);
+        p.translate(-4, 6);
+        p.scale(0.72, 0.72);
+        const k = b.dataset.pk;
+        DRESS.front(p, k ? { ...DRESS.DEF, ...DRESS.upLook(LOOKS.ch[k]?.runner) } : DRESS.DEF, 0.6);
+      });
+    }
+    function choose(k) {
+      const c = k ? LOOKS?.ch[k] : null;
+      PLAYER = c ? { ...DRESS.DEF, ...DRESS.upLook(c.runner) } : DRESS.DEF;
+      PNAME = c ? c.name || k : '';
+      LOOKS.player = k || null;
+      if (W) buildPlayer();
+      over.querySelectorAll('.wr-star').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pk === k)));
+      saving = Promise.all([
+        saving,
+        DRESS.looksSave((d) => {
+          d.player = k || null;
+          d.playerName = c ? c.name || k : null;
+          d.playerAt = Date.now();
+        }),
+      ]);
+    }
     async function gameOver() {
       phase = 'over';
       const s = score();
@@ -3384,14 +4019,16 @@ const TR = (() => {
       const pic = rc.icon && avaOk[killer] ? `<img src="${escH(rc.icon)}" alt="" referrerpolicy="no-referrer">` : escH(initials(rc.name));
       over.innerHTML = `<div class="wr-card" role="dialog" aria-label="Забег окончен">
         <span class="wr-ava" style="background:${PAL[killer % PAL.length]}">${pic}</span>
-        <span class="wr-k">Вас выбил канал</span>
+        <span class="wr-k">${{ 2: 'Не перепрыгнули заграждение канала', 3: 'Не прокатились под шлагбаумом канала', 6: 'Вас затискали фанаты канала', 7: 'Провалились в люк. Люк спонсирует канал', 8: 'Запутались в растяжке канала', 9: 'Вас ослепил вспышкой папарацци канала' }[killKind] || 'Вас выбил канал'}</span>
         <b class="wr-name">${escH(rc.name)}</b>
         <div class="wr-sc"><span><small>счёт</small><b>${s}</b></span><span><small>рекорд</small><b>${best}</b></span><span><small>монетки</small><b>+${coins}</b></span><span><small>в банке</small><b class="wr-bank">${bank}</b></span></div>
         ${s > prev && prev > 0 ? '<span class="wr-new">★ Новый рекорд!</span>' : ''}
+        ${carpetHtml()}
         <div class="wr-acts"><button type="button" class="btn primary wr-again">Ещё раз</button><button type="button" class="btn wr-back">На аллею</button></div>
         <span class="wr-tip">${touch ? '' : 'Пробел — ещё раз · Esc — на аллею'}</span>
       </div>`;
       over.hidden = false;
+      paintCarpet();
       over.querySelector('.wr-again').focus();
       if (s > prev) saving = Promise.all([saving, runBest(s)]);
     }
@@ -3467,7 +4104,9 @@ const TR = (() => {
     cv.addEventListener('pointerup', stopSwipe);
     cv.addEventListener('pointercancel', stopSwipe);
     over.addEventListener('click', (e) => {
-      if (e.target.closest('.wr-again')) again();
+      const st = e.target.closest('.wr-star');
+      if (st) choose(st.dataset.pk);
+      else if (e.target.closest('.wr-again')) again();
       else if (e.target.closest('.wr-go')) setPause(false);
       else if (e.target.closest('.wr-back')) destroy();
     });
@@ -3502,7 +4141,7 @@ const TR = (() => {
       deposit(); // вышли посреди забега — собранные монеты всё равно в банк
       wrap.remove();
       // холсты отдаём сразу, не дожидаясь сборщика мусора
-      for (const c of [cv, sky, pl, shadowSp, lowSp, highSp, gateSp, coinSp, moldSp, lampSp, palmSp, treeSp, bushSp, benchSp, poolSp, faceSp, ...flowerSp, ...ava, ...carSp, ...bld]) if (c) c.width = c.height = 0;
+      for (const c of [cv, sky, pl, shadowSp, lowSp, highSp, gateSp, coinSp, moldSp, lampSp, palmSp, treeSp, bushSp, benchSp, poolSp, faceSp, holeSp, banSp, flashSp, auraSp, starSp, magSp, wallStarSp, ...crowdSp, ...photogSp, ...banWide.values(), ...flowerSp, ...ava, ...carSp, ...bld]) if (c) c.width = c.height = 0;
       // после выхода страница перезагружается — сначала дописываем рекорд и банк (но не дольше 1,5 с)
       await Promise.race([saving.catch(() => {}), new Promise((r) => setTimeout(r, 1500))]);
       onExit?.();
@@ -3552,25 +4191,39 @@ const TR = (() => {
     const GROUPS = {
       hair: { cat: 'head', label: 'Причёска', thumb: ['face', 50, 30, 76], colors: ['hairColor', 'skin'], items: [['short', 'Короткая', 0], ['fringe', 'Чёлка набок', 0], ['long', 'Длинная', 0], ['bob', 'Каре', 30], ['wavy', 'Волнистые', 40], ['tousled', 'Взъерошен­ные', 0], ['bun', 'Пучок', 30], ['curly', 'Кудри', 40], ['mohawk', 'Ирокез', 80], ['bald', 'Налысо', 0]] },
       brows: { cat: 'head', label: 'Брови и глаза', thumb: ['face', 50, 41, 34], colors: ['eyeColor'], items: [['normal', 'Обычные', 0], ['thick', 'Густые', 0], ['thin', 'Тонкие', 0], ['arched', 'Домиком', 20]] },
-      beard: { cat: 'head', label: 'Борода и усы', thumb: ['face', 50, 54, 50], colors: ['beardColor'], items: [['none', 'Без бороды', 0], ['stubble', 'Щетина', 0], ['short', 'Короткая', 30], ['full', 'Окладистая', 60], ['mustache', 'Усы', 20], ['goatee', 'Эспаньолка', 40]] },
-      details: { cat: 'head', label: 'Лицо', thumb: ['face', 50, 48, 46], items: [['none', 'Ничего', 0], ['freckles', 'Веснушки', 0], ['blush', 'Румянец', 0], ['mole', 'Родинка', 0], ['paint', 'Грим звезды', 60]] },
-      glasses: { cat: 'head', label: 'Очки', thumb: ['face', 50, 43, 42], colors: ['glassesColor'], items: [['none', 'Без очков', 0], ['round', 'Круглые', 40], ['wire', 'Тонкие круглые', 60], ['square', 'Квадратные', 40], ['sun', 'Солнечные', 80], ['star', 'Звёздочки', 150]] },
+      beard: { cat: 'head', label: 'Борода', thumb: ['face', 50, 58, 50], colors: ['beardColor'], items: [['none', 'Без бороды', 0], ['stubble', 'Щетина', 0], ['short', 'Короткая', 30], ['full', 'Окладистая', 60], ['mustache', 'Усы', 20, true], ['goatee', 'Эспаньолка', 40], ['chin', 'Шкиперская', 30], ['chops', 'Бакенбарды', 50], ['viking', 'Викинг', 120]] },
+      mustache: { cat: 'head', label: 'Усы', thumb: ['face', 50, 57, 34], colors: ['beardColor'], items: [['none', 'Без усов', 0], ['classic', 'Обычные', 0], ['pencil', 'Тонкие', 20], ['walrus', 'Моржовые', 40], ['horseshoe', 'Подкова', 50], ['handlebar', 'Руль', 80], ['dali', 'Дали', 150]] },
+      details: { cat: 'head', label: 'Лицо', thumb: ['face', 50, 48, 46], items: [['none', 'Ничего', 0], ['freckles', 'Веснушки', 0], ['blush', 'Румянец', 0], ['mole', 'Родинка', 0], ['paint', 'Грим звезды', 60], ['bandage', 'Пластырь', 20], ['scar', 'Шрам', 40], ['nosering', 'Пирсинг', 50]] },
+      glasses: { cat: 'head', label: 'Очки и маски', thumb: ['face', 50, 43, 46], colors: ['glassesColor'], items: [['none', 'Без очков', 0], ['round', 'Круглые', 40], ['wire', 'Тонкие круглые', 60], ['square', 'Квадратные', 40], ['sun', 'Солнечные', 80], ['star', 'Звёздочки', 150], ['aviator', 'Авиаторы', 90], ['cat', 'Кошачьи', 70], ['heart', 'Сердечки', 120], ['monocle', 'Монокль', 120], ['visor', 'Кибер-визор', 200], ['ski', 'Маска лыжника', 160], ['mask', 'Маска героя', 180], ['patch', 'Повязка пирата', 100]] },
       earrings: { cat: 'head', label: 'Уши', thumb: ['face', 30, 50, 34], items: [['none', 'Ничего', 0], ['stud', 'Гвоздик', 30], ['ring', 'Кольцо', 40]] },
       head: { cat: 'head', label: 'На голове', thumb: ['face', 50, 24, 86], colors: ['headColor'], items: [['none', 'Ничего', 0], ['cap', 'Кепка', 0], ['beanie', 'Шапка', 60], ['bandana', 'Бандана', 50], ['beret', 'Берет', 70], ['headphones', 'Наушники', 90], ['headset', 'Гарнитура', 120], ['cowboy', 'Ковбойская', 160], ['tophat', 'Цилиндр', 150], ['crown', 'Корона', 400], ['helmet', 'Шлем космонавта', 300]] },
       top: { cat: 'body', label: 'Верх', thumb: ['face', 50, 84, 60], colors: ['topColor', 'accent'], items: [['tee', 'Футболка', 0], ['stripes', 'Тельняшка', 60], ['jersey', 'Кибер­майка', 90], ['hoodie', 'Худи', 50], ['sweater', 'Свитер на молнии', 70], ['jacket', 'Куртка', 120], ['suit', 'Пиджак', 180], ['tux', 'Смокинг', 250]] },
       neck: { cat: 'body', label: 'Шея', thumb: ['face', 50, 74, 44], colors: ['neckColor'], items: [['none', 'Ничего', 0], ['scarf', 'Шарф', 40], ['chain', 'Цепочка', 80], ['medal', 'Медаль', 200]] },
-      bottom: { cat: 'body', label: 'Низ', thumb: ['back', 50, 76, 56], colors: ['bottomColor'], items: [['jeans', 'Джинсы', 0], ['shorts', 'Шорты', 0], ['skirt', 'Юбка', 40], ['track', 'Спортивки', 70]] },
-      shoes: { cat: 'body', label: 'Обувь', thumb: ['back', 50, 95, 30], colors: ['shoesColor'], items: [['sneakers', 'Кроссовки', 0], ['kedy', 'Кеды', 30], ['boots', 'Ботинки', 60]] },
+      bottom: { cat: 'body', label: 'Низ', thumb: ['front', 50, 74, 50], colors: ['bottomColor'], items: [['jeans', 'Джинсы', 0], ['shorts', 'Шорты', 0], ['skirt', 'Юбка', 40], ['track', 'Спортивки', 70]] },
+      shoes: { cat: 'body', label: 'Обувь', thumb: ['front', 50, 95, 24], colors: ['shoesColor'], items: [['sneakers', 'Кроссовки', 0], ['kedy', 'Кеды', 30], ['boots', 'Ботинки', 60]] },
       back: { cat: 'extra', label: 'За спиной', thumb: ['back', 50, 42, 84], colors: ['backColor'], items: [['none', 'Ничего', 0], ['backpack', 'Рюкзак', 0], ['guitar', 'Гитара', 120], ['skate', 'Скейт', 100], ['cape', 'Плащ', 200], ['wings', 'Крылья', 450], ['jetpack', 'Реактивный ранец', 500]] },
       gesture: { cat: 'extra', label: 'Жест на финише', thumb: ['face', 50, 50, 112], items: [['none', 'Без жеста', 0], ['wave', 'Помахать', 0], ['snap', 'Щелчки пальцами', 80]] },
     };
     // в кружке вещь должно быть видно: у причёсок снимаем головной убор, руки жеста — только в кружках жестов
     for (const [k, gr] of Object.entries(GROUPS)) gr.base = k === 'gesture' ? {} : k === 'hair' ? { head: 'none', gesture: 'none' } : { gesture: 'none' };
     const CATS = [['head', 'Голова'], ['body', 'Одежда'], ['extra', 'Аксессуары']];
-    const DEF = { hair: 'short', hairColor: '#3a2418', brows: 'normal', eyeColor: '#3a2a22', beard: 'none', beardColor: '#3a2418', details: 'none', glasses: 'none', glassesColor: '#2a2630', earrings: 'none', head: 'cap', headColor: '#e9c46a', top: 'tee', topColor: '#7c3aed', accent: '#f4efe6', neck: 'none', neckColor: '#e0453a', bottom: 'jeans', bottomColor: '#2b3a67', shoes: 'sneakers', shoesColor: '#f4efe6', back: 'backpack', backColor: '#e9c46a', gesture: 'none', skin: '#e0a982' };
+    const DEF = { hair: 'short', hairColor: '#3a2418', brows: 'normal', eyeColor: '#3a2a22', beard: 'none', beardColor: '#3a2418', details: 'none', glasses: 'none', glassesColor: '#2a2630', earrings: 'none', head: 'cap', headColor: '#e9c46a', top: 'tee', topColor: '#7c3aed', accent: '#f4efe6', neck: 'none', neckColor: '#e0453a', bottom: 'jeans', bottomColor: '#2b3a67', shoes: 'sneakers', shoesColor: '#f4efe6', back: 'backpack', backColor: '#e9c46a', gesture: 'none', skin: '#e0a982', mustache: 'none' };
+    // Образы до отдельных усов: «Усы» были бородой, а короткая, окладистая и эспаньолка рисовались с усами.
+    // Новые образы с бородой всегда хранят «mustache», поэтому старые узнаются по его отсутствию.
+    const upLook = (o) => {
+      if (!o || !o.beard || 'mustache' in o) return o || {};
+      if (o.beard === 'mustache') return { ...o, beard: 'none', mustache: 'classic' };
+      return ['short', 'full', 'goatee'].includes(o.beard) ? { ...o, mustache: 'classic' } : o;
+    };
+    // что записать в хранилище или код: отличия от стандарта, а при бороде — усы всегда (см. upLook)
+    const runnerDiff = (st) => {
+      const r = Object.fromEntries(Object.entries(st).filter(([k, v]) => v !== DEF[k]));
+      if (r.beard && !('mustache' in r)) r.mustache = st.mustache;
+      return r;
+    };
     const PRESETS = [
       ['Курьер', {}],
-      ['Седина и борода', { hair: 'tousled', hairColor: '#a9a6ad', beard: 'short', beardColor: '#5d5a5f', head: 'none', top: 'sweater', topColor: '#b9874f', back: 'none', skin: '#e9b896', brows: 'thick' }],
+      ['Седина и борода', { hair: 'tousled', hairColor: '#a9a6ad', beard: 'short', mustache: 'walrus', beardColor: '#5d5a5f', head: 'none', top: 'sweater', topColor: '#b9874f', back: 'none', skin: '#e9b896', brows: 'thick' }],
       ['Каре и очки', { hair: 'bob', hairColor: '#5e3d24', glasses: 'wire', glassesColor: '#c9a86a', head: 'none', top: 'tee', topColor: '#1d1a22', bottomColor: '#1d1a22', back: 'none', skin: '#f2c9a8' }],
       ['Смокинг', { hair: 'wavy', hairColor: '#1b1512', brows: 'thick', head: 'none', top: 'tux', topColor: '#1d1a22', bottomColor: '#1d1a22', back: 'none', gesture: 'snap', skin: '#f2c9a8', shoes: 'boots', shoesColor: '#1d1a22' }],
       ['Киберспорт', { hair: 'fringe', hairColor: '#5e3d24', head: 'headset', headColor: '#1d1a22', top: 'jersey', topColor: '#1d1a22', accent: '#e9c43a', bottom: 'track', bottomColor: '#1d1a22', back: 'none', skin: '#f2c9a8' }],
@@ -3578,7 +4231,7 @@ const TR = (() => {
       ['Звезда аллеи', { hair: 'long', hairColor: '#e8c26a', head: 'crown', top: 'suit', topColor: '#e0453a', bottom: 'skirt', bottomColor: '#1d1a22', back: 'cape', backColor: '#e0453a', shoesColor: '#e9c46a', details: 'paint', glasses: 'star', glassesColor: '#e9c46a' }],
       ['Космонавт', { head: 'helmet', top: 'hoodie', topColor: '#f4efe6', bottom: 'track', bottomColor: '#8a8aa0', back: 'jetpack', shoes: 'boots', shoesColor: '#8a8aa0' }],
       ['Моряк', { hair: 'bun', hairColor: '#1b1512', head: 'beanie', headColor: '#e0453a', top: 'stripes', topColor: '#2b3a67', bottom: 'track', bottomColor: '#2b3a67', back: 'none', details: 'freckles' }],
-      ['Ковбой', { hair: 'short', hairColor: '#8a5a2b', beard: 'mustache', beardColor: '#6b4424', head: 'cowboy', headColor: '#8a5a2b', top: 'jacket', topColor: '#b9874f', neck: 'scarf', neckColor: '#e0453a', shoes: 'boots', shoesColor: '#5a3a1f', back: 'none' }],
+      ['Ковбой', { hair: 'short', hairColor: '#8a5a2b', beard: 'none', mustache: 'horseshoe', beardColor: '#6b4424', head: 'cowboy', headColor: '#8a5a2b', top: 'jacket', topColor: '#b9874f', neck: 'scarf', neckColor: '#e0453a', shoes: 'boots', shoesColor: '#5a3a1f', back: 'none' }],
       ['Скейтер', { hair: 'curly', hairColor: '#1b1512', head: 'beret', headColor: '#e0453a', top: 'hoodie', topColor: '#3f8f5a', bottom: 'shorts', bottomColor: '#8a8aa0', shoes: 'kedy', shoesColor: '#f4efe6', back: 'skate', backColor: '#e9c46a', skin: '#a0663e' }],
       ['Ангел', { hair: 'long', hairColor: '#e8e2f0', head: 'none', top: 'tee', topColor: '#f4efe6', bottomColor: '#f4efe6', back: 'wings', backColor: '#f4efe6', details: 'blush', shoesColor: '#f4efe6' }],
     ];
@@ -3659,10 +4312,21 @@ const TR = (() => {
         if (L.bottom === 'track') limb(x0 + 3, y0, x1 + 3, y1, 1.6, acc);
       };
       const shoe = (x0, x1, y, lift) => {
+        if (L.shoes === 'kedy') {
+          // низкие тканевые: белая резиновая подошва с тёмным кантом и белый носок
+          limb(x0, y - 0.5, x1, y - 0.5, lift ? 6.5 : 5, L.shoesColor);
+          limb(x0 - 0.5, y + 2.6, x1 + 0.5, y + 2.6, 3, '#f4efe6');
+          limb(x0 - 0.5, y + 1.1, x1 + 0.5, y + 1.1, 1, '#1d1a22');
+          return;
+        }
         if (L.shoes === 'boots') limb((x0 + x1) / 2 - 1, y - 9, (x0 + x1) / 2 - 1, y - 1, 9.5, L.shoesColor);
         limb(x0, y, x1, y, lift ? 9 : 7, L.shoesColor);
-        if (L.shoes === 'kedy') limb(x0, y + 3, x1, y + 3, 2.2, '#f4efe6');
         if (L.shoes === 'boots') limb(x0, y + 3, x1, y + 3, 2.4, '#1d1a22');
+        else {
+          // кроссовки: объёмные, толстая подошва и полоска на пятке
+          limb(x0 - 1, y + 3.6, x1 + 1, y + 3.6, 3.4, shade(L.shoesColor, -0.4));
+          limb(x0 + 1, y - 1.5, x1 - 1, y - 1.5, 1.4, shade(L.shoesColor, -0.25));
+        }
       };
       if (jump) {
         leg(44, 60, 38, 76);
@@ -3834,12 +4498,20 @@ const TR = (() => {
       const hc = L.hairColor;
       if (L.hair === 'long') rr(39, hy - 4, 22, 26, 8, hc);
       if (L.hair === 'bob') rr(37, hy - 6, 26, 19, 9, hc);
+      const bcol = L.beardColor;
+      const mu = upLook(L).mustache;
+      if (L.beard === 'full' || L.beard === 'viking') rr(38, hy + 1, 24, L.beard === 'viking' ? 18 : 14, 7, bcol);
+      else if (L.beard === 'short' || L.beard === 'chin') rr(39, hy + 2, 22, 11, 5, bcol);
+      if (mu === 'walrus' || mu === 'horseshoe') rr(42, hy + 6, 16, 7, 3, bcol);
       dot(50, hy, 11, L.hair === 'bald' ? skin : hc);
       if (L.hair === 'bald') dot(46, hy - 4, 3, shade(skin, 0.25));
       if (L.hair !== 'bob') {
         dot(39, hy + 1, 3, skin);
         dot(61, hy + 1, 3, skin);
       }
+      if (L.beard === 'chops') for (const x of [40, 60]) rr(x - 2, hy - 3, 4, 10, 2, bcol);
+      if (mu === 'handlebar') for (const s of [-1, 1]) limb(50 + s * 10, hy + 6, 50 + s * 13.5, hy + 3, 1.8, bcol);
+      if (mu === 'dali') for (const s of [-1, 1]) limb(50 + s * 10, hy + 6, 50 + s * 14, hy - 3, 1.3, bcol);
       if (L.hair === 'curly') for (const [x, y] of [[41, hy - 6], [50, hy - 10], [59, hy - 6], [40, hy + 3], [60, hy + 3], [45, hy + 6], [55, hy + 6]]) dot(x, y, 5, hc);
       if (L.hair === 'bun') dot(50, hy - 13, 6, hc);
       if (L.hair === 'wavy') for (const [x, y, r] of [[40, hy + 6, 4], [46, hy + 9, 4], [54, hy + 9, 4], [60, hy + 6, 4], [43, hy - 9, 5], [52, hy - 11, 5], [59, hy - 7, 4]]) dot(x, y, r, hc);
@@ -3852,6 +4524,7 @@ const TR = (() => {
           p.quadraticCurveTo(64, hy - 9, 62, hy - 1);
         }, hc);
       if (L.hair === 'mohawk' && L.head !== 'helmet') rr(46, hy - 20, 8, 22, 3, hc);
+      if (['visor', 'ski', 'mask', 'patch'].includes(L.glasses)) rr(39, hy - 1, 22, L.glasses === 'ski' ? 4 : 2.4, 1.2, L.glasses === 'ski' ? shade(L.glassesColor, -0.2) : L.glassesColor);
       const hcol = L.headColor;
       if (L.head === 'cap') {
         path(() => p.arc(50, hy - 2, 11.5, Math.PI, PI2), hcol);
@@ -4152,6 +4825,25 @@ const TR = (() => {
         }
       }
       if (L.details === 'mole') dot(59, 56, 1.3, shade(skin, -0.5));
+      if (L.details === 'bandage') {
+        p.save();
+        p.translate(62, 52);
+        p.rotate(-0.5);
+        rr(-6, -2.2, 12, 4.4, 1.6, '#f0d2a6');
+        rr(-2, -2.2, 4, 4.4, 0.6, '#e2bd8a');
+        p.restore();
+      }
+      if (L.details === 'scar') {
+        line([36, 33, 40, 49], 1.3, shade(skin, -0.4));
+        for (const t of [0.3, 0.55, 0.8]) line([36 + 4 * t - 1.6, 33 + 16 * t, 36 + 4 * t + 1.6, 33 + 16 * t - 0.4], 0.9, shade(skin, -0.4));
+      }
+      if (L.details === 'nosering') {
+        p.strokeStyle = '#dcd6ca';
+        p.lineWidth = 1.1;
+        p.beginPath();
+        p.arc(52.6, 54.6, 1.7, -0.6, Math.PI * 1.2);
+        p.stroke();
+      }
       if (L.details === 'paint') {
         star(64, 50, 5, '#ff5fa2');
         dot(36, 52, 1.3, '#e9c46a');
@@ -4168,8 +4860,8 @@ const TR = (() => {
           p.quadraticCurveTo(34, 58, 30, 44);
         }, bc);
         p.globalAlpha = 1;
-      } else if (L.beard === 'short' || L.beard === 'full') {
-        const d = L.beard === 'full' ? 8 : 0;
+      } else if (L.beard === 'short' || L.beard === 'full' || L.beard === 'viking') {
+        const d = { full: 8, viking: 14 }[L.beard] || 0;
         path(() => {
           p.moveTo(29, 42);
           p.quadraticCurveTo(29, 72 + d, 50, 72 + d);
@@ -4181,6 +4873,32 @@ const TR = (() => {
         p.globalAlpha = 0.35;
         for (const [x, y] of [[36, 62], [44, 66], [56, 66], [64, 62], [50, 70 + d / 2]]) line([x, y, x + 1, y + 4], 1, shade(bc, 0.45));
         p.globalAlpha = 1;
+        if (L.beard === 'viking')
+          for (const x of [44, 56]) {
+            // две косички с золотыми кольцами
+            rr(x - 3, 80, 6, 17, 3, bc);
+            rr(x - 3.5, 87, 7, 3, 1, '#c9a86a');
+            line([x - 2, 83, x + 2, 85], 1, shade(bc, 0.45));
+            line([x - 2, 92, x + 2, 94], 1, shade(bc, 0.45));
+          }
+      } else if (L.beard === 'chin') {
+        // шкиперская: полоса по линии челюсти, щёки и губа открыты
+        path(() => {
+          p.moveTo(29, 42);
+          p.quadraticCurveTo(29, 73, 50, 73);
+          p.quadraticCurveTo(71, 73, 71, 42);
+          p.quadraticCurveTo(69, 64, 50, 66);
+          p.quadraticCurveTo(31, 64, 29, 42);
+        }, bc);
+      } else if (L.beard === 'chops') {
+        // бакенбарды: от висков до низа щёк
+        for (const s of [-1, 1])
+          path(() => {
+            p.moveTo(50 + s * 22, 34);
+            p.lineTo(50 + s * 16, 34);
+            p.lineTo(50 + s * 15, 56);
+            p.quadraticCurveTo(50 + s * 18, 63, 50 + s * 21, 58);
+          }, bc);
       } else if (L.beard === 'goatee') {
         path(() => {
           p.moveTo(44, 61);
@@ -4207,19 +4925,41 @@ const TR = (() => {
           dot(x + 0.8, 42.2, 0.7, '#fff');
         }
       line([50, 45, 48, 53, 51.5, 54], 1.6, shade(skin, -0.3));
-      // усы и рот
-      if (['mustache', 'short', 'full', 'goatee'].includes(L.beard))
+      // рот, усы поверх
+      p.strokeStyle = '#8a3f3f';
+      p.lineWidth = 1.8;
+      p.beginPath();
+      p.arc(50, 58, 5, 0.2 * Math.PI, 0.8 * Math.PI);
+      p.stroke();
+      const mu = upLook(L).mustache;
+      const classic = () =>
         path(() => {
           p.moveTo(42, 59);
           p.quadraticCurveTo(46, 54, 50, 57);
           p.quadraticCurveTo(54, 54, 58, 59);
           p.quadraticCurveTo(50, 58, 42, 59);
         }, bc);
-      p.strokeStyle = '#8a3f3f';
-      p.lineWidth = 1.8;
-      p.beginPath();
-      p.arc(50, 58, 5, 0.2 * Math.PI, 0.8 * Math.PI);
-      p.stroke();
+      if (mu === 'classic') classic();
+      else if (mu === 'pencil') line([43, 57.6, 46.5, 56.4, 50, 56.8, 53.5, 56.4, 57, 57.6], 1.7, bc);
+      else if (mu === 'walrus')
+        path(() => {
+          p.moveTo(39, 62);
+          p.quadraticCurveTo(40, 53, 50, 55);
+          p.quadraticCurveTo(60, 53, 61, 62);
+          p.quadraticCurveTo(56, 59, 50, 61);
+          p.quadraticCurveTo(44, 59, 39, 62);
+        }, bc);
+      else if (mu === 'horseshoe') {
+        classic();
+        line([43, 58, 41.5, 70], 3.2, bc);
+        line([57, 58, 58.5, 70], 3.2, bc);
+      } else if (mu === 'handlebar') {
+        classic();
+        for (const s of [-1, 1]) {
+          line([50 + s * 7, 58.5, 50 + s * 11, 58, 50 + s * 13, 54.5], 2.2, bc);
+          dot(50 + s * 12.6, 54, 1.3, bc);
+        }
+      } else if (mu === 'dali') line([36, 45, 39, 53, 44, 56.6, 50, 56.2, 56, 56.6, 61, 53, 64, 45], 1.5, bc);
       // причёска спереди
       if (L.hair === 'short' || L.hair === 'long' || L.hair === 'bun') {
         path(() => {
@@ -4322,7 +5062,62 @@ const TR = (() => {
         dot(44, 26, 4, shade(skin, 0.3));
       }
       // очки
-      if (L.glasses !== 'none') {
+      const gl = L.glasses;
+      const glFr = L.glassesColor;
+      if (gl === 'visor') {
+        // цельная полоса через оба глаза с бликом
+        p.fillStyle = 'rgba(95,225,255,.5)';
+        p.strokeStyle = glFr;
+        p.lineWidth = 2;
+        p.beginPath();
+        p.roundRect(29, 37, 42, 11, 5.5);
+        p.fill();
+        p.stroke();
+        line([34, 40, 46, 40], 1.2, 'rgba(255,255,255,.7)');
+        dot(65, 42.5, 1.4, '#ff5fa2');
+      } else if (gl === 'ski') {
+        line([26, 42, 30, 42], 3.4, shade(glFr, -0.2));
+        line([74, 42, 70, 42], 3.4, shade(glFr, -0.2));
+        p.fillStyle = 'rgba(255,174,46,.78)';
+        p.strokeStyle = glFr;
+        p.lineWidth = 2.6;
+        p.beginPath();
+        p.roundRect(29, 35, 42, 15, 7.5);
+        p.fill();
+        p.stroke();
+        line([35, 39, 44, 39], 1.4, 'rgba(255,255,255,.65)');
+      } else if (gl === 'mask') {
+        // маска героя: полоса с прорезями для глаз
+        p.fillStyle = glFr;
+        p.beginPath();
+        p.roundRect(29, 37, 42, 12, 6);
+        p.ellipse(42, 43, 4.6, 3.3, 0, 0, PI2);
+        p.ellipse(58, 43, 4.6, 3.3, 0, 0, PI2);
+        p.fill('evenodd');
+        line([29, 41, 25, 46], 2, glFr);
+        line([71, 41, 75, 46], 2, glFr);
+      } else if (gl === 'patch') {
+        line([29, 34, 37, 38.5], 1.4, glFr);
+        line([47, 39.5, 71, 47], 1.4, glFr);
+        p.fillStyle = glFr;
+        p.beginPath();
+        p.ellipse(42, 43.5, 6.2, 5.4, 0, 0, PI2);
+        p.fill();
+      } else if (gl === 'monocle') {
+        p.fillStyle = 'rgba(207,227,255,.14)';
+        p.strokeStyle = glFr;
+        p.lineWidth = 1.7;
+        p.beginPath();
+        p.arc(58, 43, 7, 0, PI2);
+        p.fill();
+        p.stroke();
+        p.strokeStyle = '#c9a86a';
+        p.lineWidth = 0.9;
+        p.beginPath();
+        p.moveTo(63, 48);
+        p.quadraticCurveTo(70, 58, 64, 68);
+        p.stroke();
+      } else if (gl !== 'none') {
         const wire = L.glasses === 'wire';
         const fr = L.glassesColor;
         const w = wire ? 1.1 : 2;
@@ -4336,10 +5131,30 @@ const TR = (() => {
             star(x, 43, 6, 'rgba(255,240,200,.35)');
             continue;
           }
-          if (L.glasses === 'round' || wire) p.arc(x, 43, wire ? 7 : 6.5, 0, PI2);
+          const o = x < 50 ? -1 : 1; // внешняя сторона
+          if (gl === 'aviator') {
+            p.fillStyle = 'rgba(190,140,60,.55)';
+            p.moveTo(x - 7.5, 38.5);
+            p.lineTo(x + 7.5, 38.5);
+            p.quadraticCurveTo(x + 8, 50, x + o * 1.5, 50);
+            p.quadraticCurveTo(x - 8, 50, x - 7.5, 38.5);
+            p.lineWidth = 1.3;
+          } else if (gl === 'heart') {
+            p.fillStyle = 'rgba(255,95,162,.55)';
+            p.moveTo(x, 49);
+            p.bezierCurveTo(x - 10, 42, x - 6, 34, x, 39.5);
+            p.bezierCurveTo(x + 6, 34, x + 10, 42, x, 49);
+          } else if (gl === 'cat') p.roundRect(x - 7, 39, 14, 8.5, 3.5);
+          else if (L.glasses === 'round' || wire) p.arc(x, 43, wire ? 7 : 6.5, 0, PI2);
           else p.roundRect(x - 7.5, 38, 15, 10, L.glasses === 'sun' ? 3 : 1.5);
           p.fill();
           p.stroke();
+          if (gl === 'cat')
+            path(() => {
+              p.moveTo(x + o * 4, 38);
+              p.lineTo(x + o * 11, 34.5);
+              p.lineTo(x + o * 8, 42);
+            }, fr);
         }
         line([wire ? 49 : 48.5, 42, wire ? 51 : 51.5, 42], w, fr);
         line([29, 41, 35, 42], w, fr);
@@ -4842,7 +5657,7 @@ const TR = (() => {
     // образ канала для игры: бегун и машина с учётом нарядов
     const lookOf = (d, name) => {
       const c = d?.ch?.[fameKey(name)];
-      return { runner: { ...DEF, ...(c?.runner || {}) }, car: { ...carDefault(name), ...(c?.car || {}) }, dressed: !!(c && (Object.keys(c.runner || {}).length || Object.keys(c.car || {}).length)) };
+      return { runner: { ...DEF, ...upLook(c?.runner) }, car: { ...carDefault(name), ...(c?.car || {}) }, dressed: !!(c && (Object.keys(c.runner || {}).length || Object.keys(c.car || {}).length)) };
     };
     // аватарка канала — круг с картинкой (или инициалами); картинку дорисует, когда загрузится
     const initials = (name) =>
@@ -4891,6 +5706,175 @@ const TR = (() => {
         img.src = icon;
       }
       return c;
+    }
+
+    // ---------- В полный рост лицом (рост 100, как у бегуна). Голова и плечи — портрет в масштабе FK,
+    // ниже — торс, руки, ноги и обувь в его же стиле ----------
+    const FK = 0.42;
+    const FY = -4;
+    function front(p, L, t = 0, blink = false) {
+      const { limb, dot, rr, path, line } = kit(p);
+      p.lineCap = 'round';
+      p.lineJoin = 'round';
+      const skin = L.skin;
+      const top = L.topColor;
+      const acc = L.accent;
+      const pants = L.bottomColor;
+      const bcol = L.backColor;
+      const X0 = 50 - 44 * FK; // края торса — края плеч портрета внизу
+      const X1 = 50 + 44 * FK;
+      const yT = FY + 100 * FK; // низ портрета
+      const yW = 60; // пояс
+      const sway = Math.sin(t * 2.2);
+      // за спиной — то, что видно спереди
+      if (L.back === 'cape')
+        path(() => {
+          p.moveTo(X0 + 2, yT - 9);
+          p.lineTo(X1 - 2, yT - 9);
+          p.quadraticCurveTo(X1 + 9, 66, X1 + 7 + sway, 90);
+          p.lineTo(X0 - 7 - sway, 90);
+          p.quadraticCurveTo(X0 - 9, 66, X0 + 2, yT - 9);
+        }, shade(bcol, -0.28));
+      if (L.back === 'wings')
+        for (const s of [-1, 1])
+          path(() => {
+            p.moveTo(50 + s * 10, yT - 6);
+            p.quadraticCurveTo(50 + s * 40, 2 - sway * 2, 50 + s * 46, 22 - sway * 2);
+            p.quadraticCurveTo(50 + s * 38, 30, 50 + s * 40, 44);
+            p.quadraticCurveTo(50 + s * 28, 40, 50 + s * 26, 52);
+            p.quadraticCurveTo(50 + s * 16, 46, 50 + s * 10, yT + 6);
+          }, bcol);
+      if (L.back === 'jetpack')
+        for (const x of [X0 - 2, X1 + 2]) {
+          const fl = 6 + Math.abs(Math.sin(t * 14)) * 5;
+          path(() => {
+            p.moveTo(x - 3, yT + 12);
+            p.lineTo(x + 3, yT + 12);
+            p.lineTo(x, yT + 12 + fl);
+          }, '#ffae2e');
+          rr(x - 4.5, yT - 13, 9, 26, 4.5, '#b8c0d0');
+          rr(x - 4.5, yT - 13, 3, 26, 2, '#dfe4ee');
+        }
+      if (L.back === 'guitar') {
+        p.save();
+        p.translate(X1 + 1, 62);
+        p.rotate(-0.45);
+        p.fillStyle = bcol;
+        p.beginPath();
+        p.ellipse(0, 0, 6, 5, 0, 0, PI2);
+        p.ellipse(0, 7, 7.5, 6.2, 0, 0, PI2);
+        p.fill();
+        dot(0, 3, 1.8, '#1d1a22');
+        p.restore();
+      }
+      if (L.back === 'skate') {
+        rr(X1 + 1, 24, 6, 36, 3, bcol);
+        dot(X1 + 4, 28, 1.6, '#f4efe6');
+        dot(X1 + 4, 56, 1.6, '#f4efe6');
+      }
+      // ноги
+      const lx = [44.5, 55.5];
+      const legC = L.bottom === 'shorts' || L.bottom === 'skirt' ? skin : pants;
+      for (const x of lx) {
+        const o = x < 50 ? -1 : 1;
+        limb(x, yW, x + o * 0.6, 93, 9, legC);
+        if (L.bottom === 'shorts') limb(x, yW, x + o * 0.3, yW + 13, 10.5, pants);
+        if (L.bottom === 'track') limb(x + o * 3.4, yW + 2, x + o * 3.8, 91, 1.5, acc);
+      }
+      if (L.bottom === 'skirt')
+        path(() => {
+          p.moveTo(37, yW - 2);
+          p.lineTo(63, yW - 2);
+          p.lineTo(68, yW + 18);
+          p.lineTo(32, yW + 18);
+        }, pants);
+      else rr(39, yW - 3, 22, 9, 3, pants);
+      if (L.bottom === 'jeans') line([50, yW + 1, 50, yW + 6], 0.8, shade(pants, -0.3));
+      // обувь носками к нам
+      for (const x of lx) {
+        const sx = x + (x < 50 ? -1 : 1);
+        const c = L.shoesColor;
+        if (L.shoes === 'boots') {
+          rr(sx - 5.5, 85, 11, 13, 3, c);
+          rr(sx - 6, 96.5, 12, 3.5, 1.2, '#1d1a22');
+          line([sx - 3, 89, sx + 3, 89], 0.8, shade(c, -0.3));
+        } else if (L.shoes === 'kedy') {
+          rr(sx - 5, 93, 10, 6, 2.8, c);
+          rr(sx - 4, 95.6, 8, 3, 1.5, '#f4efe6');
+          rr(sx - 5.6, 98.2, 11.2, 2.2, 1, '#f4efe6');
+          line([sx - 5.4, 98, sx + 5.4, 98], 0.7, '#1d1a22');
+        } else {
+          rr(sx - 6, 92, 12, 7, 3.4, c);
+          rr(sx - 6.6, 97.6, 13.2, 3, 1.5, shade(c, -0.4));
+          line([sx - 2.6, 94.2, sx + 2.6, 94.2], 0.8, shade(c, -0.28));
+          line([sx - 2.6, 95.8, sx + 2.6, 95.8], 0.8, shade(c, -0.28));
+        }
+      }
+      // торс ниже портрета
+      const torso = () => {
+        p.moveTo(X0, yT - 2);
+        p.lineTo(X1, yT - 2);
+        p.lineTo(X1 - 3, yW + 1);
+        p.lineTo(X0 + 3, yW + 1);
+      };
+      path(torso, top);
+      p.save();
+      p.beginPath();
+      torso();
+      p.clip();
+      const hem = (c) => rr(X0, yW - 3, X1 - X0, 4.5, 1.5, c);
+      if (L.top === 'stripes') for (let y = yT + 1; y < yW; y += 2.6) rr(X0, y, X1 - X0, 1.1, 0.4, acc);
+      if (L.top === 'tee') hem(shade(top, -0.2));
+      if (L.top === 'hoodie') {
+        rr(41, 47, 18, 8, 3, shade(top, -0.15));
+        hem(shade(top, -0.18));
+      }
+      if (L.top === 'sweater') {
+        for (let x = X0 + 2; x < X1; x += 2.6) line([x, yT, x, yW - 3], 0.4, shade(top, -0.12));
+        line([50, yT - 2, 50, yW], 0.9, '#d8d0bf');
+        hem(shade(top, -0.18));
+      }
+      if (L.top === 'jacket') {
+        line([50, yT - 2, 50, yW], 1, acc);
+        line([39, 50, 45, 50], 0.8, shade(top, 0.3));
+        line([55, 50, 61, 50], 0.8, shade(top, 0.3));
+        hem(shade(top, 0.25));
+      }
+      if (L.top === 'suit' || L.top === 'tux') {
+        line([50, yT - 2, 50, yW - 3], 0.7, shade(top, -0.35));
+        for (const y of [44, 51]) dot(50.8, y, 0.9, L.top === 'tux' ? '#c8c2b4' : shade(top, 0.35));
+      }
+      if (L.top === 'jersey') {
+        rr(X0, yT - 2, 3.2, yW - yT + 3, 1, acc);
+        rr(X1 - 3.2, yT - 2, 3.2, yW - yT + 3, 1, acc);
+      }
+      p.restore();
+      if (L.bottom === 'jeans' || L.bottom === 'track') rr(X0 + 3, yW - 1.5, X1 - X0 - 6, 2.4, 1, L.bottom === 'jeans' ? '#2a2630' : shade(pants, -0.25));
+      if (L.back === 'backpack' || L.back === 'jetpack')
+        for (const x of [50 - 36 * FK, 50 + 30 * FK]) rr(x, yT - 3, 6 * FK * 0.9, 9, 1, L.back === 'jetpack' ? '#6a7488' : shade(bcol, -0.2));
+      // руки вдоль тела (поднятые для жеста рисует портрет)
+      const long = !['tee', 'stripes', 'jersey'].includes(L.top);
+      const arm = (s) => {
+        const x0 = 50 + s * 16;
+        const y0 = 30;
+        const x1 = 50 + s * 21;
+        const y1 = 56 + sway * 0.6 * s;
+        if (long) limb(x0, y0, x1, y1, 6.5, top);
+        else {
+          limb(x0, y0, x1, y1, 5, skin);
+          limb(x0, y0, x0 + (x1 - x0) * 0.35, y0 + (y1 - y0) * 0.35, 7, top);
+        }
+        if (L.top === 'suit' || L.top === 'tux') limb(x1, y1 - 1.6, x1, y1 - 0.4, 6.4, '#f4efe6');
+        dot(x1, y1 + 2.6, 3.4, skin);
+      };
+      if (L.gesture !== 'snap') arm(-1);
+      if (L.gesture !== 'snap' && L.gesture !== 'wave') arm(1);
+      // голова и плечи
+      p.save();
+      p.translate(50 - 50 * FK, FY + Math.abs(sway) * 0.25);
+      p.scale(FK, FK);
+      portrait(p, L, blink, t);
+      p.restore();
     }
 
     // ---------- Кружки гардероба и код образа ----------
@@ -4963,22 +5947,24 @@ const TR = (() => {
       const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
       const key = fameKey(channel.name);
       const defs = { runner: DEF, car: carDefault(channel.name) };
-      const S = { kind: 'runner', view: 'run', cat: { runner: 'head', car: 'body' }, runner: { ...DEF }, car: { ...defs.car }, owned: {}, bank: 0, player: null, pending: null };
+      const S = { kind: 'runner', focus: 'full', turned: false, cat: { runner: 'head', car: 'body' }, runner: { ...DEF }, car: { ...defs.car }, owned: {}, bank: 0, player: null, pending: null };
       const ava = avatar(channel.name, channel.icon, defs.car.avaColor);
       const root = document.createElement('div');
       root.className = 'le';
-      root.innerHTML = `<div class="le-top"><div class="le-seg le-kind" role="tablist"><button type="button" data-kind="runner" aria-pressed="true">Бегун</button><button type="button" data-kind="car" aria-pressed="false">Машина</button></div><button type="button" class="btn small le-play" aria-pressed="false">▶ Играть за этот канал</button></div>
+      root.innerHTML = `<div class="le-top"><div class="le-kind" role="tablist" aria-label="Гардероб или гараж"><button type="button" data-kind="runner" aria-pressed="true"><span aria-hidden="true">👕</span>Гардероб<small>бегун канала</small></button><button type="button" data-kind="car" aria-pressed="false"><span aria-hidden="true">🔧</span>Гараж<small>машина канала</small></button></div><button type="button" class="le-play" aria-pressed="false">▶ Играть за этот канал</button></div>
         <div class="le-studio">
           <div class="le-stage">
-            <div class="le-seg le-view"><button type="button" data-view="run" aria-pressed="true">На бегу</button><button type="button" data-view="face" aria-pressed="false">Лицом</button></div>
-            <canvas class="le-cv" width="560" height="440" aria-label="Образ канала"></canvas>
+            <div class="le-view-box">
+              <canvas class="le-cv" width="560" height="440" aria-label="Образ канала"></canvas>
+              <div class="le-cam"><span class="le-focus" aria-live="polite"></span><button type="button" data-turn title="Повернуть спиной или лицом">↻ Повернуть</button><button type="button" data-full title="Показать в полный рост">⤢ Весь рост</button></div>
+            </div>
             <div class="le-bank">В банке <b class="le-coins">…</b> монет<span class="le-cost"></span></div>
             <div class="le-buy" hidden></div>
             <div class="le-share"><button type="button" class="btn small" data-copy>Скопировать код</button><input type="text" spellcheck="false" placeholder="Вставьте код" aria-label="Код образа"><button type="button" class="btn small" data-apply>Применить</button><small aria-live="polite"></small></div>
           </div>
           <div class="le-side"><div class="le-seg le-cats"></div><div class="le-inv"></div><div class="le-presets-box"><h4>Готовые образы</h4><div class="le-presets"></div></div></div>
         </div>`;
-      host.appendChild(root);
+      host.replaceChildren(root); // в одном месте — ровно один редактор
       const $ = (s) => root.querySelector(s);
       const cv = $('.le-cv');
       const g = cv.getContext('2d');
@@ -4998,7 +5984,7 @@ const TR = (() => {
         saveT = setTimeout(
           () =>
             looksSave((d) => {
-              const r = diffOf(saved('runner'), DEF);
+              const r = runnerDiff(saved('runner'));
               const c = diffOf(saved('car'), defs.car);
               // сброшенный образ остаётся пустым с новым временем — так сброс доедет до других устройств
               if (Object.keys(r).length || Object.keys(c).length || d.ch[key]) d.ch[key] = { name: channel.name, runner: r, car: c, at: Date.now() };
@@ -5011,13 +5997,24 @@ const TR = (() => {
         S[S.pending.kind][S.pending.k] = S.pending.prev;
         S.pending = null;
       };
+      const setFocus = (f) => {
+        if (!f || !FOCI[f]) return;
+        if (f !== S.focus) S.turned = false;
+        S.focus = f;
+      };
+      const showFocus = () => {
+        const f = FOCI[S.focus] || FOCI.full;
+        const back = (f[0] === 'back') !== S.turned;
+        $('.le-focus').textContent = (S.focus === 'full' || S.focus === 'back' ? '' : f[4] + ' · ') + (back ? 'сзади' : 'спереди');
+        $('[data-full]').hidden = S.focus === 'full';
+      };
       // ---- разметка гардероба ----
       const render = () => {
         const K = KINDS[S.kind];
         const st = S[S.kind];
         root.querySelectorAll('.le-kind [data-kind]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === S.kind)));
-        $('.le-view').hidden = S.kind !== 'runner';
-        root.querySelectorAll('.le-view [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
+        $('.le-cam').hidden = S.kind !== 'runner';
+        showFocus();
         $('.le-play').setAttribute('aria-pressed', String(S.player === key));
         $('.le-play').textContent = S.player === key ? '✓ Вы играете за этот канал' : '▶ Играть за этот канал';
         $('.le-coins').textContent = S.bank;
@@ -5025,7 +6022,8 @@ const TR = (() => {
         $('.le-inv').innerHTML = Object.entries(K.groups)
           .filter(([, gr]) => gr.cat === S.cat[S.kind])
           .map(
-            ([k, gr]) => `<div><h4>${esc(gr.label)}</h4><div class="le-slots">${gr.items
+            ([k, gr]) => `<div class="le-grp" data-g="${k}"><h4>${esc(gr.label)}</h4><div class="le-slots">${gr.items
+              .filter((it) => !it[3])
               .map(([id, name, pr]) => {
                 const own = owns(S.kind, k, id);
                 return `<button type="button" class="le-slot${own ? '' : ' locked'}" data-k="${k}" data-v="${id}" aria-pressed="${st[k] === id}" title="${esc(name)}${pr ? (own ? ' · куплено' : ` · ${pr} монет`) : ''}"><canvas width="112" height="112"></canvas>${pr && !own ? `<span class="le-coin">${pr}</span>` : ''}<span class="le-nm">${esc(name)}</span></button>`;
@@ -5079,14 +6077,18 @@ const TR = (() => {
           say('');
           return render();
         }
-        const vb = t.closest('[data-view]');
-        if (vb) {
-          S.view = vb.dataset.view;
-          return render();
+        if (t.closest('[data-turn]')) {
+          S.turned = !S.turned;
+          return showFocus();
+        }
+        if (t.closest('[data-full]')) {
+          setFocus('full');
+          return showFocus();
         }
         const cb = t.closest('[data-cat]');
         if (cb) {
           S.cat[S.kind] = cb.dataset.cat;
+          if (S.kind === 'runner') setFocus({ head: 'face', body: 'full', extra: 'back' }[cb.dataset.cat] || 'full');
           return render();
         }
         if (t.closest('.le-play')) {
@@ -5102,6 +6104,7 @@ const TR = (() => {
         if (pb) {
           cancelTry();
           S.runner = { ...DEF };
+          setFocus('full');
           const need = applySet('runner', PRESETS[+pb.dataset.p][1]);
           say(need.length ? 'Ещё нужно купить: ' + need.join(', ') : 'Готовый образ надет', need.length ? '' : 'ok');
           save();
@@ -5111,6 +6114,7 @@ const TR = (() => {
         if (slot) {
           const { k, v } = slot.dataset;
           cancelTry();
+          if (S.kind === 'runner') setFocus(GROUP_FOCUS[k]);
           if (owns(S.kind, k, v)) {
             S[S.kind][k] = v;
             save();
@@ -5123,6 +6127,7 @@ const TR = (() => {
         }
         const sw = t.closest('button.le-sw');
         if (sw) {
+          if (S.kind === 'runner') setFocus(COLOR_FOCUS[sw.dataset.c]);
           S[S.kind][sw.dataset.c] = sw.dataset.v;
           save();
           return render();
@@ -5148,7 +6153,9 @@ const TR = (() => {
         if (t.closest('[data-copy]')) {
           const inp = $('.le-share input');
           const K = KINDS[S.kind];
-          inp.value = encode(K.prefix, saved(S.kind), defs[S.kind], K.groups, K.colors);
+          // при бороде усы пишем в код всегда — иначе код без усов прочитается как старый (см. upLook)
+          const st = saved(S.kind);
+          inp.value = encode(K.prefix, st, S.kind === 'runner' && st.beard !== 'none' ? { ...DEF, mustache: '' } : defs[S.kind], K.groups, K.colors);
           try {
             await navigator.clipboard.writeText(inp.value);
             say('Код скопирован — отправьте его другу', 'ok');
@@ -5165,7 +6172,8 @@ const TR = (() => {
         const kind = raw.includes('СМК1-') ? 'car' : raw.includes('СМБ1-') ? 'runner' : null;
         if (!kind) return say(raw ? 'Это не код образа или машины' : 'Вставьте код', 'bad');
         const K = KINDS[kind];
-        const set = decode(K.prefix, raw, defs[kind], K.groups, K.colors);
+        const got = decode(K.prefix, raw, defs[kind], K.groups, K.colors);
+        const set = kind === 'runner' ? got && upLook(got) : got;
         if (!set) return say('Код повреждён — скопируйте его ещё раз', 'bad');
         cancelTry();
         S.kind = kind;
@@ -5178,26 +6186,63 @@ const TR = (() => {
       $('.le-share input').addEventListener('keydown', (e) => e.key === 'Enter' && applyCode());
       root.addEventListener('input', (e) => {
         const i = e.target.closest('input[type=color]');
-        if (i) S[S.kind][i.dataset.c] = i.value;
+        if (!i) return;
+        if (S.kind === 'runner') setFocus(COLOR_FOCUS[i.dataset.c]);
+        S[S.kind][i.dataset.c] = i.value;
       });
       root.addEventListener('change', (e) => {
         if (!e.target.closest('input[type=color]')) return;
         save();
         render();
       });
-      // ---- сцена: бегун на дороге (или лицом), машина в гараже ----
+      // ---- сцена: примерочная с камерой (наезжает на то, что меняют) и гараж-мастерская ----
       const t0 = performance.now();
       let jumpAt = -9;
       cv.addEventListener('click', () => (jumpAt = (performance.now() - t0) / 1000));
+      // наведение на группу вещей — камера показывает, где эта вещь (на телефоне — по нажатию)
+      let hoverT = 0;
+      root.addEventListener('mouseover', (e) => {
+        const gr = e.target.closest?.('.le-grp[data-g]');
+        if (!gr || S.kind !== 'runner' || GROUP_FOCUS[gr.dataset.g] === S.focus) return;
+        clearTimeout(hoverT);
+        hoverT = setTimeout(() => {
+          setFocus(GROUP_FOCUS[gr.dataset.g]);
+          showFocus();
+        }, 120);
+      });
+      const want = () => {
+        const f = FOCI[S.focus] || FOCI.full;
+        const flip = { front: 'back', back: 'front' };
+        return { view: S.turned ? flip[f[0]] : f[0], x: f[1], y: f[2], size: f[3] };
+      };
+      const cam = { ...want(), squash: 1, turn: 0 };
+      let last = 0;
       let raf = 0;
       const frame = (now) => {
         raf = 0;
         if (!root.isConnected) return;
         const t = (now - t0) / 1000;
+        const dt = Math.min(0.1, last ? (now - last) / 1000 : 0);
+        last = now;
         const W = cv.width;
         const H = cv.height;
         if (S.kind === 'car') drawGarage(g, W, H, S.car, t, ava, initials(channel.name));
-        else drawStage(g, W, H, S.runner, t, S.view, jumpAt);
+        else {
+          const w = want();
+          const a = 1 - Math.exp(-dt * 7);
+          cam.x += (w.x - cam.x) * a;
+          cam.y += (w.y - cam.y) * a;
+          cam.size += (w.size - cam.size) * a;
+          // поворот: фигура сжимается к середине, на половине пути меняется вид, затем разворачивается
+          if (w.view !== cam.view || cam.turn > 0) {
+            cam.turn += dt / 0.42;
+            if (cam.turn >= 0.5 && w.view !== cam.view) cam.view = w.view;
+            if (cam.turn >= 1) cam.turn = 0;
+          }
+          cam.squash = cam.turn ? Math.abs(Math.cos(cam.turn * Math.PI)) : 1;
+          const jt = t - jumpAt;
+          drawStage(g, W, H, S.runner, t, cam, jt < 0.6 ? Math.sin((jt / 0.6) * Math.PI) * 16 : 0);
+        }
         raf = requestAnimationFrame(frame);
       };
       const start = () => !raf && (raf = requestAnimationFrame(frame));
@@ -5205,7 +6250,7 @@ const TR = (() => {
       render();
       Promise.all([looksGet(), ownedGet(), runBank()]).then(([d, owned, bank]) => {
         const c = d.ch[key];
-        S.runner = { ...DEF, ...(c?.runner || {}) };
+        S.runner = { ...DEF, ...upLook(c?.runner) };
         S.car = { ...defs.car, ...(c?.car || {}) };
         S.owned = owned;
         S.bank = bank;
@@ -5216,7 +6261,7 @@ const TR = (() => {
       return {
         el: root,
         mount(h) {
-          if (root.parentNode !== h) h.appendChild(root);
+          if (root.parentNode !== h || h.childElementCount !== 1) h.replaceChildren(root);
           start();
           runBank().then((b) => {
             S.bank = b;
@@ -5225,119 +6270,309 @@ const TR = (() => {
         },
       };
     }
-    // сцена бегуна: дорога и бегун со спины (с медальоном-лицом) или портрет лицом
-    function drawStage(g, W, H, look, t, view, jumpAt) {
-      const blink = t % 3.4 < 0.13;
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      if (view === 'face') {
-        const bg = g.createRadialGradient(W / 2, H * 0.4, 20, W / 2, H * 0.5, W * 0.7);
-        bg.addColorStop(0, '#3d2152');
-        bg.addColorStop(1, '#120e18');
-        g.fillStyle = bg;
-        g.fillRect(0, 0, W, H);
-        const S = H / 102;
-        g.save();
-        g.translate(W / 2 - 50 * S, H - 100 * S);
-        g.scale(S, S);
-        portrait(g, look, blink, t);
-        g.restore();
-        return;
-      }
-      const hy = H * 0.42;
-      const sky = g.createLinearGradient(0, 0, 0, hy);
-      sky.addColorStop(0, '#0b0816');
-      sky.addColorStop(1, '#4a2550');
-      g.fillStyle = sky;
-      g.fillRect(0, 0, W, hy);
-      g.fillStyle = '#1c1722';
-      g.fillRect(0, hy, W, H - hy);
-      g.fillStyle = '#251a31';
-      for (let i = 0, x = 0; x < W; i++) {
-        const w = 40 + ((i * 37) % 50);
-        const h = 40 + ((i * 53) % 100);
-        g.fillRect(x, hy - h, w, h);
-        x += w + 6;
-      }
-      const hx = W / 2;
-      g.fillStyle = '#2b2531';
+    // ---- Примерочная: камера смотрит на то, что настраивают (лицо, обувь, спину…) ----
+    // [вид, x, y, сколько единиц роста по высоте кадра, подпись] — в координатах фигуры (рост 100, ноги на y=100)
+    const FOCI = {
+      full: ['front', 50, 47, 118, 'Весь рост'],
+      face: ['front', 50, 15, 34, 'Лицо'],
+      hat: ['front', 50, 8, 44, 'Голова'],
+      top: ['front', 50, 40, 56, 'Верх'],
+      neck: ['front', 50, 30, 36, 'Шея'],
+      legs: ['front', 50, 74, 56, 'Низ'],
+      feet: ['front', 50, 94, 30, 'Обувь'],
+      back: ['back', 50, 50, 118, 'Вид сзади'],
+      gesture: ['front', 50, 30, 84, 'Жест'],
+    };
+    const GROUP_FOCUS = { hair: 'face', brows: 'face', beard: 'face', mustache: 'face', details: 'face', glasses: 'face', earrings: 'face', head: 'hat', top: 'top', neck: 'neck', bottom: 'legs', shoes: 'feet', back: 'back', gesture: 'gesture' };
+    const COLOR_FOCUS = { skin: 'face', hairColor: 'face', eyeColor: 'face', beardColor: 'face', glassesColor: 'face', headColor: 'hat', topColor: 'top', accent: 'top', neckColor: 'neck', bottomColor: 'legs', shoesColor: 'feet', backColor: 'back' };
+    // комната в координатах фигуры: при наезде камеры за лицом видна стена, за ногами — пол и коврик
+    function drawRoom(g, t) {
+      const wall = g.createLinearGradient(0, -120, 0, 100);
+      wall.addColorStop(0, '#1f1528');
+      wall.addColorStop(1, '#3b2546');
+      g.fillStyle = wall;
+      g.fillRect(-300, -300, 700, 400);
+      g.fillStyle = 'rgba(255,255,255,.035)';
+      for (let x = -300; x < 400; x += 8) g.fillRect(x, -300, 3, 400);
+      // зеркало в золотой раме и стойка с вешалками
+      g.fillStyle = '#c9a86a';
       g.beginPath();
-      g.moveTo(hx - 30, hy);
-      g.lineTo(hx + 30, hy);
-      g.lineTo(W * 1.1, H);
-      g.lineTo(-W * 0.1, H);
+      g.roundRect(-14, 4, 30, 84, 14);
       g.fill();
-      g.fillStyle = '#3b2d3c';
+      const mir = g.createLinearGradient(-12, 6, 14, 86);
+      mir.addColorStop(0, '#9fb6d6');
+      mir.addColorStop(0.5, '#5b6b8c');
+      mir.addColorStop(1, '#2e3550');
+      g.fillStyle = mir;
       g.beginPath();
-      g.moveTo(hx - 8, hy);
-      g.lineTo(hx + 8, hy);
-      g.lineTo(W * 0.72, H);
-      g.lineTo(W * 0.28, H);
+      g.roundRect(-11, 7, 24, 78, 11);
       g.fill();
-      g.strokeStyle = 'rgba(0,0,0,.3)';
-      g.lineWidth = 2;
-      for (let k = 0; k < 14; k++) {
-        const z = ((k + ((t * 3) % 1)) / 14) ** 2;
-        const y = hy + (H - hy) * z;
-        const half = 8 + (W * 0.22 - 8) * z;
+      g.strokeStyle = 'rgba(255,255,255,.35)';
+      g.lineWidth = 1.4;
+      g.beginPath();
+      g.moveTo(-6, 20);
+      g.lineTo(4, 10);
+      g.moveTo(-6, 30);
+      g.lineTo(8, 16);
+      g.stroke();
+      g.strokeStyle = '#8a8f9c';
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.moveTo(86, 14);
+      g.lineTo(122, 14);
+      g.moveTo(88, 14);
+      g.lineTo(88, 98);
+      g.moveTo(120, 14);
+      g.lineTo(120, 98);
+      g.stroke();
+      ['#e0453a', '#2a8a8f', '#e9c46a', '#7c3aed'].forEach((c, i) => {
+        const x = 94 + i * 7;
+        const w = Math.sin(t * 1.3 + i) * 0.8;
+        g.strokeStyle = '#c9ced8';
+        g.lineWidth = 0.8;
         g.beginPath();
-        g.moveTo(hx - half, y);
-        g.lineTo(hx + half, y);
+        g.moveTo(x, 14);
+        g.lineTo(x, 17);
+        g.stroke();
+        g.fillStyle = c;
+        g.beginPath();
+        g.moveTo(x - 4, 19);
+        g.lineTo(x + 4, 19);
+        g.lineTo(x + 5 + w, 44);
+        g.lineTo(x - 5 + w, 44);
+        g.fill();
+      });
+      // плинтус, пол из досок и коврик
+      g.fillStyle = '#1a1320';
+      g.fillRect(-300, 94, 700, 6);
+      g.fillStyle = '#4a2f22';
+      g.fillRect(-300, 100, 700, 300);
+      g.strokeStyle = 'rgba(0,0,0,.25)';
+      g.lineWidth = 0.6;
+      for (let y = 104; y < 300; y += 5) {
+        g.beginPath();
+        g.moveTo(-300, y);
+        g.lineTo(400, y);
         g.stroke();
       }
-      const jt = t - jumpAt;
-      const jy = jt < 0.7 ? Math.sin((jt / 0.7) * Math.PI) * H * 0.17 : 0;
-      const fr = jt < 0.7 ? 6 : Math.floor(t * 11) % 6;
-      const S = H / 150;
+      g.fillStyle = '#7a1f2e';
+      g.beginPath();
+      g.ellipse(50, 102, 40, 6, 0, 0, PI2);
+      g.fill();
+      g.strokeStyle = '#c9a86a';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.ellipse(50, 102, 36, 4.8, 0, 0, PI2);
+      g.stroke();
+      // шторы по краям и ламбрекен
+      for (const [x0, dir] of [[-40, 1], [140, -1]]) {
+        g.fillStyle = '#8f1d2c';
+        if (dir > 0) g.fillRect(-300, -300, x0 + 300, 700);
+        else g.fillRect(x0, -300, 300, 700);
+        g.fillStyle = 'rgba(0,0,0,.22)';
+        for (let k = 0; k < 4; k++) g.fillRect(x0 - dir * (k * 7 + 3), -300, 2.5, 700);
+      }
+      g.fillStyle = '#6e1422';
+      g.fillRect(-300, -300, 700, 262);
+      g.fillStyle = '#c9a86a';
+      g.fillRect(-300, -40, 700, 2);
+      // свет софита
+      const sp = g.createRadialGradient(50, 30, 4, 50, 40, 80);
+      sp.addColorStop(0, 'rgba(255,224,170,.22)');
+      sp.addColorStop(1, 'rgba(255,224,170,0)');
+      g.fillStyle = sp;
+      g.fillRect(-300, -300, 700, 700);
+    }
+    // cam: { x, y, size, view: 'front'|'back', squash 0..1 (поворот) }, jy — прыжок в единицах роста
+    function drawStage(g, W, H, look, t, cam, jy = 0) {
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      const k = H / cam.size;
+      g.save();
+      g.translate(W / 2 - cam.x * k, H / 2 - cam.y * k);
+      g.scale(k, k);
+      drawRoom(g, t);
       g.fillStyle = 'rgba(0,0,0,.35)';
       g.beginPath();
-      g.ellipse(W / 2, H * 0.92, 20 * S - jy * 0.05, 3.6 * S, 0, 0, PI2);
+      g.ellipse(50, 100, Math.max(8, 20 - jy * 0.3), 3, 0, 0, PI2);
       g.fill();
-      g.save();
-      g.translate(W / 2 - 50 * S, H * 0.92 - 100 * S - jy);
-      g.scale(S, S);
-      runner(g, fr, look);
+      g.translate(50, -jy);
+      g.scale(Math.max(0.05, cam.squash), 1);
+      g.translate(-50, 0);
+      if (cam.view === 'back') runner(g, jy > 0.5 ? 6 : 0, look); // в примерочной стоит (кадр 0 — обе ноги на полу)
+      else front(g, look, t, t % 3.4 < 0.13);
       g.restore();
-      const R = H * 0.13;
-      g.save();
-      g.beginPath();
-      g.arc(R + 14, R + 14, R, 0, PI2);
-      g.fillStyle = '#2a1838';
-      g.fill();
-      g.clip();
-      g.translate(14, 14 + R * 0.08);
-      g.scale((2 * R) / 100, (2 * R) / 100);
-      portrait(g, look, blink, t);
-      g.restore();
-      g.strokeStyle = '#f2d68a';
-      g.lineWidth = 4;
-      g.beginPath();
-      g.arc(R + 14, R + 14, R, 0, PI2);
-      g.stroke();
     }
+    // ---- Гараж-мастерская ----
     function drawGarage(g, W, H, car, t, ava, label) {
       g.setTransform(1, 0, 0, 1, 0, 0);
-      g.fillStyle = '#16121c';
-      g.fillRect(0, 0, W, H);
-      const fl = g.createLinearGradient(0, H * 0.62, 0, H);
-      fl.addColorStop(0, '#231f2d');
-      fl.addColorStop(1, '#2c2638');
+      const fy = H * 0.66; // линия пола
+      // кирпичная стена
+      g.fillStyle = '#4a2b26';
+      g.fillRect(0, 0, W, fy);
+      const bh = 15;
+      for (let r = 0, y = 0; y < fy; r++, y += bh) {
+        for (let x = (r % 2) * -22; x < W; x += 44) {
+          g.fillStyle = (r * 7 + x) % 3 ? '#6b3a30' : '#5e332b';
+          g.fillRect(x + 1.5, y + 1.5, 41, bh - 3);
+        }
+      }
+      g.fillStyle = 'rgba(10,6,12,.35)';
+      g.fillRect(0, 0, W, fy);
+      // подъёмные ворота слева, приоткрыты — за ними ночная улица
+      const dx = W * 0.03;
+      const dw = W * 0.3;
+      const dy = H * 0.1;
+      const open = fy - dy - 30 - Math.sin(t * 0.6) * 2;
+      g.fillStyle = '#0e1424';
+      g.fillRect(dx, dy, dw, fy - dy);
+      g.fillStyle = 'rgba(255,214,120,.5)';
+      g.beginPath();
+      g.arc(dx + dw * 0.75, fy - 14, 16, 0, PI2);
+      g.fill();
+      g.fillStyle = '#596170';
+      g.fillRect(dx, dy, dw, open);
+      g.fillStyle = '#454c59';
+      for (let y = dy + 8; y < dy + open; y += 11) g.fillRect(dx, y, dw, 2.5);
+      g.fillStyle = '#2a2f38';
+      g.fillRect(dx - 5, dy - 6, dw + 10, 7);
+      // неоновая вывеска
+      g.save();
+      g.font = '800 26px Manrope, system-ui, sans-serif';
+      g.textAlign = 'center';
+      g.shadowColor = '#ff5fa2';
+      g.shadowBlur = 16 + Math.sin(t * 3) * 4;
+      g.fillStyle = '#ffd1e6';
+      g.fillText('ГАРАЖ', W * 0.47, H * 0.1);
+      g.restore();
+      // перфопанель с инструментами
+      const px = W * 0.62;
+      const py = H * 0.2;
+      const pw = W * 0.33;
+      const ph = H * 0.3;
+      g.fillStyle = '#8a6a44';
+      g.fillRect(px, py, pw, ph);
+      g.fillStyle = 'rgba(0,0,0,.28)';
+      for (let y = py + 7; y < py + ph; y += 10) for (let x = px + 7; x < px + pw; x += 10) g.fillRect(x, y, 2, 2);
+      const steel = '#c9ced8';
+      g.lineCap = 'round';
+      // гаечный ключ
+      g.strokeStyle = steel;
+      g.lineWidth = 6;
+      g.beginPath();
+      g.moveTo(px + 22, py + 26);
+      g.lineTo(px + 22, py + ph - 18);
+      g.stroke();
+      g.lineWidth = 4;
+      g.beginPath();
+      g.arc(px + 22, py + 18, 8, Math.PI * 0.75, Math.PI * 2.25);
+      g.stroke();
+      // молоток
+      g.fillStyle = '#c0402e';
+      g.fillRect(px + 48, py + 24, 6, ph - 40);
+      g.fillStyle = steel;
+      g.fillRect(px + 38, py + 16, 26, 11);
+      // отвёртки
+      ['#e9c46a', '#2a8a8f', '#e0453a'].forEach((c, i) => {
+        const x = px + 82 + i * 16;
+        g.fillStyle = c;
+        g.fillRect(x - 4, py + 16, 8, 22);
+        g.strokeStyle = steel;
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.moveTo(x, py + 38);
+        g.lineTo(x, py + 62);
+        g.stroke();
+      });
+      // пила
+      g.fillStyle = steel;
+      g.beginPath();
+      g.moveTo(px + pw - 16, py + 14);
+      g.lineTo(px + pw - 12, py + ph - 16);
+      g.lineTo(px + pw - 30, py + ph - 16);
+      g.closePath();
+      g.fill();
+      // пол: бетон, жёлто-чёрная полоса, масляное пятно
+      const fl = g.createLinearGradient(0, fy, 0, H);
+      fl.addColorStop(0, '#3a3a42');
+      fl.addColorStop(1, '#25242b');
       g.fillStyle = fl;
-      g.fillRect(0, H * 0.62, W, H);
-      const sp = g.createRadialGradient(W / 2, 0, 10, W / 2, H * 0.5, H * 0.7);
-      sp.addColorStop(0, 'rgba(255,230,170,.18)');
-      sp.addColorStop(1, 'rgba(255,230,170,0)');
-      g.fillStyle = sp;
-      g.fillRect(0, 0, W, H);
-      const S = Math.min(W / 190, H / 165);
+      g.fillRect(0, fy, W, H - fy);
+      for (let x = -20, i = 0; x < W; x += 20, i++) {
+        g.fillStyle = i % 2 ? '#1d1a22' : '#e9c43a';
+        g.beginPath();
+        g.moveTo(x, fy);
+        g.lineTo(x + 20, fy);
+        g.lineTo(x + 14, fy + 6);
+        g.lineTo(x - 6, fy + 6);
+        g.fill();
+      }
+      g.fillStyle = 'rgba(0,0,0,.35)';
+      g.beginPath();
+      g.ellipse(W * 0.3, H * 0.9, 40, 7, 0.1, 0, PI2);
+      g.fill();
+      // красный шкаф с ящиками и покрышки
+      const cx0 = W * 0.035;
+      g.fillStyle = '#b8323f';
+      g.beginPath();
+      g.roundRect(cx0, fy - 50, 70, 64, 4);
+      g.fill();
+      g.fillStyle = '#7e1f2a';
+      for (let i = 0; i < 4; i++) g.fillRect(cx0 + 6, fy - 44 + i * 14, 58, 2);
+      g.fillStyle = '#d8d0bf';
+      for (let i = 0; i < 4; i++) g.fillRect(cx0 + 28, fy - 40 + i * 14, 14, 3);
+      for (let i = 0; i < 3; i++) {
+        const tx = W * 0.92;
+        const ty = H * 0.94 - i * 15;
+        g.fillStyle = '#16141a';
+        g.beginPath();
+        g.ellipse(tx, ty, 30, 9, 0, 0, PI2);
+        g.fill();
+        g.strokeStyle = '#3a3a44';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.ellipse(tx, ty - 1, 20, 5, 0, 0, PI2);
+        g.stroke();
+      }
+      // лампа над машиной и конус света
+      const lx = W / 2;
+      g.strokeStyle = '#2a2630';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(lx, 0);
+      g.lineTo(lx, H * 0.17);
+      g.stroke();
+      const cone = g.createLinearGradient(0, H * 0.2, 0, H);
+      cone.addColorStop(0, 'rgba(255,230,170,.32)');
+      cone.addColorStop(1, 'rgba(255,230,170,.04)');
+      g.fillStyle = cone;
+      g.beginPath();
+      g.moveTo(lx - 22, H * 0.2);
+      g.lineTo(lx + 22, H * 0.2);
+      g.lineTo(lx + W * 0.36, H);
+      g.lineTo(lx - W * 0.36, H);
+      g.fill();
+      g.fillStyle = '#2f6b5a';
+      g.beginPath();
+      g.moveTo(lx - 24, H * 0.21);
+      g.lineTo(lx + 24, H * 0.21);
+      g.lineTo(lx + 10, H * 0.16);
+      g.lineTo(lx - 10, H * 0.16);
+      g.fill();
+      g.fillStyle = '#fff3c4';
+      g.beginPath();
+      g.ellipse(lx, H * 0.212, 12, 3, 0, 0, PI2);
+      g.fill();
+      // машина
+      const S = Math.min(W / 235, H / 205); // поменьше — чтобы мастерская была видна
       g.save();
       g.translate(W / 2 - 75 * S, H * 0.92 - 108 * S);
       g.scale(S, S);
       drawCar(g, car, t, ava, label);
       g.restore();
     }
-    const drawPerson = (p, kind, L) => (kind === 'back' ? runner(p, 1, L) : portrait(p, L, false, 0.1));
+    const drawPerson = (p, kind, L) => (kind === 'back' ? runner(p, 1, L) : kind === 'front' ? front(p, L, 0) : portrait(p, L, false, 0.1));
 
-    return { DEF, carDefault, runner, portrait, drawCar, avatar, initials, looksGet, looksSave, lookOf, ownedGet, editor };
+    return { DEF, upLook, carDefault, runner, front, portrait, drawCar, avatar, initials, looksGet, looksSave, lookOf, ownedGet, editor };
   })();
 
   // Блок ролика в карточке звезды: крупное превью (ведёт на YouTube) и плитки с цифрами.

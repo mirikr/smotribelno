@@ -4541,7 +4541,7 @@ a.fame-tile:focus-visible {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  width: min(340px, 100%);
+  width: min(420px, 100%);
   padding: 22px 20px 14px;
   border: 1px solid rgba(233, 196, 106, 0.4);
   border-radius: 20px;
@@ -4616,6 +4616,86 @@ a.fame-tile:focus-visible {
   min-height: 1em;
   color: var(--muted);
   font-size: 11px;
+}
+/* Красная дорожка после проигрыша: за кого бежать дальше */
+.wr-carpet {
+  width: 100%;
+  margin-top: 10px;
+}
+.wr-carpet-t {
+  display: block;
+  margin-bottom: 6px;
+  color: #f2d68a;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.wr-rail {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  overflow-x: auto;
+  border-top: 2px solid #c9a86a;
+  border-bottom: 2px solid #c9a86a;
+  border-radius: 6px;
+  background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 9px), linear-gradient(#a3202f, #6e1422);
+  scrollbar-width: thin;
+}
+.wr-star {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  width: 70px;
+  padding: 2px 2px 4px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #f4efe6;
+  font: inherit;
+  cursor: pointer;
+}
+.wr-star canvas {
+  width: 64px;
+  height: 92px;
+  transition: transform 0.15s;
+}
+.wr-star:hover canvas {
+  transform: translateY(-3px);
+}
+.wr-star b {
+  max-width: 66px;
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(14, 10, 20, 0.75);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wr-star small {
+  color: rgba(255, 235, 200, 0.75);
+  font-size: 9.5px;
+}
+.wr-star[aria-pressed='true'] {
+  background: radial-gradient(ellipse at 50% 30%, rgba(255, 224, 150, 0.45), transparent 70%);
+}
+.wr-star[aria-pressed='true'] b {
+  background: #f2d68a;
+  color: #2a1606;
+}
+.wr-star[aria-pressed='true']::before {
+  content: '★ вы';
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #f2d68a;
+  color: #2a1606;
+  font-size: 9.5px;
+  font-weight: 800;
 }
 /* подпись у звезды: стрелки к соседней звезде — рядом с «Рассмотреть» / «Прорваться» */
 .w3-cap .w3-acts {
@@ -5569,14 +5649,131 @@ body {
   color: #f2d68a;
   box-shadow: inset 0 0 0 1px rgba(233, 196, 106, 0.4);
 }
-.le-play[aria-pressed='true'] {
-  border-color: rgba(233, 196, 106, 0.6);
-  background: rgba(233, 196, 106, 0.14);
+/* «Гардероб | Гараж» — главный переключатель редактора */
+.le-kind {
+  display: inline-flex;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 16px;
+  background: var(--surface-2, #231f2d);
+}
+.le-kind button {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 46px;
+  padding: 6px 18px 6px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-2, #b8b0c9);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+.le-kind button span {
+  grid-row: span 2;
+  font-size: 22px;
+}
+.le-kind button small {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted, #8e86a0);
+}
+.le-kind button[aria-pressed='true'] {
+  background: var(--surface-3, #2c2638);
   color: #f2d68a;
+  box-shadow: inset 0 0 0 1px rgba(233, 196, 106, 0.45);
+}
+/* «Играть за этот канал» — яркая, чтобы было видно сразу */
+.le-play {
+  min-height: 44px;
+  padding: 10px 20px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffd166, #ff8a3d);
+  color: #2a1606;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.5), 0 6px 22px rgba(255, 138, 61, 0.45);
+  animation: le-play-pulse 2.4s ease-in-out infinite;
+}
+.le-play:hover {
+  filter: brightness(1.08);
+}
+.le-play[aria-pressed='true'] {
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: #04261a;
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.55), 0 6px 22px rgba(16, 185, 129, 0.4);
+  animation: none;
+}
+@keyframes le-play-pulse {
+  50% {
+    box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.7), 0 6px 30px rgba(255, 138, 61, 0.7);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .le-play {
+    animation: none;
+  }
+}
+/* сцена с камерой: держится на виду, пока листаете вещи */
+.le-view-box {
+  position: relative;
+}
+.le-cam {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.le-cam[hidden] {
+  display: none;
+}
+.le-focus {
+  margin-right: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(14, 10, 20, 0.72);
+  color: #f2d68a;
+  font-size: 12px;
+  font-weight: 700;
+}
+.le-focus:empty {
+  display: none;
+}
+.le-cam button {
+  pointer-events: auto;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(14, 10, 20, 0.72);
+  color: #f4efe6;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.le-cam button[hidden] {
+  display: none;
+}
+.le-cam button:hover {
+  border-color: rgba(233, 196, 106, 0.6);
 }
 .le-studio {
   display: grid;
-  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -5585,6 +5782,9 @@ body {
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 .le-cv {
   display: block;
@@ -5790,5 +5990,21 @@ body {
 @media (max-width: 760px) {
   .le-studio {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* узко: на виду остаётся только сцена с камерой, банк и код — под ней */
+  .le-stage {
+    display: contents;
+  }
+  .le-view-box {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+  }
+  .le-cv {
+    height: min(34vh, 300px);
+    object-fit: cover;
+  }
+  .le-kind button {
+    padding-right: 12px;
   }
 }
